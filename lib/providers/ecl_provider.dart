@@ -39,6 +39,10 @@ class ECLProvider extends ChangeNotifier {
   Map<String, ECLReading> _readings = {};
   Timer? _pollingTimer;
   double _discoveryProgress = 0.0;
+  bool _isReconnecting = false;
+  int _consecutivePollErrors = 0;
+  static const int _maxConsecutivePollErrors = 3;
+  DateTime? _lastSuccessfulPoll;
 
   /// Brunata portal sync state.
   BrunataSyncState _brunataSyncState = BrunataSyncState.idle;
@@ -65,6 +69,8 @@ class ECLProvider extends ChangeNotifier {
   Map<String, ECLReading> get readings => Map.unmodifiable(_readings);
   double get discoveryProgress => _discoveryProgress;
   bool get isConnected => _connectionState == ECLConnectionState.connected;
+  bool get isReconnecting => _isReconnecting;
+  DateTime? get lastSuccessfulPoll => _lastSuccessfulPoll;
 
   BrunataSyncState get brunataSyncState => _brunataSyncState;
   BrunataMeterData? get brunataData => _brunataData;
@@ -139,6 +145,8 @@ class ECLProvider extends ChangeNotifier {
 
       await _modbusService.connect(ip);
       _connectionState = ECLConnectionState.connected;
+      _consecutivePollErrors = 0;
+      _isReconnecting = false;
       notifyListeners();
 
       await refreshReadings();
@@ -157,12 +165,16 @@ class ECLProvider extends ChangeNotifier {
     _connectionState = ECLConnectionState.connecting;
     _errorMessage = null;
     _controllerIp = ip;
+    _consecutivePollErrors = 0;
+    _isReconnecting = false;
     notifyListeners();
 
     try {
       await _modbusService.connect(ip);
       await _discoveryService.saveControllerIp(ip);
       _connectionState = ECLConnectionState.connected;
+      _consecutivePollErrors = 0;
+      _isReconnecting = false;
       notifyListeners();
       await refreshReadings();
       _startPolling();
@@ -180,6 +192,9 @@ class ECLProvider extends ChangeNotifier {
     _connectionState = ECLConnectionState.disconnected;
     _controllerIp = null;
     _errorMessage = null;
+    _consecutivePollErrors = 0;
+    _isReconnecting = false;
+    _lastSuccessfulPoll = null;
     _readings = {};
     _history.clear();
     notifyListeners();
@@ -193,24 +208,45 @@ class ECLProvider extends ChangeNotifier {
     if (!isConnected) return;
 
     try {
-      _readings = await _modbusService.readAllParameters();
+      final newReadings = await _modbusService.readAllParameters();
+      _readings.addAll(newReadings);
+      _consecutivePollErrors = 0;
+      if (_isReconnecting) {
+        _isReconnecting = false;
+      }
+      _lastSuccessfulPoll = DateTime.now();
 
-      // Record history for each reading
-      for (final entry in _readings.entries) {
-        final queue = _history.putIfAbsent(
-          entry.key,
-          () => Queue<double>(),
-        );
-        queue.addLast(entry.value.displayValue);
-        while (queue.length > _maxHistoryLength) {
-          queue.removeFirst();
+      // Record history for each valid reading (ignore disconnected sensors)
+      for (final entry in newReadings.entries) {
+        if (!entry.value.isSensorDisconnected) {
+          final queue = _history.putIfAbsent(
+            entry.key,
+            () => Queue<double>(),
+          );
+          queue.addLast(entry.value.displayValue);
+          while (queue.length > _maxHistoryLength) {
+            queue.removeFirst();
+          }
         }
       }
 
       notifyListeners();
     } on ModbusCommunicationException catch (e) {
-      _stopPolling();
-      _setError(e.message);
+      _consecutivePollErrors++;
+      debugPrint(
+        '[Provider] Polling error ($_consecutivePollErrors/$_maxConsecutivePollErrors): $e',
+      );
+
+      if (_consecutivePollErrors < _maxConsecutivePollErrors) {
+        // Transient communication error: keep connected and flag reconnecting state
+        _isReconnecting = true;
+        notifyListeners();
+      } else {
+        // Exceeded retry limit: stop polling and transition to error
+        _stopPolling();
+        _isReconnecting = false;
+        _setError(e.message);
+      }
     }
   }
 

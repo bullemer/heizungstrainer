@@ -203,7 +203,7 @@ class DiscoveryService {
 
     // ── Fast-path: try saved IP first ────────────────────────────
     final savedIp = await getSavedControllerIp();
-    if (savedIp != null && savedIp.startsWith('$subnetBase.')) {
+    if (savedIp != null) {
       debugPrint('[Discovery] Trying saved controller IP: $savedIp');
       if (await _verifyECLController(savedIp)) {
         debugPrint('[Discovery] Saved IP $savedIp verified successfully!');

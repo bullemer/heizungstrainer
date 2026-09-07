@@ -160,14 +160,92 @@ class ModbusService {
     }
   }
 
-  /// Reads all registered parameters sequentially.
-  ///
-  /// Returns a map keyed by [ECLParameter.id].
-  Future<Map<String, ECLReading>> readAllParameters() async {
-    final results = <String, ECLReading>{};
-    for (final param in ECLRegisters.all) {
-      results[param.id] = await readParameter(param);
+  /// Reads all sensor parameters in a single batch Modbus request (registers 10200..10205).
+  Future<Map<String, ECLReading>> _readSensorBatch() async {
+    final registers = {
+      for (final param in ECLRegisters.sensorParameters)
+        param: ModbusInt16Register(
+          name: param.id,
+          type: ModbusElementType.holdingRegister,
+          address: param.modbusAddress,
+        ),
+    };
+
+    final group = ModbusElementsGroup(registers.values);
+    final response = await _client!
+        .send(group.getReadRequest())
+        .timeout(_requestTimeout);
+
+    if (response != ModbusResponseCode.requestSucceed) {
+      throw ModbusCommunicationException(
+        message: 'Gruppenlesefehler: Modbus-Code $response',
+      );
     }
+
+    final now = DateTime.now();
+    final results = <String, ECLReading>{};
+    for (final entry in registers.entries) {
+      final val = entry.value.value;
+      if (val != null) {
+        results[entry.key.id] = ECLReading(
+          parameter: entry.key,
+          rawValue: val.toInt(),
+          timestamp: now,
+        );
+      }
+    }
+    return results;
+  }
+
+  /// Reads all registered parameters.
+  ///
+  /// Uses a single batch request for sensors (registers 10200..10205) to reduce
+  /// network roundtrips by 80%, with automatic fallback to individual reads.
+  /// If an individual parameter read fails, other successful readings are preserved.
+  Future<Map<String, ECLReading>> readAllParameters() async {
+    _ensureConnected();
+    final results = <String, ECLReading>{};
+    int failureCount = 0;
+    Object? lastError;
+
+    // 1. Batch-read sensor parameters in 1 network roundtrip
+    try {
+      final sensorReadings = await _readSensorBatch();
+      results.addAll(sensorReadings);
+      debugPrint('[Modbus] Batch-read ${sensorReadings.length} sensors in 1 request.');
+    } catch (e) {
+      debugPrint('[Modbus] Sensor batch-read failed, falling back to sequential: $e');
+      for (final param in ECLRegisters.sensorParameters) {
+        try {
+          results[param.id] = await readParameter(param);
+        } catch (err) {
+          failureCount++;
+          lastError = err;
+          debugPrint('[Modbus] Failed reading sensor ${param.id}: $err');
+        }
+      }
+    }
+
+    // 2. Read writable setpoints
+    for (final param in ECLRegisters.writableParameters) {
+      try {
+        results[param.id] = await readParameter(param);
+      } catch (err) {
+        failureCount++;
+        lastError = err;
+        debugPrint('[Modbus] Failed reading setpoint ${param.id}: $err');
+      }
+    }
+
+    // If every single parameter failed to read, the connection is broken
+    if (results.isEmpty && failureCount > 0) {
+      if (lastError is ModbusCommunicationException) throw lastError;
+      throw ModbusCommunicationException(
+        message: 'Keine Parameter vom ECL-Regler lesbar.',
+        underlyingError: lastError,
+      );
+    }
+
     return results;
   }
 

@@ -4,6 +4,7 @@
 /// for embedding inside compact sensor cards.
 library;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 /// A lightweight sparkline chart widget that draws a series of data points
@@ -155,8 +156,10 @@ class _SparklinePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _SparklinePainter oldDelegate) {
-    return oldDelegate.data != data ||
-        oldDelegate.lineColor != lineColor;
+    return oldDelegate.lineColor != lineColor ||
+        oldDelegate.fillColor != fillColor ||
+        oldDelegate.strokeWidth != strokeWidth ||
+        !listEquals(oldDelegate.data, data);
   }
 }
 

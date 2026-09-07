@@ -28,10 +28,14 @@ class ECLReading {
   /// Example: raw 215 with multiplier 0.1 → 21.5
   double get displayValue => parameter.rawToDisplay(rawValue);
 
+  /// Whether the controller reported this sensor as disconnected/faulty (code >= 19200).
+  bool get isSensorDisconnected => rawValue >= ECLRegisters.sensorDisconnected;
+
   /// Human-readable formatted string including value and unit.
   ///
   /// Example: '21.5 °C' or '-3' (for dimensionless parameters).
   String get formattedValue {
+    if (isSensorDisconnected) return 'Fühler getrennt';
     final valueStr = displayValue.toStringAsFixed(parameter.displayPrecision);
     return parameter.unit.isNotEmpty ? '$valueStr ${parameter.unit}' : valueStr;
   }

@@ -1,93 +1,516 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
 
-/// Sicherungen (Time Machine) tab — placeholder screen for cloud backups
-/// and system restore functionality.
-class BackupScreen extends StatelessWidget {
-  const BackupScreen({super.key});
+import 'package:heizungstrainer/models/configuration_backup.dart';
+import 'package:heizungstrainer/models/ecl_parameter.dart';
+import 'package:heizungstrainer/providers/ecl_provider.dart';
+import 'package:heizungstrainer/services/backup_service.dart';
 
-  // ── Dark palette ──────────────────────────────────────────────────────
+/// Sicherungen (Time Machine) screen:
+/// Allows creating configuration snapshots, reviewing saved points, and
+/// restoring heating curves / controller parameters safely.
+class BackupScreen extends StatefulWidget {
+  const BackupScreen({super.key, this.backupService});
+
+  final BackupService? backupService;
+
+  @override
+  State<BackupScreen> createState() => _BackupScreenState();
+}
+
+class _BackupScreenState extends State<BackupScreen> {
+  late final BackupService _backupService;
+  List<ConfigurationBackup> _backups = [];
+  bool _isRestoring = false;
+
+  // ── Palette ──────────────────────────────────────────────────────────
   static const Color _background = Color(0xFF1E1E24);
   static const Color _card = Color(0xFF2A2A32);
+  static const Color _border = Color(0xFF3A3A44);
   static const Color _accent = Color(0xFF00BFA5);
-  static const Color _accentDim = Color(0x3300BFA5); // 20 % opacity
   static const Color _textPrimary = Color(0xFFEEEEEE);
   static const Color _textSecondary = Color(0xFF9E9EA8);
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: _background,
-      body: Stack(
-        children: [
-          // ── Decorative gradient orbs ─────────────────────────────────
-          _buildOrb(
-            top: -60,
-            right: -40,
-            size: 220,
-            colors: [_accent.withValues(alpha: 0.22), Colors.transparent],
-          ),
-          _buildOrb(
-            bottom: -80,
-            left: -50,
-            size: 260,
-            colors: [
-              const Color(0xFF6C63FF).withValues(alpha: 0.15),
-              Colors.transparent,
-            ],
-          ),
-          _buildOrb(
-            top: MediaQuery.of(context).size.height * 0.35,
-            left: MediaQuery.of(context).size.width * 0.6,
-            size: 140,
-            colors: [_accent.withValues(alpha: 0.10), Colors.transparent],
-          ),
+  void initState() {
+    super.initState();
+    _backupService = widget.backupService ?? BackupService();
+    _loadBackups();
+  }
 
-          // ── Main content ────────────────────────────────────────────
-          SafeArea(
-            child: Center(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 32,
-                  vertical: 48,
+  Future<void> _loadBackups() async {
+    final list = await _backupService.getBackups();
+    if (mounted) {
+      setState(() {
+        _backups = list;
+      });
+    }
+  }
+
+  Future<void> _createBackup(ECLProvider provider) async {
+    final shiftReading = provider.getReading(ECLRegisters.heatingCurveShift);
+    final currentShift = shiftReading?.displayValue ?? 0.0;
+    final outdoorTemp =
+        provider.getReading(ECLRegisters.outdoorTemp)?.displayValue;
+    final flowTemp = provider.getReading(ECLRegisters.flowTemp)?.displayValue;
+    final returnTemp =
+        provider.getReading(ECLRegisters.returnTemp)?.displayValue;
+    final roomTarget =
+        provider.getReading(ECLRegisters.roomTargetTemp)?.displayValue;
+
+    final now = DateTime.now();
+    final defaultTitle =
+        'Sicherung ${_formatDateTimeShort(now)} (Shift ${_formatShift(currentShift)})';
+
+    final nameController = TextEditingController(text: defaultTitle);
+    final noteController = TextEditingController();
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: _card,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.bookmark_add_rounded, color: _accent),
+            SizedBox(width: 10),
+            Text(
+              'Neue Sicherung anlegen',
+              style: TextStyle(color: _textPrimary, fontSize: 18),
+            ),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Sichere den aktuellen Zustand des Reglers als Wiederherstellungspunkt.',
+                style: TextStyle(color: _textSecondary, fontSize: 13),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: nameController,
+                style: const TextStyle(color: _textPrimary),
+                decoration: InputDecoration(
+                  labelText: 'Bezeichnung',
+                  labelStyle: const TextStyle(color: _textSecondary),
+                  filled: true,
+                  fillColor: const Color(0xFF22222A),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: _border),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: noteController,
+                style: const TextStyle(color: _textPrimary),
+                decoration: InputDecoration(
+                  labelText: 'Notiz (optional)',
+                  labelStyle: const TextStyle(color: _textSecondary),
+                  hintText: 'z.B. vor Frostperiode getestet',
+                  hintStyle: TextStyle(
+                    color: _textSecondary.withValues(alpha: 0.6),
+                  ),
+                  filled: true,
+                  fillColor: const Color(0xFF22222A),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: _border),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: _accent.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: _accent.withValues(alpha: 0.25)),
                 ),
                 child: Column(
-                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // ── Icon illustration area ────────────────────────
-                    _buildIllustration(),
-                    const SizedBox(height: 36),
-
-                    // ── Title ─────────────────────────────────────────
-                    const Text(
-                      'Sicherungen',
+                    Text(
+                      'Gespeicherte Werte:',
                       style: TextStyle(
-                        color: _textPrimary,
-                        fontSize: 28,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: -0.5,
+                        color: _accent,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
-                    const SizedBox(height: 14),
+                    const SizedBox(height: 4),
+                    Text(
+                      '• Parallelverschiebung: ${_formatShift(currentShift)}\n'
+                      '• Außentemperatur: ${outdoorTemp != null ? "${outdoorTemp.toStringAsFixed(1)} °C" : "–"}\n'
+                      '• Vorlauftemperatur: ${flowTemp != null ? "${flowTemp.toStringAsFixed(1)} °C" : "–"}',
+                      style: const TextStyle(
+                        color: _textPrimary,
+                        fontSize: 12,
+                        height: 1.4,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Abbrechen', style: TextStyle(color: _textSecondary)),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(backgroundColor: _accent),
+            child: const Text('Speichern', style: TextStyle(color: Colors.black)),
+          ),
+        ],
+      ),
+    );
 
-                    // ── Subtitle ──────────────────────────────────────
-                    const Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 8),
-                      child: Text(
-                        'Erstelle Cloud-Backups deiner Reglereinstellungen '
-                        'und stelle vorherige Konfigurationen wieder her.',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: _textSecondary,
-                          fontSize: 15,
-                          height: 1.55,
+    if (confirmed != true) return;
+
+    final backup = ConfigurationBackup(
+      id: 'backup_${DateTime.now().millisecondsSinceEpoch}',
+      name: nameController.text.trim().isEmpty
+          ? defaultTitle
+          : nameController.text.trim(),
+      timestamp: DateTime.now(),
+      heatingCurveShift: currentShift,
+      roomTarget: roomTarget,
+      outdoorTemp: outdoorTemp,
+      flowTemp: flowTemp,
+      returnTemp: returnTemp,
+      note: noteController.text.trim().isEmpty
+          ? null
+          : noteController.text.trim(),
+    );
+
+    await _backupService.saveBackup(backup);
+    await _loadBackups();
+
+    if (mounted) {
+      HapticFeedback.mediumImpact();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Konfiguration erfolgreich gesichert.'),
+          backgroundColor: _accent,
+        ),
+      );
+    }
+  }
+
+  Future<void> _restoreBackup(
+    ConfigurationBackup backup,
+    ECLProvider provider,
+  ) async {
+    if (!provider.isConnected) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Regler nicht verbunden. Wiederherstellung nicht möglich.'),
+          backgroundColor: Color(0xFFEF5350),
+        ),
+      );
+      return;
+    }
+
+    final currentShift =
+        provider.getReading(ECLRegisters.heatingCurveShift)?.displayValue ?? 0.0;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: _card,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.restore_rounded, color: _accent),
+            SizedBox(width: 10),
+            Text(
+              'Sicherung wiederherstellen',
+              style: TextStyle(color: _textPrimary, fontSize: 18),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Möchtest du "${backup.name}" auf den Regler übertragen?',
+              style: const TextStyle(color: _textPrimary, fontSize: 14),
+            ),
+            const SizedBox(height: 14),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1E1E24),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: _border),
+              ),
+              child: Column(
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        'Aktueller Reglerwert:',
+                        style: TextStyle(color: _textSecondary, fontSize: 12),
+                      ),
+                      Text(
+                        _formatShift(currentShift),
+                        style: const TextStyle(
+                          color: _textPrimary,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 32),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        'Neuer Wert aus Sicherung:',
+                        style: TextStyle(color: _accent, fontSize: 12),
+                      ),
+                      Text(
+                        _formatShift(backup.heatingCurveShift),
+                        style: const TextStyle(
+                          color: _accent,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Abbrechen', style: TextStyle(color: _textSecondary)),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(backgroundColor: _accent),
+            child: const Text(
+              'Wiederherstellen',
+              style: TextStyle(color: Colors.black),
+            ),
+          ),
+        ],
+      ),
+    );
 
-                    // ── "Demnächst verfügbar" chip ────────────────────
-                    _buildComingSoonChip(),
+    if (confirmed != true) return;
+
+    setState(() => _isRestoring = true);
+    HapticFeedback.heavyImpact();
+
+    try {
+      await provider.writeParameter(
+        ECLRegisters.heatingCurveShift,
+        backup.heatingCurveShift,
+      );
+
+      if (mounted) {
+        setState(() => _isRestoring = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Erfolgreich wiederhergestellt: ${_formatShift(backup.heatingCurveShift)}',
+            ),
+            backgroundColor: const Color(0xFF66BB6A),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isRestoring = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Fehler beim Wiederherstellen: $e'),
+            backgroundColor: const Color(0xFFEF5350),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _deleteBackup(ConfigurationBackup backup) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: _card,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Sicherung löschen?', style: TextStyle(color: _textPrimary)),
+        content: Text(
+          'Möchtest du "${backup.name}" unwiderruflich löschen?',
+          style: const TextStyle(color: _textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Abbrechen', style: TextStyle(color: _textSecondary)),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(backgroundColor: const Color(0xFFEF5350)),
+            child: const Text('Löschen'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await _backupService.deleteBackup(backup.id);
+      await _loadBackups();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final provider = context.watch<ECLProvider>();
+    final isConnected = provider.isConnected;
+    final currentShift =
+        provider.getReading(ECLRegisters.heatingCurveShift)?.displayValue ?? 0.0;
+
+    return Scaffold(
+      backgroundColor: _background,
+      appBar: AppBar(
+        title: const Text(
+          'Sicherungen',
+          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18),
+        ),
+        centerTitle: true,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh_rounded, color: _textSecondary),
+            tooltip: 'Neu laden',
+            onPressed: _loadBackups,
+          ),
+        ],
+      ),
+      body: ListView(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              children: [
+                // ── Status & Snapshot Banner ──────────────────────────────
+                _buildActiveStatusCard(provider, isConnected, currentShift),
+                const SizedBox(height: 20),
+
+                // ── Factory Presets ───────────────────────────────────────
+                _buildSectionHeader('Vordefinierte Profile'),
+                const SizedBox(height: 10),
+                for (final preset in ConfigurationBackup.presets)
+                  _buildPresetTile(preset, provider, isConnected),
+
+                const SizedBox(height: 24),
+
+                // ── User Backups List ─────────────────────────────────────
+                _buildSectionHeader('Eigene Sicherungen (${_backups.length})'),
+                const SizedBox(height: 10),
+                if (_backups.isEmpty)
+                  _buildEmptyState()
+                else
+                  for (final b in _backups)
+                    _buildBackupCard(b, provider, isConnected),
+
+                const SizedBox(height: 32),
+              ],
+            ),
+    );
+  }
+
+  Widget _buildSectionHeader(String title) {
+    return Text(
+      title,
+      style: const TextStyle(
+        color: _textSecondary,
+        fontSize: 13,
+        fontWeight: FontWeight.w600,
+        letterSpacing: 0.5,
+      ),
+    );
+  }
+
+  Widget _buildActiveStatusCard(
+    ECLProvider provider,
+    bool isConnected,
+    double currentShift,
+  ) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: _card,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: _border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: _accent.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(Icons.tune_rounded, color: _accent, size: 22),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Aktiver Regler-Status',
+                      style: TextStyle(
+                        color: _textPrimary,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    Text(
+                      isConnected
+                          ? 'Verbunden · Parallelverschiebung ${_formatShift(currentShift)}'
+                          : 'Offline · Letzter bekannter Stand',
+                      style: TextStyle(
+                        color: isConnected ? const Color(0xFF66BB6A) : _textSecondary,
+                        fontSize: 12,
+                      ),
+                    ),
                   ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: isConnected && !_isRestoring
+                  ? () => _createBackup(provider)
+                  : null,
+              icon: const Icon(Icons.bookmark_add_rounded, size: 18),
+              label: const Text('Aktuelle Einstellung sichern'),
+              style: FilledButton.styleFrom(
+                backgroundColor: _accent,
+                foregroundColor: Colors.black,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
                 ),
               ),
             ),
@@ -97,65 +520,230 @@ class BackupScreen extends StatelessWidget {
     );
   }
 
-  // ── Illustration: layered circle + icon ──────────────────────────────
-  Widget _buildIllustration() {
+  Widget _buildPresetTile(
+    ConfigurationBackup preset,
+    ECLProvider provider,
+    bool isConnected,
+  ) {
+    final isCurrent = isConnected &&
+        (provider.getReading(ECLRegisters.heatingCurveShift)?.displayValue ??
+                0.0) ==
+            preset.heatingCurveShift;
+
     return Container(
-      width: 140,
-      height: 140,
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        gradient: RadialGradient(
-          colors: [_accentDim, _card.withValues(alpha: 0.6)],
-          radius: 0.85,
+        color: _card,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: isCurrent ? _accent.withValues(alpha: 0.5) : _border,
+          width: isCurrent ? 1.5 : 1,
         ),
-        border: Border.all(color: _accent.withValues(alpha: 0.25), width: 1.5),
-        boxShadow: [
-          BoxShadow(
-            color: _accent.withValues(alpha: 0.12),
-            blurRadius: 40,
-            spreadRadius: 8,
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: _accent.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              _formatShift(preset.heatingCurveShift),
+              style: const TextStyle(
+                color: _accent,
+                fontWeight: FontWeight.bold,
+                fontSize: 13,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      preset.name,
+                      style: const TextStyle(
+                        color: _textPrimary,
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    if (isCurrent) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF66BB6A).withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: const Text(
+                          'Aktiv',
+                          style: TextStyle(
+                            color: Color(0xFF66BB6A),
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                if (preset.note != null) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    preset.note!,
+                    style: const TextStyle(
+                      color: _textSecondary,
+                      fontSize: 11.5,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          OutlinedButton(
+            onPressed: isConnected && !isCurrent && !_isRestoring
+                ? () => _restoreBackup(preset, provider)
+                : null,
+            style: OutlinedButton.styleFrom(
+              foregroundColor: _accent,
+              side: BorderSide(
+                color: isConnected && !isCurrent
+                    ? _accent.withValues(alpha: 0.4)
+                    : Colors.transparent,
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              minimumSize: const Size(64, 34),
+            ),
+            child: const Text('Laden', style: TextStyle(fontSize: 12)),
           ),
         ],
-      ),
-      child: Center(
-        child: ShaderMask(
-          shaderCallback: (bounds) => const LinearGradient(
-            colors: [_accent, Color(0xFF6C63FF)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ).createShader(bounds),
-          blendMode: BlendMode.srcIn,
-          child: const Icon(
-            Icons.cloud_done_outlined,
-            size: 64,
-            color: Colors.white, // masked by shader
-          ),
-        ),
       ),
     );
   }
 
-  // ── "Demnächst verfügbar" badge ──────────────────────────────────────
-  Widget _buildComingSoonChip() {
+  Widget _buildBackupCard(
+    ConfigurationBackup backup,
+    ECLProvider provider,
+    bool isConnected,
+  ) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: _accent.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: _accent.withValues(alpha: 0.30)),
+        color: _card,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: _border),
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.schedule_rounded, color: _accent, size: 18),
-          const SizedBox(width: 8),
-          Text(
-            'Demnächst verfügbar',
-            style: TextStyle(
-              color: _accent,
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0.3,
+          Row(
+            children: [
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: _accent.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  _formatShift(backup.heatingCurveShift),
+                  style: const TextStyle(
+                    color: _accent,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      backup.name,
+                      style: const TextStyle(
+                        color: _textPrimary,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    Text(
+                      _formatDateTime(backup.timestamp),
+                      style: const TextStyle(
+                        color: _textSecondary,
+                        fontSize: 11.5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.delete_outline_rounded,
+                    color: _textSecondary, size: 20),
+                tooltip: 'Löschen',
+                onPressed: () => _deleteBackup(backup),
+              ),
+            ],
+          ),
+          if (backup.note != null && backup.note!.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              backup.note!,
+              style: const TextStyle(
+                color: _textSecondary,
+                fontSize: 12,
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          ],
+          if (backup.outdoorTemp != null || backup.flowTemp != null) ...[
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 12,
+              children: [
+                if (backup.outdoorTemp != null)
+                  Text(
+                    'Außen: ${backup.outdoorTemp!.toStringAsFixed(1)} °C',
+                    style: const TextStyle(color: _textSecondary, fontSize: 11),
+                  ),
+                if (backup.flowTemp != null)
+                  Text(
+                    'Vorlauf: ${backup.flowTemp!.toStringAsFixed(1)} °C',
+                    style: const TextStyle(color: _textSecondary, fontSize: 11),
+                  ),
+              ],
+            ),
+          ],
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: isConnected && !_isRestoring
+                  ? () => _restoreBackup(backup, provider)
+                  : null,
+              icon: const Icon(Icons.restore_rounded, size: 16),
+              label: const Text('Wiederherstellen'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: _accent,
+                side: BorderSide(
+                  color: isConnected
+                      ? _accent.withValues(alpha: 0.4)
+                      : Colors.white.withValues(alpha: 0.1),
+                ),
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
             ),
           ),
         ],
@@ -163,30 +751,64 @@ class BackupScreen extends StatelessWidget {
     );
   }
 
-  // ── Decorative blurred gradient orb ──────────────────────────────────
-  Widget _buildOrb({
-    double? top,
-    double? bottom,
-    double? left,
-    double? right,
-    required double size,
-    required List<Color> colors,
-  }) {
-    return Positioned(
-      top: top,
-      bottom: bottom,
-      left: left,
-      right: right,
-      child: IgnorePointer(
-        child: Container(
-          width: size,
-          height: size,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            gradient: RadialGradient(colors: colors),
+  Widget _buildEmptyState() {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: _card.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: _border.withValues(alpha: 0.6)),
+      ),
+      child: Column(
+        children: [
+          Icon(
+            Icons.cloud_queue_rounded,
+            size: 40,
+            color: _textSecondary.withValues(alpha: 0.6),
           ),
-        ),
+          const SizedBox(height: 10),
+          const Text(
+            'Noch keine eigenen Sicherungen',
+            style: TextStyle(
+              color: _textPrimary,
+              fontWeight: FontWeight.w600,
+              fontSize: 14,
+            ),
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'Tippe auf "Aktuelle Einstellung sichern", um einen Wiederherstellungspunkt anzulegen. So kannst du neue Heizkurven risikolos ausprobieren.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: _textSecondary,
+              fontSize: 12,
+              height: 1.4,
+            ),
+          ),
+        ],
       ),
     );
+  }
+
+  String _formatShift(double shift) {
+    if (shift > 0) return '+${shift.toStringAsFixed(0)}';
+    return shift.toStringAsFixed(0);
+  }
+
+  String _formatDateTime(DateTime dt) {
+    final day = dt.day.toString().padLeft(2, '0');
+    final month = dt.month.toString().padLeft(2, '0');
+    final year = dt.year;
+    final hour = dt.hour.toString().padLeft(2, '0');
+    final min = dt.minute.toString().padLeft(2, '0');
+    return '$day.$month.$year · $hour:$min Uhr';
+  }
+
+  String _formatDateTimeShort(DateTime dt) {
+    final day = dt.day.toString().padLeft(2, '0');
+    final month = dt.month.toString().padLeft(2, '0');
+    final hour = dt.hour.toString().padLeft(2, '0');
+    final min = dt.minute.toString().padLeft(2, '0');
+    return '$day.$month. $hour:$min';
   }
 }

@@ -6,6 +6,7 @@ import 'package:heizungstrainer/models/ecl_parameter.dart';
 import 'package:heizungstrainer/models/ecl_reading.dart';
 import 'package:heizungstrainer/providers/ecl_provider.dart';
 import 'package:heizungstrainer/screens/settings_screen.dart';
+import 'package:heizungstrainer/services/heating_analytics_service.dart';
 import 'package:heizungstrainer/widgets/analysis_section.dart';
 import 'package:heizungstrainer/widgets/sparkline_chart.dart';
 import 'package:heizungstrainer/widgets/radial_indicator.dart';
@@ -81,6 +82,10 @@ class HomeScreen extends StatelessWidget {
             child: ListView(
               padding: const EdgeInsets.fromLTRB(16, 4, 16, 32),
               children: [
+                if (provider.isReconnecting) ...[
+                  const _ReconnectingBanner(),
+                  const SizedBox(height: 12),
+                ],
                 // ── Smart Status Banner ─────────────────────
                 _SmartStatusBanner(provider: provider),
                 const SizedBox(height: 18),
@@ -152,6 +157,51 @@ class HomeScreen extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// Reconnecting Banner
+// ═══════════════════════════════════════════════════════════════════════════
+
+class _ReconnectingBanner extends StatelessWidget {
+  const _ReconnectingBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFA726).withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: const Color(0xFFFFA726).withValues(alpha: 0.35),
+        ),
+      ),
+      child: Row(
+        children: [
+          const SizedBox(
+            width: 14,
+            height: 14,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: Color(0xFFFFA726),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Verbindung kurz unterbrochen – erneuter Versuch läuft…',
+              style: TextStyle(
+                color: const Color(0xFFFFA726).withValues(alpha: 0.95),
+                fontSize: 12.5,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // Smart Status Banner
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -163,20 +213,39 @@ class _SmartStatusBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     final outdoorReading = provider.getReading(ECLRegisters.outdoorTemp);
     final shiftReading = provider.getReading(ECLRegisters.heatingCurveShift);
-    final outdoorTemp = outdoorReading?.displayValue ?? 0;
+    final isSensorDisconnected =
+        outdoorReading == null || outdoorReading.isSensorDisconnected;
+    final outdoorTemp = isSensorDisconnected ? 0.0 : outdoorReading.displayValue;
     final shift = shiftReading?.displayValue ?? 0;
 
-    final isSummerMode = outdoorTemp > 17.0;
-    final isHighConsumption = shift.abs() > 3;
+    final isSummerMode = !isSensorDisconnected && outdoorTemp > 17.0;
+    final isHighConsumption = shift > 3;
 
-    final bannerColor = isSummerMode
-        ? const Color(0xFF1B5E20).withValues(alpha: 0.35)
-        : const Color(0xFF2A2A32);
-    final borderColor = isSummerMode
-        ? const Color(0xFF66BB6A).withValues(alpha: 0.4)
-        : const Color(0xFF3A3A44);
-    final iconColor =
-        isSummerMode ? const Color(0xFF66BB6A) : const Color(0xFFFFA726);
+    final bannerColor = isSensorDisconnected
+        ? const Color(0xFFEF5350).withValues(alpha: 0.15)
+        : (isSummerMode
+            ? const Color(0xFF1B5E20).withValues(alpha: 0.35)
+            : const Color(0xFF2A2A32));
+    final borderColor = isSensorDisconnected
+        ? const Color(0xFFEF5350).withValues(alpha: 0.35)
+        : (isSummerMode
+            ? const Color(0xFF66BB6A).withValues(alpha: 0.4)
+            : const Color(0xFF3A3A44));
+    final iconColor = isSensorDisconnected
+        ? const Color(0xFFEF5350)
+        : (isSummerMode ? const Color(0xFF66BB6A) : const Color(0xFFFFA726));
+
+    final title = isSensorDisconnected
+        ? 'Außentemperaturfühler nicht verbunden'
+        : (isSummerMode
+            ? '${outdoorTemp.toStringAsFixed(1)}°C draußen — Sommer-Sparbetrieb'
+            : '${outdoorTemp.toStringAsFixed(1)}°C draußen — Heizbetrieb aktiv');
+
+    final subtitle = isSensorDisconnected
+        ? 'Der ECL-Regler meldet einen Fühlerabriss (S1). Bitte Fühlerverkabelung prüfen.'
+        : (isSummerMode
+            ? 'Die Raumheizung schläft automatisch, um Kosten zu senken.'
+            : 'Die Heizung reguliert aktiv deine Raumtemperatur.');
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -191,16 +260,16 @@ class _SmartStatusBanner extends StatelessWidget {
           Row(
             children: [
               Icon(
-                isSummerMode ? Icons.wb_sunny_rounded : Icons.thermostat,
+                isSensorDisconnected
+                    ? Icons.sensors_off_rounded
+                    : (isSummerMode ? Icons.wb_sunny_rounded : Icons.thermostat),
                 color: iconColor,
                 size: 22,
               ),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  isSummerMode
-                      ? '${outdoorTemp.toStringAsFixed(1)}°C draußen — Sommer-Sparbetrieb'
-                      : '${outdoorTemp.toStringAsFixed(1)}°C draußen — Heizbetrieb aktiv',
+                  title,
                   style: TextStyle(
                     color: iconColor,
                     fontWeight: FontWeight.w600,
@@ -212,9 +281,7 @@ class _SmartStatusBanner extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            isSummerMode
-                ? 'Die Raumheizung schläft automatisch, um Kosten zu senken.'
-                : 'Die Heizung reguliert aktiv deine Raumtemperatur.',
+            subtitle,
             style: TextStyle(
               color: Colors.white.withValues(alpha: 0.7),
               fontSize: 12.5,
@@ -404,6 +471,109 @@ class _HeatingComfortCardState extends State<_HeatingComfortCard> {
     }
   }
 
+  Widget _buildPhysicalImpactPreview(double sliderValue, Color accent) {
+    final outdoorReading = widget.provider.getReading(ECLRegisters.outdoorTemp);
+    final outdoorTemp =
+        (outdoorReading != null && !outdoorReading.isSensorDisconnected)
+            ? outdoorReading.displayValue
+            : 0.0;
+
+    final currentReading =
+        widget.provider.getReading(ECLRegisters.heatingCurveShift);
+    final activeShift = currentReading?.displayValue ?? 0.0;
+
+    final flowTargetCurrent = HeatingAnalyticsService.calculateFlowTarget(
+      outdoorTemp,
+      parallelShift: activeShift,
+    );
+    final flowTargetSelected = HeatingAnalyticsService.calculateFlowTarget(
+      outdoorTemp,
+      parallelShift: sliderValue,
+    );
+    final flowDelta = flowTargetSelected - flowTargetCurrent;
+
+    final percentEnergy = (sliderValue * 6.0).round();
+    final isOffline = !widget.provider.isConnected;
+
+    final String energyText;
+    final String flowText;
+    final IconData icon;
+    final Color color;
+
+    if (sliderValue < 0) {
+      energyText = 'ca. ${(-percentEnergy)}% weniger Heizenergie';
+      flowText =
+          'Vorlauf sinkt bei ${outdoorTemp.toStringAsFixed(0)} °C Außentemp auf ${flowTargetSelected.toStringAsFixed(1)} °C (${flowDelta.toStringAsFixed(1)} °C)';
+      icon = Icons.eco_rounded;
+      color = const Color(0xFF66BB6A);
+    } else if (sliderValue == 0) {
+      energyText = 'Norm-Auslegung (Ausgangsbasis)';
+      flowText =
+          'Vorlauf-Sollwert: ${flowTargetSelected.toStringAsFixed(1)} °C (bei ${outdoorTemp.toStringAsFixed(0)} °C Außentemperatur)';
+      icon = Icons.check_circle_outline_rounded;
+      color = const Color(0xFF8BC34A);
+    } else {
+      energyText = 'ca. +$percentEnergy% höherer Energieaufwand';
+      flowText =
+          'Vorlauf steigt bei ${outdoorTemp.toStringAsFixed(0)} °C Außentemp auf ${flowTargetSelected.toStringAsFixed(1)} °C (+${flowDelta.toStringAsFixed(1)} °C)';
+      icon = Icons.local_fire_department_rounded;
+      color = const Color(0xFFFF7043);
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(top: 14),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withValues(alpha: 0.25)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 16, color: color),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  energyText,
+                  style: TextStyle(
+                    color: color,
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              if (isOffline)
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: const Text(
+                    'Offline: Schreibschutz',
+                    style: TextStyle(color: Color(0xFF9E9EA8), fontSize: 10),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            flowText,
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.75),
+              fontSize: 11,
+              height: 1.3,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final accent = _comfortColor(_sliderValue);
@@ -505,13 +675,15 @@ class _HeatingComfortCardState extends State<_HeatingComfortCard> {
               min: -3,
               max: 3,
               divisions: 6,
-              onChanged: (v) {
-                HapticFeedback.selectionClick();
-                setState(() {
-                  _sliderValue = v;
-                  _isEditing = true;
-                });
-              },
+              onChanged: widget.provider.isConnected
+                  ? (v) {
+                      HapticFeedback.selectionClick();
+                      setState(() {
+                        _sliderValue = v;
+                        _isEditing = true;
+                      });
+                    }
+                  : null,
             ),
           ),
 
@@ -538,6 +710,9 @@ class _HeatingComfortCardState extends State<_HeatingComfortCard> {
               ],
             ),
           ),
+
+          // Live physical impact preview
+          _buildPhysicalImpactPreview(_sliderValue, accent),
 
           // Save/Cancel buttons
           if (_isEditing) ...[
@@ -610,10 +785,12 @@ class _HotWaterCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final reading = provider.getReading(ECLRegisters.hotWaterTemp);
-    final temp = reading?.displayValue ?? 0;
-    final isReady = temp >= 50.0;
-    final accent =
-        isReady ? const Color(0xFF42A5F5) : const Color(0xFFFFA726);
+    final isDisconnected = reading == null || reading.isSensorDisconnected;
+    final temp = isDisconnected ? 0.0 : reading.displayValue;
+    final isReady = !isDisconnected && temp >= 50.0;
+    final accent = isDisconnected
+        ? const Color(0xFF9E9EA8)
+        : (isReady ? const Color(0xFF42A5F5) : const Color(0xFFFFA726));
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -630,6 +807,7 @@ class _HotWaterCard extends StatelessWidget {
             targetTemp: 55.0,
             size: 100,
             accentColor: accent,
+            isDisconnected: isDisconnected,
           ),
           const SizedBox(width: 20),
           // Info
@@ -672,15 +850,17 @@ class _HotWaterCard extends StatelessWidget {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
-                        isReady ? '💧' : '⏳',
+                        isDisconnected ? '⚠️' : (isReady ? '💧' : '⏳'),
                         style: const TextStyle(fontSize: 14),
                       ),
                       const SizedBox(width: 6),
                       Flexible(
                         child: Text(
-                          isReady
-                              ? 'Heiß & Bereit'
-                              : 'Wird nachgeheizt...',
+                          isDisconnected
+                              ? 'Fühler nicht verbunden'
+                              : (isReady
+                                  ? 'Heiß & Bereit'
+                                  : 'Wird nachgeheizt...'),
                           style: TextStyle(
                             color: accent,
                             fontWeight: FontWeight.w600,
@@ -693,7 +873,9 @@ class _HotWaterCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Zieltemperatur: 55.0°C',
+                  isDisconnected
+                      ? 'Kein Fühlersignal (S6)'
+                      : 'Zieltemperatur: 55.0°C',
                   style: TextStyle(
                     fontSize: 11.5,
                     color: Colors.white.withValues(alpha: 0.4),
@@ -731,7 +913,10 @@ class _MetricCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final temp = reading?.displayValue ?? 0;
+    final isDisconnected = reading == null || reading!.isSensorDisconnected;
+    final temp = isDisconnected ? 0.0 : reading!.displayValue;
+    final effectiveColor =
+        isDisconnected ? const Color(0xFF9E9EA8) : accentColor;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -751,9 +936,9 @@ class _MetricCard extends StatelessWidget {
                 height: 34,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: accentColor.withValues(alpha: 0.12),
+                  color: effectiveColor.withValues(alpha: 0.12),
                 ),
-                child: Icon(icon, color: accentColor, size: 17),
+                child: Icon(icon, color: effectiveColor, size: 17),
               ),
               const SizedBox(width: 8),
               Expanded(
@@ -775,27 +960,30 @@ class _MetricCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Text(
-                temp.toStringAsFixed(1),
-                style: const TextStyle(
+                isDisconnected ? '—' : temp.toStringAsFixed(1),
+                style: TextStyle(
                   fontSize: 28,
                   fontWeight: FontWeight.bold,
-                  color: Color(0xFFECECF0),
+                  color: isDisconnected
+                      ? const Color(0xFF9E9EA8)
+                      : const Color(0xFFECECF0),
                 ),
               ),
-              const Padding(
-                padding: EdgeInsets.only(bottom: 4),
-                child: Text(
-                  '°C',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Color(0xFF9E9EA8),
+              if (!isDisconnected)
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 4),
+                  child: Text(
+                    '°C',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Color(0xFF9E9EA8),
+                    ),
                   ),
                 ),
-              ),
             ],
           ),
           // Sparkline
-          if (history.length >= 2) ...[
+          if (!isDisconnected && history.length >= 2) ...[
             const SizedBox(height: 10),
             SparklineChart(
               data: history,
@@ -811,9 +999,9 @@ class _MetricCard extends StatelessWidget {
             child: SizedBox(
               height: 4,
               child: LinearProgressIndicator(
-                value: (temp / 80.0).clamp(0.0, 1.0),
-                backgroundColor: accentColor.withValues(alpha: 0.1),
-                valueColor: AlwaysStoppedAnimation(accentColor),
+                value: isDisconnected ? 0.0 : (temp / 80.0).clamp(0.0, 1.0),
+                backgroundColor: effectiveColor.withValues(alpha: 0.1),
+                valueColor: AlwaysStoppedAnimation(effectiveColor),
               ),
             ),
           ),
@@ -833,10 +1021,20 @@ class _EfficiencyDeltaChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final flow =
-        provider.getReading(ECLRegisters.flowTemp)?.displayValue ?? 0;
-    final ret =
-        provider.getReading(ECLRegisters.returnTemp)?.displayValue ?? 0;
+    final flowReading = provider.getReading(ECLRegisters.flowTemp);
+    final returnReading = provider.getReading(ECLRegisters.returnTemp);
+
+    final hasValidSensors = flowReading != null &&
+        !flowReading.isSensorDisconnected &&
+        returnReading != null &&
+        !returnReading.isSensorDisconnected;
+
+    if (!hasValidSensors) {
+      return const SizedBox.shrink();
+    }
+
+    final flow = flowReading.displayValue;
+    final ret = returnReading.displayValue;
     final delta = flow - ret;
     final isHealthy = delta >= 5 && delta <= 25;
     final color =

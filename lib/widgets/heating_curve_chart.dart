@@ -34,15 +34,16 @@ class HeatingCurveChart extends StatelessWidget {
     required this.currentFlowTemp,
   });
 
+  static final List<FlSpot> _idealSpots = HeatingAnalyticsService.generateHeatingCurve(
+    parallelShift: 0,
+  ).map((p) => FlSpot(p.outdoorTemp, p.flowTarget)).toList();
+
   @override
   Widget build(BuildContext context) {
-    // Generate curve data
-    final activeCurve = HeatingAnalyticsService.generateHeatingCurve(
+    // Generate active curve data for the current parallel shift
+    final activeSpots = HeatingAnalyticsService.generateHeatingCurve(
       parallelShift: parallelShift,
-    );
-    final idealCurve = HeatingAnalyticsService.generateHeatingCurve(
-      parallelShift: 0,
-    );
+    ).map((p) => FlSpot(p.outdoorTemp, p.flowTarget)).toList();
 
     return SizedBox(
       height: 220,
@@ -131,9 +132,7 @@ class HeatingCurveChart extends StatelessWidget {
           lineBarsData: [
             // Ideal curve (shift=0) — dashed reference line
             LineChartBarData(
-              spots: idealCurve
-                  .map((p) => FlSpot(p.outdoorTemp, p.flowTarget))
-                  .toList(),
+              spots: _idealSpots,
               isCurved: true,
               curveSmoothness: 0.3,
               color: const Color(0xFF66BB6A).withValues(alpha: 0.4),
@@ -145,9 +144,7 @@ class HeatingCurveChart extends StatelessWidget {
             ),
             // Active curve (current shift) — solid accent line
             LineChartBarData(
-              spots: activeCurve
-                  .map((p) => FlSpot(p.outdoorTemp, p.flowTarget))
-                  .toList(),
+              spots: activeSpots,
               isCurved: true,
               curveSmoothness: 0.3,
               gradient: const LinearGradient(

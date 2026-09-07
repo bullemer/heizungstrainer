@@ -89,14 +89,14 @@ abstract final class HeatingAnalyticsService {
   ///          × ((roomTarget - outdoorTemp) / (roomTarget - designOutdoor))^exponent
   ///          + parallelShift
   ///
-  /// Returns the calculated flow target, clamped to [roomTarget, 90°C].
+  /// Returns the calculated flow target, clamped to [15°C, 90°C].
   static double calculateFlowTarget(
     double outdoorTemp, {
     double parallelShift = 0,
   }) {
     // When outdoor >= room target, no heating needed
     if (outdoorTemp >= _roomTarget) {
-      return _roomTarget + parallelShift;
+      return (_roomTarget + parallelShift).clamp(15.0, 90.0);
     }
 
     final ratio =
@@ -105,7 +105,7 @@ abstract final class HeatingAnalyticsService {
     final flowTarget =
         _roomTarget + base * math.pow(ratio.clamp(0, 2), _curveExponent) + parallelShift;
 
-    return flowTarget.clamp(_roomTarget, 90.0);
+    return flowTarget.clamp(15.0, 90.0);
   }
 
   /// Generates a series of heating curve data points for chart rendering.
@@ -145,37 +145,40 @@ abstract final class HeatingAnalyticsService {
     // Fallback estimate only when no real cost is available.
     final baseCost = hasActualCost ? annualBaseCost : 1200.0;
 
-    final stepsToFix = (currentShift - idealShift).abs().round();
-    final hasPotential = currentShift.abs() > 1;
+    // Optimization potential physically only exists if currentShift > idealShift (overheating).
+    // If currentShift <= idealShift, the system is at or below the standard curve (already saving).
+    final hasOverheating = currentShift > (idealShift + 0.5);
+    final stepsToFix = hasOverheating ? (currentShift - idealShift).round() : 0;
 
-    // Cap at realistic savings (diminishing returns beyond ~50%)
+    // Potential savings by lowering shift to ideal:
     final rawSavingsPercent = stepsToFix * savingsPerStep;
     final savingsPercent = rawSavingsPercent.clamp(0.0, 0.50);
     final annualSavings = baseCost * savingsPercent;
 
     String advice;
-    if (!hasPotential) {
+    if (currentShift < -3) {
+      advice = 'Die Basis-Wärme ist sehr stark abgesenkt. Du sparst bereits maximale Heizenergie. '
+          'Falls einzelne Räume nicht warm genug werden, erhöhe die '
+          'Einstellung schrittweise Richtung Neutral.';
+    } else if (currentShift < -0.5) {
+      final currentSavedSteps = (idealShift - currentShift).round();
+      final currentSavedPct = (currentSavedSteps * savingsPerStep * 100).round();
+      advice = 'Sparbetrieb aktiv: Deine Heizkurve liegt unter dem Standard. '
+          'Du sparst bereits ca. $currentSavedPct% Heizenergie gegenüber der Normaleinstellung.';
+    } else if (!hasOverheating) {
       advice = 'Deine Heizungseinstellung ist optimal! '
-          'Die Heizkurve läuft im empfohlenen Bereich.';
+          'Die Heizkurve läuft im empfohlenen neutralen Bereich.';
     } else if (currentShift > 3) {
       advice =
           'Deine Basis-Wärme steht deutlich über dem empfohlenen Durchschnitt. '
           'Durch das Absenken um $stepsToFix Stufen senkst du deine '
           'Vorlauftemperatur effizient. Jedes Grad weniger spart ca. 6% '
           'reine Heizenergie!';
-    } else if (currentShift > 0) {
+    } else {
       advice = 'Die Basis-Wärme liegt leicht über dem Optimum. '
           'Eine Absenkung um $stepsToFix Stufe${stepsToFix > 1 ? 'n' : ''} '
           'könnte deine Heizkosten um ca. '
           '${(savingsPercent * 100).round()}% senken.';
-    } else if (currentShift < -3) {
-      advice = 'Die Basis-Wärme ist sehr niedrig eingestellt. '
-          'Falls Räume nicht warm genug werden, erhöhe die '
-          'Einstellung schrittweise.';
-    } else {
-      advice = 'Deine Heizungseinstellung ist nahe am Optimum. '
-          'Kleine Anpassungen können noch ${(savingsPercent * 100).round()}% '
-          'Einsparung bringen.';
     }
 
     return SavingsAnalysis(
@@ -186,7 +189,7 @@ abstract final class HeatingAnalyticsService {
       annualSavingsEuro: annualSavings,
       annualBaseCost: baseCost,
       basedOnActualCost: hasActualCost,
-      hasOptimizationPotential: hasPotential,
+      hasOptimizationPotential: hasOverheating,
       adviceText: advice,
     );
   }

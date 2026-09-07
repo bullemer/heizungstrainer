@@ -85,12 +85,115 @@ class BrunataMeterData {
   /// Will be replaced with actual Brunata API integration.
   factory BrunataMeterData.demo() {
     final now = DateTime.now();
+    const categories = [
+      'Jan',
+      'Feb',
+      'Mär',
+      'Apr',
+      'Mai',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Okt',
+      'Nov',
+      'Dez'
+    ];
+
     return BrunataMeterData(
       currentBillingPeriodCost: 187.50,
       consumedKwh: 1450,
-      communityComparisonPercentage: 23.5,
-      periodStart: DateTime(now.year, now.month, 1),
-      periodEnd: DateTime(now.year, now.month + 1, 0),
+      communityComparisonPercentage: -14.2,
+      periodStart: DateTime(now.year, 1, 1),
+      periodEnd: DateTime(now.year, 12, 31),
+      pricePerKwh: 0.12,
+      heatingYtdActual: 1450,
+      heatingProjection: 2850,
+      warmWaterYtdActual: 420,
+      warmWaterProjection: 840,
+      charts: [
+        const BrunataChart(
+          source: 'liegenschaft_heizung',
+          title: 'Liegenschafts-Vergleich Heizung',
+          subtitle: 'Verbrauch im Vergleich zu 23 Wohneinheiten',
+          unit: 'kWh/m²',
+          categories: categories,
+          series: [
+            BrunataChartSeries(
+              name: 'Meine Wohnung',
+              values: [
+                14.2, 12.8, 9.5, 5.1, 2.0, 0.0, 0.0, 0.0, 1.8, 6.2, 11.0, 13.5
+              ],
+              extrapolated: [
+                false, false, false, false, false, false, false, false, false, false, false, false
+              ],
+            ),
+            BrunataChartSeries(
+              name: 'Liegenschafts-Schnitt',
+              values: [
+                18.5, 16.2, 12.0, 6.8, 2.5, 0.0, 0.0, 0.0, 2.4, 8.1, 14.2, 17.0
+              ],
+              extrapolated: [
+                false, false, false, false, false, false, false, false, false, false, false, false
+              ],
+            ),
+          ],
+        ),
+        const BrunataChart(
+          source: 'month_heizung',
+          title: 'Monatsvergleich Heizung',
+          subtitle: 'Aktuelle Periode vs. Vorjahr',
+          unit: 'kWh',
+          categories: categories,
+          series: [
+            BrunataChartSeries(
+              name: '2025/2026',
+              values: [
+                260, 220, 180, 95, 30, 0, 0, 0, 25, 110, 210, 250
+              ],
+              extrapolated: [
+                false, false, false, false, false, false, false, false, true, true, true, true
+              ],
+            ),
+            BrunataChartSeries(
+              name: '2024/2025',
+              values: [
+                290, 250, 205, 110, 40, 0, 0, 0, 35, 125, 230, 280
+              ],
+              extrapolated: [
+                false, false, false, false, false, false, false, false, false, false, false, false
+              ],
+            ),
+          ],
+        ),
+        const BrunataChart(
+          source: 'liegenschaft_warmwasser',
+          title: 'Liegenschafts-Vergleich Warmwasser',
+          subtitle: 'Verbrauch im Vergleich zum Gebäude-Mittel',
+          unit: 'kWh',
+          categories: categories,
+          series: [
+            BrunataChartSeries(
+              name: 'Meine Wohnung',
+              values: [
+                42, 38, 40, 39, 37, 35, 33, 34, 36, 38, 40, 41
+              ],
+              extrapolated: [
+                false, false, false, false, false, false, false, false, false, false, false, false
+              ],
+            ),
+            BrunataChartSeries(
+              name: 'Liegenschafts-Schnitt',
+              values: [
+                48, 45, 46, 44, 42, 40, 38, 39, 41, 43, 46, 47
+              ],
+              extrapolated: [
+                false, false, false, false, false, false, false, false, false, false, false, false
+              ],
+            ),
+          ],
+        ),
+      ],
     );
   }
 }

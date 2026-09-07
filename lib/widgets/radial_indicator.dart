@@ -8,6 +8,7 @@ class RadialTemperatureIndicator extends StatelessWidget {
   final double targetTemp;
   final double size;
   final Color accentColor;
+  final bool isDisconnected;
 
   const RadialTemperatureIndicator({
     super.key,
@@ -15,11 +16,12 @@ class RadialTemperatureIndicator extends StatelessWidget {
     this.targetTemp = 55.0,
     this.size = 120,
     required this.accentColor,
+    this.isDisconnected = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    final double progress = (targetTemp > 0)
+    final double progress = (targetTemp > 0 && !isDisconnected)
         ? (currentTemp / targetTemp).clamp(0.0, 1.0)
         : 0.0;
 
@@ -36,22 +38,23 @@ class RadialTemperatureIndicator extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                currentTemp.toStringAsFixed(1),
+                isDisconnected ? '—' : currentTemp.toStringAsFixed(1),
                 style: TextStyle(
-                  color: Colors.white,
+                  color: isDisconnected ? const Color(0xFF9E9EA8) : Colors.white,
                   fontSize: size * 0.22,
                   fontWeight: FontWeight.bold,
                   height: 1.1,
                 ),
               ),
-              Text(
-                '°C',
-                style: TextStyle(
-                  color: Colors.white70,
-                  fontSize: size * 0.12,
-                  height: 1.0,
+              if (!isDisconnected)
+                Text(
+                  '°C',
+                  style: TextStyle(
+                    color: Colors.white70,
+                    fontSize: size * 0.12,
+                    height: 1.0,
+                  ),
                 ),
-              ),
             ],
           ),
         ),
