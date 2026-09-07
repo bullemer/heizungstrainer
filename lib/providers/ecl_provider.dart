@@ -150,7 +150,13 @@ class ECLProvider extends ChangeNotifier {
       _selectedControllerId == 'weishaupt_wem';
   bool get isNibeController =>
       _selectedControllerId == 'nibe_modbus';
-  bool get isSimulatedBilling => _selectedBillingId != 'brunata_hamburg';
+
+  final Map<String, bool> _billingHasCredentials = {};
+
+  bool get isSimulatedBilling {
+    if (_selectedBillingId == 'brunata_hamburg') return false;
+    return !(_billingHasCredentials[_selectedBillingId] ?? false);
+  }
 
   BrunataSyncState get brunataSyncState => _brunataSyncState;
   BrunataMeterData? get brunataData => _brunataData;
@@ -202,6 +208,7 @@ class ECLProvider extends ChangeNotifier {
     _activeBillingProvider = DeviceRegistry.createBillingProvider(
       _selectedBillingId,
       scraperService: _brunataScraper,
+      secureStorage: _secureStorage,
     );
     _brunataScraper.onStateChange = (state) {
       _brunataSyncState = state;
@@ -244,7 +251,9 @@ class ECLProvider extends ChangeNotifier {
         _activeBillingProvider = DeviceRegistry.createBillingProvider(
           savedBill,
           scraperService: _brunataScraper,
+          secureStorage: _secureStorage,
         );
+        _billingHasCredentials[savedBill] = await _activeBillingProvider.hasCredentials();
       }
       notifyListeners();
     } catch (e) {
@@ -422,8 +431,11 @@ class ECLProvider extends ChangeNotifier {
     _activeBillingProvider = DeviceRegistry.createBillingProvider(
       id,
       scraperService: _brunataScraper,
+      secureStorage: _secureStorage,
     );
     try {
+      final hasCreds = await _activeBillingProvider.hasCredentials();
+      _billingHasCredentials[id] = hasCreds;
       await _secureStorage.write(key: _billingStorageKey, value: id);
     } catch (e) {
       debugPrint('[Provider] Could not persist selected billing provider: $e');
@@ -945,11 +957,42 @@ class ECLProvider extends ChangeNotifier {
   /// Whether credentials for the active billing provider are stored.
   Future<bool> hasBrunataCredentials() => _activeBillingProvider.hasCredentials();
 
-  /// Currently stored username (or null).
-  Future<String?> getBrunataUsername() => _brunataScraper.getUsername();
+  /// Currently stored username for the active billing provider.
+  Future<String?> getBillingUsername() async {
+    if (_selectedBillingId == 'brunata_hamburg') {
+      return _brunataScraper.getUsername();
+    }
+    return _activeBillingProvider.getUsername();
+  }
 
-  /// Currently stored password (or null).
-  Future<String?> getBrunataPassword() => _brunataScraper.getPassword();
+  /// Currently stored password for the active billing provider.
+  Future<String?> getBillingPassword() async {
+    if (_selectedBillingId == 'brunata_hamburg') {
+      return _brunataScraper.getPassword();
+    }
+    return _activeBillingProvider.getPassword();
+  }
+
+  /// Currently configured portal URL for the active billing provider.
+  Future<String> getBillingPortalUrl() async {
+    if (_selectedBillingId == 'brunata_hamburg') {
+      return _brunataScraper.getPortalUrl();
+    }
+    return _activeBillingProvider.getPortalUrl();
+  }
+
+  /// Updates portal URL for the active billing provider.
+  Future<void> setBillingPortalUrl(String url) async {
+    if (_selectedBillingId == 'brunata_hamburg') {
+      await _brunataScraper.savePortalUrl(url);
+    }
+    await _activeBillingProvider.setPortalUrl(url);
+    notifyListeners();
+  }
+
+  /// Legacy aliases
+  Future<String?> getBrunataUsername() => getBillingUsername();
+  Future<String?> getBrunataPassword() => getBillingPassword();
 
   /// Configured price per kWh used to estimate heating cost.
   ///
@@ -997,6 +1040,7 @@ class ECLProvider extends ChangeNotifier {
     required String password,
     required double pricePerKwh,
     String? carrierId,
+    String? portalUrl,
     bool isCustom = true,
     bool syncAfterSave = false,
   }) async {
@@ -1004,6 +1048,12 @@ class ECLProvider extends ChangeNotifier {
       username: username,
       password: password,
     );
+    if (portalUrl != null && portalUrl.trim().isNotEmpty) {
+      await _activeBillingProvider.setPortalUrl(portalUrl.trim());
+    }
+    _billingHasCredentials[_selectedBillingId] =
+        username.trim().isNotEmpty && password.isNotEmpty;
+
     await _activeBillingProvider.setPricePerKwh(pricePerKwh);
     await _energyPriceService.saveUserPrice(
       pricePerKwh,
@@ -1016,6 +1066,9 @@ class ECLProvider extends ChangeNotifier {
         username: username,
         password: password,
       );
+      if (portalUrl != null && portalUrl.trim().isNotEmpty) {
+        await _brunataScraper.savePortalUrl(portalUrl.trim());
+      }
       await _brunataScraper.savePricePerKwh(pricePerKwh);
     }
 

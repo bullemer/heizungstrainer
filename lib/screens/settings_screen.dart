@@ -33,6 +33,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final _formKey = GlobalKey<FormState>();
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _portalUrlController = TextEditingController();
   final _priceController = TextEditingController();
 
   final _modbusHostController = TextEditingController();
@@ -114,6 +115,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   double _nibeMultiplier = 0.1;
   bool _nibeIsHolding = true;
   bool _testingNibe = false;
+  bool _testingBilling = false;
 
   bool _obscurePassword = true;
   bool _loading = true;
@@ -131,8 +133,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _loadCurrentValues() async {
     try {
       final provider = context.read<ECLProvider>();
-      final username = await provider.getBrunataUsername();
-      final password = await provider.getBrunataPassword();
+      final username = await provider.getBillingUsername();
+      final password = await provider.getBillingPassword();
+      final portalUrl = await provider.getBillingPortalUrl();
       final price = await provider.getPricePerKwh();
       final isCustom = await provider.energyPriceService.isCustomPrice();
       final savedCarrierId = await provider.energyPriceService.getSavedCarrierId();
@@ -223,6 +226,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       setState(() {
         _usernameController.text = username ?? '';
         _passwordController.text = password ?? '';
+        _portalUrlController.text = portalUrl;
         _priceController.text = _formatPrice(price);
         _selectedCarrierId = savedCarrierId ??
             (provider.selectedBillingId == 'brunata_hamburg'
@@ -254,6 +258,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void dispose() {
     _usernameController.dispose();
     _passwordController.dispose();
+    _portalUrlController.dispose();
     _priceController.dispose();
     _modbusHostController.dispose();
     _modbusPortController.dispose();
@@ -681,6 +686,50 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  Future<void> _testBillingConnection() async {
+    setState(() => _testingBilling = true);
+    final provider = context.read<ECLProvider>();
+    await provider.saveBillingSettings(
+      username: _usernameController.text.trim(),
+      password: _passwordController.text,
+      pricePerKwh: _parsePrice(_priceController.text) ?? 0.128,
+      carrierId: _selectedCarrierId,
+      portalUrl: _portalUrlController.text.trim(),
+      isCustom: _isCustomPrice,
+      syncAfterSave: false,
+    );
+    await provider.syncBillingData();
+    if (!mounted) return;
+    setState(() => _testingBilling = false);
+
+    if (provider.brunataSyncError == null && provider.brunataData != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '${provider.currentBillingDescriptor.name} Synchronisation erfolgreich!\n'
+            'Verbrauch: ${provider.brunataData!.consumedKwh.toStringAsFixed(0)} kWh | '
+            'Kosten: ${provider.brunataData!.currentBillingPeriodCost.toStringAsFixed(2)} € | '
+            'Gebäudevergleich: ${provider.brunataData!.communityComparisonPercentage > 0 ? "+" : ""}${provider.brunataData!.communityComparisonPercentage.toStringAsFixed(1)}%',
+          ),
+          backgroundColor: const Color(0xFF1B3D2F),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Fehler bei Synchronisation: ${provider.brunataSyncError ?? "Unbekannter Fehler"}',
+          ),
+          backgroundColor: const Color(0xFF5C1D1D),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    }
+  }
+
   Future<void> _save({required bool sync}) async {
     if (!_formKey.currentState!.validate()) return;
     FocusScope.of(context).unfocus();
@@ -850,6 +899,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       password: _passwordController.text,
       pricePerKwh: _parsePrice(_priceController.text)!,
       carrierId: _selectedCarrierId,
+      portalUrl: _portalUrlController.text.trim(),
       isCustom: _isCustomPrice,
       syncAfterSave: sync,
     );
@@ -955,20 +1005,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         return _BillingProviderCard(
                           descriptor: billingDesc,
                           isSelected: isSelected,
-                          onSelect: () => provider
-                              .setSelectedBillingProvider(billingDesc.id),
+                          onSelect: () async {
+                            await provider
+                                .setSelectedBillingProvider(billingDesc.id);
+                            final u = await provider.getBillingUsername();
+                            final p = await provider.getBillingPassword();
+                            final url = await provider.getBillingPortalUrl();
+                            if (!mounted) return;
+                            setState(() {
+                              _usernameController.text = u ?? '';
+                              _passwordController.text = p ?? '';
+                              _portalUrlController.text = url;
+                            });
+                          },
                         );
                       }),
                       const SizedBox(height: 16),
 
-                      // Credentials accordion or simulated info
-                      if (provider.selectedBillingId == 'brunata_hamburg') ...[
-                        _buildBrunataCredentialsFields(),
-                      ] else ...[
-                        _buildSimulatedBillingNotice(
-                          provider.currentBillingDescriptor,
-                        ),
-                      ],
+                      _buildBillingCredentialsFields(provider),
                       const SizedBox(height: 28),
 
                       // ── SECTION 3: TARIFF & COST ──────────────────
@@ -3054,92 +3108,213 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Widget _buildBrunataCredentialsFields() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFF24242C),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFF3A3A44)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+  Widget _buildBillingCredentialsFields(ECLProvider provider) {
+    final desc = provider.currentBillingDescriptor;
+    final isBrunataHamburg = provider.selectedBillingId == 'brunata_hamburg';
+
+    String title;
+    String userLabel;
+    String subtitle;
+    String defaultPortal;
+
+    switch (provider.selectedBillingId) {
+      case 'brunata_hamburg':
+        title = 'Brunata Portal-Zugang';
+        userLabel = 'Kundennummer / Benutzername';
+        subtitle =
+            'Verschlüsselt lokal gespeichert für den monatlichen Abrechnungsabruf (portal.brunata-hamburg.de).';
+        defaultPortal = 'https://portal.brunata-hamburg.de';
+        break;
+      case 'brunata_muenchen':
+        title = 'Brunata München Portal-Zugang';
+        userLabel = 'E-Mail / Benutzername / Kundennummer';
+        subtitle =
+            'Verschlüsselt lokal gespeichert für das BRUNATA-METRONA München Portal.';
+        defaultPortal = 'https://meine.brunata-metrona.de';
+        break;
+      case 'brunata_huerth':
+        title = 'Brunata Hürth Portal-Zugang';
+        userLabel = 'Kundennummer / Benutzername';
+        subtitle =
+            'Verschlüsselt lokal gespeichert für das BRUNATA-METRONA Hürth Portal (Köln/Rheinland).';
+        defaultPortal = 'https://portal.brunata-huerth.de';
+        break;
+      case 'kalo':
+        title = 'KALO Bewohnerportal-Zugang';
+        userLabel = 'E-Mail / Bewohner-ID / Kundennummer';
+        subtitle =
+            'Verschlüsselt lokal gespeichert für das KALO (Kalorimeta) Bewohnerportal.';
+        defaultPortal = 'https://bewohner.kalo.de';
+        break;
+      case 'techem_smart':
+        title = 'Techem Portal- & Smart System Zugang';
+        userLabel = 'Benutzername / E-Mail-Adresse';
+        subtitle =
+            'Verschlüsselt lokal gespeichert für das Techem Mieter- und Kundenportal.';
+        defaultPortal = 'https://kundenportal.techem.de';
+        break;
+      case 'ista_ecotrend':
+        title = 'ista EcoTrend Portal- & API-Zugang';
+        userLabel = 'E-Mail / ista Connect Benutzername';
+        subtitle =
+            'Verschlüsselt lokal gespeichert für ista EcoTrend (Essen) Webportal & REST API.';
+        defaultPortal = 'https://ecotrend.ista.de';
+        break;
+      case 'minol_zenner':
+        title = 'Minol e-Service Portal-Zugang';
+        userLabel = 'Nutzername / Liegenschafts-ID';
+        subtitle =
+            'Verschlüsselt lokal gespeichert für das Minol e-Service Portal.';
+        defaultPortal = 'https://www.minol.de/e-service-portal.html';
+        break;
+      default:
+        title = '${desc.name} Portal-Zugang';
+        userLabel = 'Benutzername / Kundennummer';
+        subtitle =
+            'Verschlüsselt lokal gespeichert für die Abrechnungssynchronisation.';
+        defaultPortal = '';
+    }
+
+    const accent = Color(0xFFFFA726);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (!isBrunataHamburg) ...[
+          _buildSimulatedBillingNotice(desc),
+          const SizedBox(height: 14),
+        ],
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: const Color(0xFF24242C),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xFF3A3A44)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Icon(Icons.lock_person_outlined,
-                  color: Color(0xFFFFA726), size: 20),
-              const SizedBox(width: 8),
-              const Text(
-                'Brunata Portal-Zugang',
+              Row(
+                children: [
+                  const Icon(Icons.lock_person_outlined,
+                      color: accent, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 14.5,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFFECECF0),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Text(
+                subtitle,
                 style: TextStyle(
-                  fontSize: 14.5,
-                  fontWeight: FontWeight.w700,
-                  color: Color(0xFFECECF0),
+                  fontSize: 12,
+                  color: Colors.white.withValues(alpha: 0.5),
+                ),
+              ),
+              const SizedBox(height: 14),
+              TextFormField(
+                controller: _usernameController,
+                keyboardType: TextInputType.text,
+                autocorrect: false,
+                enableSuggestions: false,
+                decoration: _decoration(
+                  label: userLabel,
+                  icon: Icons.badge_outlined,
+                ),
+                validator: (v) {
+                  final p = context.read<ECLProvider>();
+                  if (p.selectedBillingId == 'brunata_hamburg') {
+                    if (v == null || v.trim().isEmpty) {
+                      return 'Bitte Kundennummer eingeben';
+                    }
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _passwordController,
+                obscureText: _obscurePassword,
+                autocorrect: false,
+                enableSuggestions: false,
+                decoration: _decoration(
+                  label: 'Kennwort / Passwort',
+                  icon: Icons.lock_outline_rounded,
+                  suffix: IconButton(
+                    icon: Icon(
+                      _obscurePassword
+                          ? Icons.visibility_outlined
+                          : Icons.visibility_off_outlined,
+                      size: 20,
+                    ),
+                    onPressed: () =>
+                        setState(() => _obscurePassword = !_obscurePassword),
+                  ),
+                ),
+                validator: (v) {
+                  final p = context.read<ECLProvider>();
+                  if (p.selectedBillingId == 'brunata_hamburg') {
+                    if (v == null || v.isEmpty) {
+                      return 'Bitte Kennwort eingeben';
+                    }
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _portalUrlController,
+                keyboardType: TextInputType.url,
+                autocorrect: false,
+                decoration: _decoration(
+                  label: 'Portal-URL / Endpunkt (optional)',
+                  icon: Icons.link_rounded,
+                ).copyWith(
+                  helperText: defaultPortal.isNotEmpty
+                      ? 'Standard: $defaultPortal'
+                      : null,
+                  helperStyle: TextStyle(
+                    fontSize: 11,
+                    color: Colors.white.withValues(alpha: 0.4),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 14),
+              OutlinedButton.icon(
+                onPressed: _testingBilling ? null : _testBillingConnection,
+                icon: _testingBilling
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: accent,
+                        ),
+                      )
+                    : const Icon(Icons.sync_rounded, size: 18),
+                label: Text(
+                  _testingBilling
+                      ? 'Synchronisiere...'
+                      : '${desc.name} Daten abrufen',
+                ),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: accent,
+                  side: const BorderSide(color: accent),
+                  minimumSize: const Size.fromHeight(44),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 6),
-          Text(
-            'Verschlüsselt lokal gespeichert für den monatlichen Abrechnungsabruf.',
-            style: TextStyle(
-              fontSize: 12,
-              color: Colors.white.withValues(alpha: 0.5),
-            ),
-          ),
-          const SizedBox(height: 14),
-          TextFormField(
-            controller: _usernameController,
-            keyboardType: TextInputType.text,
-            autocorrect: false,
-            enableSuggestions: false,
-            decoration: _decoration(
-              label: 'Kundennummer / Benutzername',
-              icon: Icons.badge_outlined,
-            ),
-            validator: (v) {
-              final p = context.read<ECLProvider>();
-              if (p.selectedBillingId == 'brunata_hamburg') {
-                if (v == null || v.trim().isEmpty) {
-                  return 'Bitte Kundennummer eingeben';
-                }
-              }
-              return null;
-            },
-          ),
-          const SizedBox(height: 12),
-          TextFormField(
-            controller: _passwordController,
-            obscureText: _obscurePassword,
-            autocorrect: false,
-            enableSuggestions: false,
-            decoration: _decoration(
-              label: 'Kennwort',
-              icon: Icons.lock_outline_rounded,
-              suffix: IconButton(
-                icon: Icon(
-                  _obscurePassword
-                      ? Icons.visibility_outlined
-                      : Icons.visibility_off_outlined,
-                  size: 20,
-                ),
-                onPressed: () =>
-                    setState(() => _obscurePassword = !_obscurePassword),
-              ),
-            ),
-            validator: (v) {
-              final p = context.read<ECLProvider>();
-              if (p.selectedBillingId == 'brunata_hamburg') {
-                if (v == null || v.isEmpty) {
-                  return 'Bitte Kennwort eingeben';
-                }
-              }
-              return null;
-            },
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 

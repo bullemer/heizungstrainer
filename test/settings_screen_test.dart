@@ -61,8 +61,11 @@ void main() {
 
       // Known Billing Providers
       expect(find.text('Brunata Hamburg'), findsWidgets);
+      expect(find.text('Brunata München'), findsOneWidget);
+      expect(find.text('Brunata Hürth'), findsOneWidget);
+      expect(find.text('KALO (Kalorimeta)'), findsOneWidget);
       expect(find.text('Techem Smart System'), findsOneWidget);
-      expect(find.text('ista EcoTrend'), findsOneWidget);
+      expect(find.text('ista EcoTrend (Essen)'), findsOneWidget);
       expect(find.text('Minol Messtechnik'), findsOneWidget);
 
       // Action buttons
@@ -151,7 +154,7 @@ void main() {
 
     testWidgets('selecting Techem billing provider updates state and displays simulation note',
         (WidgetTester tester) async {
-      tester.view.physicalSize = const Size(1080, 2400);
+      tester.view.physicalSize = const Size(1080, 5000);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.resetPhysicalSize);
 

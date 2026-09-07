@@ -1,6 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:heizungstrainer/billing/billing_provider.dart';
 import 'package:heizungstrainer/billing/brunata_hamburg_billing_provider.dart';
+import 'package:heizungstrainer/billing/brunata_muenchen_billing_provider.dart';
+import 'package:heizungstrainer/billing/brunata_huerth_billing_provider.dart';
+import 'package:heizungstrainer/billing/kalo_billing_provider.dart';
+import 'package:heizungstrainer/billing/techem_billing_provider.dart';
+import 'package:heizungstrainer/billing/ista_billing_provider.dart';
+import 'package:heizungstrainer/billing/minol_billing_provider.dart';
 import 'package:heizungstrainer/billing/mock_billing_provider.dart';
 import 'package:heizungstrainer/controllers/danfoss_ecl_310_controller.dart';
 import 'package:heizungstrainer/controllers/generic_modbus_controller.dart';
@@ -138,35 +145,62 @@ class DeviceRegistry {
       name: 'Brunata Hamburg',
       organization: 'Brunata Wärmemessdienst Hamburg',
       authType: BillingAuthType.portalScraper,
-      description: 'Automatische Monats- und Liegenschafts-Synchronisation über das Mieterportal.',
+      description: 'Automatische Monats- und Liegenschafts-Synchronisation über das Mieterportal (portal.brunata-hamburg.de).',
       isSupported: true,
       icon: Icons.apartment_rounded,
+    ),
+    BillingProviderDescriptor(
+      id: 'brunata_muenchen',
+      name: 'Brunata München',
+      organization: 'BRUNATA Wärmemessdienst München',
+      authType: BillingAuthType.portalScraper,
+      description: 'uVI-Verbrauchsinformation und Monatsanalyse über das BRUNATA-METRONA Portal München.',
+      isSupported: true,
+      icon: Icons.location_city_rounded,
+    ),
+    BillingProviderDescriptor(
+      id: 'brunata_huerth',
+      name: 'Brunata Hürth',
+      organization: 'BRUNATA-METRONA GmbH Hürth',
+      authType: BillingAuthType.portalScraper,
+      description: 'Verbrauchsauswertung und Liegenschaftsvergleich über das BRUNATA-METRONA Portal West (Hürth/Köln).',
+      isSupported: true,
+      icon: Icons.domain_rounded,
+    ),
+    BillingProviderDescriptor(
+      id: 'kalo',
+      name: 'KALO (Kalorimeta)',
+      organization: 'Kalorimeta GmbH (noventic)',
+      authType: BillingAuthType.portalScraper,
+      description: 'Verbrauchsanalyse für Heizung und Warmwasser über das KALO Mieter- & Bewohnerportal.',
+      isSupported: true,
+      icon: Icons.speed_rounded,
     ),
     BillingProviderDescriptor(
       id: 'techem_smart',
       name: 'Techem Smart System',
       organization: 'Techem Energy Services GmbH',
       authType: BillingAuthType.restApi,
-      description: 'Verbrauchsübermittlung über Techem Funk-Heizkostenverteiler.',
-      isSupported: false,
+      description: 'Funk-Heizkostenverteiler & Mieterportal-Integration über Techem Smart Services.',
+      isSupported: true,
       icon: Icons.sensors_rounded,
     ),
     BillingProviderDescriptor(
       id: 'ista_ecotrend',
-      name: 'ista EcoTrend',
-      organization: 'ista SE',
+      name: 'ista EcoTrend (Essen)',
+      organization: 'ista SE (Essen)',
       authType: BillingAuthType.restApi,
-      description: 'Monatliche unterjährige Verbrauchsinformation (uVI) via ista Portal.',
-      isSupported: false,
+      description: 'Monatliche unterjährige Verbrauchsinformation (uVI) via ista EcoTrend Webportal & API.',
+      isSupported: true,
       icon: Icons.eco_rounded,
     ),
     BillingProviderDescriptor(
       id: 'minol_zenner',
       name: 'Minol Messtechnik',
       organization: 'Minol Messtechnik W. Lehmann GmbH & Co. KG',
-      authType: BillingAuthType.fileImport,
-      description: 'Direkter Import von Abrechnungsnachweisen und Minol e-Service.',
-      isSupported: false,
+      authType: BillingAuthType.portalScraper,
+      description: 'Monatliche Verbrauchsinformation via Minol e-Service Portal & Abrechnungsimport.',
+      isSupported: true,
       icon: Icons.receipt_long_rounded,
     ),
   ];
@@ -243,22 +277,38 @@ class DeviceRegistry {
 
   /// Creates a billing provider instance for the given ID.
   ///
-  /// Returns a real scraper adapter for Brunata Hamburg or a
-  /// simulated mock adapter for other providers.
+  /// Returns a concrete adapter for supported services (Brunata Hamburg,
+  /// Brunata München, Brunata Hürth, KALO, Techem, ista, Minol) or a
+  /// simulated mock adapter for testing.
   static BillingProvider createBillingProvider(
     String id, {
     BrunataLocalScraperService? scraperService,
+    FlutterSecureStorage? secureStorage,
     double? pricePerKwh,
   }) {
-    if (id == 'brunata_hamburg') {
-      return BrunataHamburgBillingProvider(scraper: scraperService);
+    switch (id) {
+      case 'brunata_hamburg':
+        return BrunataHamburgBillingProvider(scraper: scraperService);
+      case 'brunata_muenchen':
+        return BrunataMuenchenBillingProvider(secureStorage: secureStorage);
+      case 'brunata_huerth':
+        return BrunataHuerthBillingProvider(secureStorage: secureStorage);
+      case 'kalo':
+        return KaloBillingProvider(secureStorage: secureStorage);
+      case 'techem_smart':
+        return TechemBillingProvider(secureStorage: secureStorage);
+      case 'ista_ecotrend':
+        return IstaEcoTrendBillingProvider(secureStorage: secureStorage);
+      case 'minol_zenner':
+        return MinolBillingProvider(secureStorage: secureStorage);
+      default:
+        final desc = getBillingProviderDescriptor(id);
+        return MockBillingProvider(
+          id: desc.id,
+          displayName: desc.name,
+          organization: desc.organization,
+          authType: desc.authType,
+        );
     }
-    final desc = getBillingProviderDescriptor(id);
-    return MockBillingProvider(
-      id: desc.id,
-      displayName: desc.name,
-      organization: desc.organization,
-      authType: desc.authType,
-    );
   }
 }

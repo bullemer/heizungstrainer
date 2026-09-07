@@ -104,10 +104,24 @@ class EnergyPriceService {
 
   /// Returns the recommended default price for a given billing provider.
   double getRecommendedPriceForProvider(String? billingProviderId) {
-    if (billingProviderId == 'brunata_hamburg') {
-      return getCarrierById('district_heating_hamburg').benchmarkPricePerKwh; // 0.132
+    switch (billingProviderId) {
+      case 'brunata_hamburg':
+        return getCarrierById('district_heating_hamburg').benchmarkPricePerKwh; // 0.132
+      case 'brunata_muenchen':
+        return 0.128; // München Fernwärme/Gas
+      case 'brunata_huerth':
+        return 0.124; // Rheinland Fernwärme/Gas
+      case 'kalo':
+        return 0.122; // National average
+      case 'techem_smart':
+        return 0.125;
+      case 'ista_ecotrend':
+        return 0.122;
+      case 'minol_zenner':
+        return 0.125;
+      default:
+        return defaultRealisticPrice; // 0.128
     }
-    return defaultRealisticPrice; // 0.128
   }
 
   /// Retrieves the effective price per kWh.

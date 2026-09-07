@@ -3,7 +3,13 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:heizungstrainer/billing/billing_provider.dart';
 import 'package:heizungstrainer/billing/brunata_hamburg_billing_provider.dart';
+import 'package:heizungstrainer/billing/brunata_huerth_billing_provider.dart';
+import 'package:heizungstrainer/billing/brunata_muenchen_billing_provider.dart';
+import 'package:heizungstrainer/billing/ista_billing_provider.dart';
+import 'package:heizungstrainer/billing/kalo_billing_provider.dart';
+import 'package:heizungstrainer/billing/minol_billing_provider.dart';
 import 'package:heizungstrainer/billing/mock_billing_provider.dart';
+import 'package:heizungstrainer/billing/techem_billing_provider.dart';
 import 'package:heizungstrainer/controllers/danfoss_ecl_310_controller.dart';
 import 'package:heizungstrainer/controllers/bosch_buderus_ems_controller.dart';
 import 'package:heizungstrainer/controllers/viessmann_controller.dart';
@@ -133,11 +139,25 @@ void main() {
       final brunata = providers.firstWhere((p) => p.id == 'brunata_hamburg');
       expect(brunata.isSupported, isTrue);
 
+      final brunataMuenchen =
+          providers.firstWhere((p) => p.id == 'brunata_muenchen');
+      expect(brunataMuenchen.isSupported, isTrue);
+
+      final brunataHuerth =
+          providers.firstWhere((p) => p.id == 'brunata_huerth');
+      expect(brunataHuerth.isSupported, isTrue);
+
+      final kalo = providers.firstWhere((p) => p.id == 'kalo');
+      expect(kalo.isSupported, isTrue);
+
       final techem = providers.firstWhere((p) => p.id == 'techem_smart');
-      expect(techem.isSupported, isFalse);
+      expect(techem.isSupported, isTrue);
 
       final ista = providers.firstWhere((p) => p.id == 'ista_ecotrend');
-      expect(ista.isSupported, isFalse);
+      expect(ista.isSupported, isTrue);
+
+      final minol = providers.firstWhere((p) => p.id == 'minol_zenner');
+      expect(minol.isSupported, isTrue);
     });
 
     test('creates default active controller and billing provider', () {
@@ -177,9 +197,32 @@ void main() {
       final brunata = DeviceRegistry.createBillingProvider('brunata_hamburg');
       expect(brunata, isA<BrunataHamburgBillingProvider>());
 
+      final bMuenchen = DeviceRegistry.createBillingProvider('brunata_muenchen');
+      expect(bMuenchen, isA<BrunataMuenchenBillingProvider>());
+      expect(bMuenchen.displayName, contains('Brunata München'));
+
+      final bHuerth = DeviceRegistry.createBillingProvider('brunata_huerth');
+      expect(bHuerth, isA<BrunataHuerthBillingProvider>());
+      expect(bHuerth.displayName, contains('Brunata Hürth'));
+
+      final kalo = DeviceRegistry.createBillingProvider('kalo');
+      expect(kalo, isA<KaloBillingProvider>());
+      expect(kalo.displayName, contains('KALO'));
+
       final techem = DeviceRegistry.createBillingProvider('techem_smart');
-      expect(techem, isA<MockBillingProvider>());
+      expect(techem, isA<TechemBillingProvider>());
       expect(techem.displayName, contains('Techem'));
+
+      final ista = DeviceRegistry.createBillingProvider('ista_ecotrend');
+      expect(ista, isA<IstaEcoTrendBillingProvider>());
+      expect(ista.displayName, contains('ista'));
+
+      final minol = DeviceRegistry.createBillingProvider('minol_zenner');
+      expect(minol, isA<MinolBillingProvider>());
+      expect(minol.displayName, contains('Minol'));
+
+      final fallback = DeviceRegistry.createBillingProvider('unknown_provider');
+      expect(fallback, isA<MockBillingProvider>());
     });
   });
 

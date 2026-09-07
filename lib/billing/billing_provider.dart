@@ -77,6 +77,21 @@ abstract class BillingProvider {
   /// Persists the tariff price per kWh.
   Future<void> setPricePerKwh(double price);
 
+  /// Default portal or API URL.
+  String get defaultPortalUrl => '';
+
+  /// Currently configured portal URL (or default).
+  Future<String> getPortalUrl() async => defaultPortalUrl;
+
+  /// Saves a custom portal URL if supported.
+  Future<void> setPortalUrl(String url) async {}
+
+  /// Retrieves stored username / customer number.
+  Future<String?> getUsername() async => null;
+
+  /// Retrieves stored password.
+  Future<String?> getPassword() async => null;
+
   /// Synchronizes meter and consumption data from the provider.
   Future<BillingSyncResult> syncData();
 }

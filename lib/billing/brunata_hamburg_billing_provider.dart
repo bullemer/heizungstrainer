@@ -31,6 +31,21 @@ class BrunataHamburgBillingProvider implements BillingProvider {
       );
 
   @override
+  String get defaultPortalUrl => BrunataLocalScraperService.defaultPortalUrl;
+
+  @override
+  Future<String> getPortalUrl() => _scraper.getPortalUrl();
+
+  @override
+  Future<void> setPortalUrl(String url) => _scraper.savePortalUrl(url);
+
+  @override
+  Future<String?> getUsername() => _scraper.getUsername();
+
+  @override
+  Future<String?> getPassword() => _scraper.getPassword();
+
+  @override
   Future<bool> hasCredentials() => _scraper.hasCredentials();
 
   @override

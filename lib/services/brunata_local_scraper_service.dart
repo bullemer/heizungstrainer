@@ -158,6 +158,23 @@ class BrunataLocalScraperService {
   Future<String?> getPassword() =>
       _secureStorage.read(key: BrunataStorageKeys.password);
 
+  /// Returns the configured portal URL, or [defaultPortalUrl] if unset.
+  Future<String> getPortalUrl() async {
+    final stored = await _secureStorage.read(key: BrunataStorageKeys.portalUrl);
+    if (stored != null && stored.trim().isNotEmpty) {
+      return stored.trim();
+    }
+    return defaultPortalUrl;
+  }
+
+  /// Saves the portal URL to secure storage.
+  Future<void> savePortalUrl(String url) async {
+    await _secureStorage.write(
+      key: BrunataStorageKeys.portalUrl,
+      value: url.trim(),
+    );
+  }
+
   /// Clears stored credentials.
   Future<void> clearCredentials() async {
     await _secureStorage.delete(key: BrunataStorageKeys.username);

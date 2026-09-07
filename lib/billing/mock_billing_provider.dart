@@ -19,7 +19,13 @@ class MockBillingProvider implements BillingProvider {
 
   double _pricePerKwh = 0.12;
   bool _hasCredentials = true;
+  String? _username;
+  String? _password;
+  String _portalUrl;
   final BrunataMeterData? _mockData;
+
+  @override
+  final String defaultPortalUrl;
 
   MockBillingProvider({
     this.id = 'mock_techem',
@@ -27,11 +33,20 @@ class MockBillingProvider implements BillingProvider {
     this.organization = 'Techem Energy Services GmbH',
     this.authType = BillingAuthType.restApi,
     this.capabilities = const BillingCapabilities(),
+    this.defaultPortalUrl = 'https://example.com/portal',
+    String? portalUrl,
     BrunataMeterData? mockData,
-  }) : _mockData = mockData;
+  })  : _portalUrl = portalUrl ?? defaultPortalUrl,
+        _mockData = mockData;
 
   @override
   Future<bool> hasCredentials() async => _hasCredentials;
+
+  @override
+  Future<String?> getUsername() async => _username;
+
+  @override
+  Future<String?> getPassword() async => _password;
 
   @override
   Future<void> saveCredentials({
@@ -39,6 +54,16 @@ class MockBillingProvider implements BillingProvider {
     required String password,
   }) async {
     _hasCredentials = true;
+    _username = username;
+    _password = password;
+  }
+
+  @override
+  Future<String> getPortalUrl() async => _portalUrl;
+
+  @override
+  Future<void> setPortalUrl(String url) async {
+    _portalUrl = url;
   }
 
   @override
