@@ -36,7 +36,7 @@ class HeizungstrainerApp extends StatelessWidget {
       theme: _buildDarkTheme(),
       home: Consumer<ECLProvider>(
         builder: (context, provider, _) {
-          if (provider.isConnected) {
+          if (provider.isConnected || provider.isOfflineMode) {
             return const MainShell();
           }
           return const ConnectionScreen();

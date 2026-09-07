@@ -13,7 +13,9 @@ import 'package:heizungstrainer/exceptions/modbus_exceptions.dart';
 import 'package:heizungstrainer/models/brunata_meter_data.dart';
 import 'package:heizungstrainer/models/ecl_parameter.dart';
 import 'package:heizungstrainer/models/ecl_reading.dart';
+import 'package:heizungstrainer/models/telemetry_sample.dart';
 import 'package:heizungstrainer/services/brunata_local_scraper_service.dart';
+import 'package:heizungstrainer/services/database_service.dart';
 import 'package:heizungstrainer/services/discovery_service.dart';
 import 'package:heizungstrainer/services/modbus_service.dart';
 
@@ -32,6 +34,7 @@ class ECLProvider extends ChangeNotifier {
   final ModbusService _modbusService;
   final DiscoveryService _discoveryService;
   final BrunataLocalScraperService _brunataScraper;
+  final DatabaseService _databaseService;
 
   ECLConnectionState _connectionState = ECLConnectionState.disconnected;
   String? _controllerIp;
@@ -40,9 +43,11 @@ class ECLProvider extends ChangeNotifier {
   Timer? _pollingTimer;
   double _discoveryProgress = 0.0;
   bool _isReconnecting = false;
+  bool _isOfflineMode = false;
   int _consecutivePollErrors = 0;
   static const int _maxConsecutivePollErrors = 3;
   DateTime? _lastSuccessfulPoll;
+  DateTime? _lastTelemetryRecorded;
 
   /// Brunata portal sync state.
   BrunataSyncState _brunataSyncState = BrunataSyncState.idle;
@@ -70,7 +75,10 @@ class ECLProvider extends ChangeNotifier {
   double get discoveryProgress => _discoveryProgress;
   bool get isConnected => _connectionState == ECLConnectionState.connected;
   bool get isReconnecting => _isReconnecting;
+  bool get isOfflineMode => _isOfflineMode;
+  bool get hasCachedReadings => _readings.isNotEmpty;
   DateTime? get lastSuccessfulPoll => _lastSuccessfulPoll;
+  DatabaseService get databaseService => _databaseService;
 
   BrunataSyncState get brunataSyncState => _brunataSyncState;
   BrunataMeterData? get brunataData => _brunataData;
@@ -84,6 +92,16 @@ class ECLProvider extends ChangeNotifier {
     return _history[parameter.id]?.toList() ?? [];
   }
 
+  void openOfflineMode() {
+    _isOfflineMode = true;
+    notifyListeners();
+  }
+
+  void exitOfflineMode() {
+    _isOfflineMode = false;
+    notifyListeners();
+  }
+
   // ──────────────────────────────────────────────────────────────────
   // Constructor
   // ──────────────────────────────────────────────────────────────────
@@ -92,13 +110,46 @@ class ECLProvider extends ChangeNotifier {
     ModbusService? modbusService,
     DiscoveryService? discoveryService,
     BrunataLocalScraperService? brunataScraper,
+    DatabaseService? databaseService,
+    bool autoLoadDatabase = true,
   })  : _modbusService = modbusService ?? ModbusService(),
         _discoveryService = discoveryService ?? DiscoveryService(),
-        _brunataScraper = brunataScraper ?? BrunataLocalScraperService() {
+        _brunataScraper = brunataScraper ?? BrunataLocalScraperService(),
+        _databaseService = databaseService ?? DatabaseService.instance {
     _brunataScraper.onStateChange = (state) {
       _brunataSyncState = state;
       notifyListeners();
     };
+    if (autoLoadDatabase) {
+      _initFromDatabase();
+    }
+  }
+
+  Future<void> _initFromDatabase() async {
+    try {
+      final cachedReadings =
+          await _databaseService.getCachedControllerReadings();
+      if (cachedReadings.isNotEmpty && _readings.isEmpty) {
+        _readings = cachedReadings;
+        _lastSuccessfulPoll = cachedReadings.values.first.timestamp;
+        for (final entry in cachedReadings.entries) {
+          if (!entry.value.isSensorDisconnected) {
+            _history
+                .putIfAbsent(entry.key, () => Queue<double>())
+                .add(entry.value.displayValue);
+          }
+        }
+        notifyListeners();
+      }
+
+      final cachedBrunata = await _databaseService.getCachedBrunataData();
+      if (cachedBrunata != null && _brunataData == null) {
+        _brunataData = cachedBrunata;
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint('[Provider] Error loading cache from SQLite: $e');
+    }
   }
 
   // ──────────────────────────────────────────────────────────────────
@@ -230,6 +281,9 @@ class ECLProvider extends ChangeNotifier {
         }
       }
 
+      // Persist latest state & telemetry to SQLite
+      _persistReadings(_readings);
+
       notifyListeners();
     } on ModbusCommunicationException catch (e) {
       _consecutivePollErrors++;
@@ -250,6 +304,59 @@ class ECLProvider extends ChangeNotifier {
     }
   }
 
+  Future<void> _persistReadings(Map<String, ECLReading> currentReadings) async {
+    try {
+      await _databaseService.cacheControllerReadings(currentReadings);
+
+      final now = DateTime.now();
+      if (_lastTelemetryRecorded == null ||
+          now.difference(_lastTelemetryRecorded!) >=
+              const Duration(seconds: 30)) {
+        _lastTelemetryRecorded = now;
+
+        final outdoor = currentReadings[ECLRegisters.outdoorTemp.id];
+        final flow = currentReadings[ECLRegisters.flowTemp.id];
+        final ret = currentReadings[ECLRegisters.returnTemp.id];
+        final hw = currentReadings[ECLRegisters.hotWaterTemp.id];
+        final shift = currentReadings[ECLRegisters.heatingCurveShift.id];
+        final room = currentReadings[ECLRegisters.roomTargetTemp.id];
+
+        final sample = TelemetrySample(
+          timestamp: now,
+          outdoorTemp: (outdoor != null && !outdoor.isSensorDisconnected)
+              ? outdoor.displayValue
+              : null,
+          flowTemp: (flow != null && !flow.isSensorDisconnected)
+              ? flow.displayValue
+              : null,
+          returnTemp: (ret != null && !ret.isSensorDisconnected)
+              ? ret.displayValue
+              : null,
+          hotWaterTemp: (hw != null && !hw.isSensorDisconnected)
+              ? hw.displayValue
+              : null,
+          heatingCurveShift: shift?.displayValue,
+          roomTarget: room?.displayValue,
+        );
+
+        await _databaseService.insertTelemetry(sample);
+      }
+    } catch (e) {
+      debugPrint('[Provider] Error buffering telemetry to SQLite: $e');
+    }
+  }
+
+  /// Retrieves historical telemetry from SQLite for the specified duration.
+  Future<List<TelemetrySample>> getTelemetryHistory({
+    Duration duration = const Duration(hours: 24),
+  }) async {
+    final now = DateTime.now();
+    return await _databaseService.getTelemetryHistory(
+      from: now.subtract(duration),
+      to: now,
+    );
+  }
+
   ECLReading? getReading(ECLParameter parameter) => _readings[parameter.id];
 
   // ──────────────────────────────────────────────────────────────────
@@ -268,6 +375,7 @@ class ECLProvider extends ChangeNotifier {
 
     final reading = await _modbusService.writeAndVerify(parameter, value);
     _readings[parameter.id] = reading;
+    _databaseService.cacheControllerReadings(_readings);
     notifyListeners();
     return reading;
   }
@@ -322,6 +430,7 @@ class ECLProvider extends ChangeNotifier {
       _brunataData = result.data;
       _brunataSyncState = BrunataSyncState.complete;
       _brunataSyncError = null;
+      await _databaseService.cacheBrunataData(result.data!);
     } else {
       _brunataSyncError = result.errorMessage;
       _brunataSyncState = BrunataSyncState.error;
@@ -364,6 +473,7 @@ class ECLProvider extends ChangeNotifier {
     final existing = _brunataData;
     if (existing != null) {
       _brunataData = existing.copyWithPrice(pricePerKwh);
+      await _databaseService.cacheBrunataData(_brunataData!);
     }
     notifyListeners();
     if (syncAfterSave) {

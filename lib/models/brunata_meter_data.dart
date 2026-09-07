@@ -81,6 +81,45 @@ class BrunataMeterData {
     );
   }
 
+  Map<String, dynamic> toJson() => {
+        'currentBillingPeriodCost': currentBillingPeriodCost,
+        'consumedKwh': consumedKwh,
+        'communityComparisonPercentage': communityComparisonPercentage,
+        'periodStart': periodStart.toIso8601String(),
+        'periodEnd': periodEnd.toIso8601String(),
+        'pricePerKwh': pricePerKwh,
+        'heatingYtdActual': heatingYtdActual,
+        'heatingProjection': heatingProjection,
+        'warmWaterYtdActual': warmWaterYtdActual,
+        'warmWaterProjection': warmWaterProjection,
+        'charts': [for (final c in charts) c.toJson()],
+      };
+
+  factory BrunataMeterData.fromJson(Map<String, dynamic> json) {
+    return BrunataMeterData(
+      currentBillingPeriodCost:
+          (json['currentBillingPeriodCost'] as num).toDouble(),
+      consumedKwh: (json['consumedKwh'] as num).toDouble(),
+      communityComparisonPercentage:
+          (json['communityComparisonPercentage'] as num).toDouble(),
+      periodStart: DateTime.parse(json['periodStart'] as String),
+      periodEnd: DateTime.parse(json['periodEnd'] as String),
+      pricePerKwh: (json['pricePerKwh'] as num?)?.toDouble() ?? 0.10,
+      heatingYtdActual:
+          (json['heatingYtdActual'] as num?)?.toDouble() ?? 0.0,
+      heatingProjection:
+          (json['heatingProjection'] as num?)?.toDouble() ?? 0.0,
+      warmWaterYtdActual:
+          (json['warmWaterYtdActual'] as num?)?.toDouble() ?? 0.0,
+      warmWaterProjection:
+          (json['warmWaterProjection'] as num?)?.toDouble() ?? 0.0,
+      charts: [
+        for (final c in (json['charts'] as List?) ?? const [])
+          BrunataChart.fromJson((c as Map).cast<String, dynamic>()),
+      ],
+    );
+  }
+
   /// Create demo/placeholder data for UI development.
   /// Will be replaced with actual Brunata API integration.
   factory BrunataMeterData.demo() {

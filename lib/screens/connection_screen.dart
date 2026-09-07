@@ -450,6 +450,20 @@ class _ConnectionScreenState extends State<ConnectionScreen>
                 ),
               ),
             ),
+            if (provider.hasCachedReadings) ...[
+              const SizedBox(height: 12),
+              FilledButton.tonalIcon(
+                onPressed: () => provider.openOfflineMode(),
+                icon: const Icon(Icons.offline_bolt_outlined),
+                label: const Text('Offline-Modus (Gespeicherte Daten)'),
+                style: FilledButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+              ),
+            ],
           ],
         );
 
@@ -506,6 +520,20 @@ class _ConnectionScreenState extends State<ConnectionScreen>
                 ),
               ),
             ),
+            if (provider.hasCachedReadings) ...[
+              const SizedBox(height: 12),
+              FilledButton.tonalIcon(
+                onPressed: () => provider.openOfflineMode(),
+                icon: const Icon(Icons.offline_bolt_outlined),
+                label: const Text('Offline-Modus (Gespeicherte Daten)'),
+                style: FilledButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+              ),
+            ],
           ],
         );
     }

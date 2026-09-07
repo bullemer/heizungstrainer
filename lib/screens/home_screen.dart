@@ -85,6 +85,9 @@ class HomeScreen extends StatelessWidget {
                 if (provider.isReconnecting) ...[
                   const _ReconnectingBanner(),
                   const SizedBox(height: 12),
+                ] else if (!provider.isConnected) ...[
+                  _OfflineModeBanner(provider: provider),
+                  const SizedBox(height: 12),
                 ],
                 // ── Smart Status Banner ─────────────────────
                 _SmartStatusBanner(provider: provider),
@@ -192,6 +195,67 @@ class _ReconnectingBanner extends StatelessWidget {
                 color: const Color(0xFFFFA726).withValues(alpha: 0.95),
                 fontSize: 12.5,
                 fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _OfflineModeBanner extends StatelessWidget {
+  final ECLProvider provider;
+  const _OfflineModeBanner({required this.provider});
+
+  @override
+  Widget build(BuildContext context) {
+    final lastPoll = provider.lastSuccessfulPoll;
+    final timeStr = lastPoll != null
+        ? '${lastPoll.hour.toString().padLeft(2, '0')}:${lastPoll.minute.toString().padLeft(2, '0')} Uhr'
+        : 'aus Speicher';
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFF7C4DFF).withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: const Color(0xFF7C4DFF).withValues(alpha: 0.35),
+        ),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.offline_bolt_rounded,
+              color: Color(0xFFB388FF), size: 18),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Offline-Ansicht ($timeStr) · Nur Leseansicht',
+              style: const TextStyle(
+                color: Color(0xFFB388FF),
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          const SizedBox(width: 6),
+          TextButton(
+            onPressed: () {
+              provider.exitOfflineMode();
+              provider.connectToController();
+            },
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              minimumSize: const Size(50, 28),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            child: const Text(
+              'Verbinden',
+              style: TextStyle(
+                color: Color(0xFFB388FF),
+                fontWeight: FontWeight.bold,
+                fontSize: 12,
               ),
             ),
           ),
