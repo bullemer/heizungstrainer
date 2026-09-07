@@ -21,9 +21,13 @@ void main() {
   }
 
   group('SettingsScreen Multi-Controller & Billing Selection Tests', () {
+    setUp(() {
+      FlutterSecureStorage.setMockInitialValues({});
+    });
+
     testWidgets('renders all controllers, billing providers, and active setup summary',
         (WidgetTester tester) async {
-      tester.view.physicalSize = const Size(1080, 2400);
+      tester.view.physicalSize = const Size(1080, 3200);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.resetPhysicalSize);
 
@@ -110,6 +114,69 @@ void main() {
       // Brunata credentials hidden, Techem notice visible
       expect(find.text('Brunata Portal-Zugang'), findsNothing);
       expect(find.textContaining('Simulationsmodus'), findsWidgets);
+    });
+
+    testWidgets('displays realistic energy carrier chips, allows switching and user overwrite',
+        (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(1080, 3200);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+
+      final provider = ECLProvider(autoLoadDatabase: false);
+
+      await tester.pumpWidget(buildSettingsScreen(provider));
+      await tester.pumpAndSettle();
+
+      // Check Section 3 elements
+      expect(find.text('Tarif & Energiepreis'), findsOneWidget);
+      expect(find.text('Marktpreis abrufen'), findsOneWidget);
+      expect(find.textContaining('Fernwärme Hamburg'), findsWidgets);
+      expect(find.textContaining('Erdgas Deutschland'), findsWidgets);
+      expect(find.textContaining('Wärmepumpe'), findsWidgets);
+
+      // Default price for Brunata Hamburg is Fernwärme Hamburg (0.132)
+      final priceField = find.widgetWithText(TextFormField, 'Arbeitspreis pro kWh (manuell anpassbar)');
+      expect(priceField, findsOneWidget);
+      expect(find.text('0.132'), findsWidgets);
+
+      // Select Erdgas Deutschland chip (0.118)
+      await tester.tap(find.textContaining('Erdgas Deutschland'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('0.118'), findsWidgets);
+
+      // User manual overwrite
+      await tester.enterText(priceField, '0.145');
+      await tester.pumpAndSettle();
+
+      expect(find.text('0.145'), findsOneWidget);
+      expect(find.text('Manueller Vertragspreis'), findsOneWidget);
+    });
+
+    testWidgets('tapping Marktpreis abrufen triggers dynamic price probe and updates field',
+        (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(1080, 3200);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+
+      final provider = ECLProvider(autoLoadDatabase: false);
+
+      await tester.pumpWidget(buildSettingsScreen(provider));
+      await tester.pumpAndSettle();
+
+      // Enter arbitrary custom price
+      final priceField = find.widgetWithText(TextFormField, 'Arbeitspreis pro kWh (manuell anpassbar)');
+      await tester.enterText(priceField, '0.05');
+      await tester.pumpAndSettle();
+      expect(find.text('0.05'), findsOneWidget);
+
+      // Tap 'Marktpreis abrufen'
+      await tester.tap(find.text('Marktpreis abrufen'));
+      await tester.pumpAndSettle();
+
+      // Benchmark for Brunata Hamburg (0.132) should be restored
+      expect(find.text('0.132'), findsWidgets);
+      expect(find.text('Markt-Benchmark aktiv'), findsOneWidget);
     });
   });
 }

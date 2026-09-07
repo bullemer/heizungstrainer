@@ -106,10 +106,9 @@ class BrunataLocalScraperService {
   static const String liegenschaftWarmwasserUrl =
       'https://portal.brunata-hamburg.de/Uvi/Nutzer/LiegenschaftCompare?mediumType=Warmwasser';
 
-  /// Default price per kWh used to derive a cost figure when the user has not
-  /// configured a tariff — the UVI portal only exposes consumption (kWh),
-  /// never €. The effective value is read from storage at sync time.
-  static const double defaultPricePerKwh = 0.10;
+  /// Realistic heating benchmark price used when the user has not yet
+  /// configured an explicit tariff (~12.8 ct/kWh).
+  static const double defaultPricePerKwh = 0.128;
 
   /// Hard ceiling for the whole scraping flow (login + five consumption pages).
   static const Duration _overallTimeout = Duration(seconds: 150);
@@ -121,8 +120,8 @@ class BrunataLocalScraperService {
   /// Max time to spend polling a single consumption page for chart data.
   static const Duration _scrapeTimeout = Duration(seconds: 18);
 
-  /// State change callback for UI updates.
-  ValueChanged<BrunataSyncState>? onStateChange;
+  /// Callback invoked on each scraper state transition.
+  void Function(BrunataSyncState state)? onStateChange;
 
   BrunataLocalScraperService({
     FlutterSecureStorage? secureStorage,
@@ -144,7 +143,7 @@ class BrunataLocalScraperService {
         key: BrunataStorageKeys.password, value: password);
   }
 
-  /// Returns true if credentials are stored.
+  /// Whether valid Brunata login credentials are stored.
   Future<bool> hasCredentials() async {
     final user = await _secureStorage.read(key: BrunataStorageKeys.username);
     final pass = await _secureStorage.read(key: BrunataStorageKeys.password);
@@ -173,7 +172,11 @@ class BrunataLocalScraperService {
   Future<double> getPricePerKwh() async {
     final raw = await _secureStorage.read(key: BrunataStorageKeys.pricePerKwh);
     if (raw == null || raw.isEmpty) return defaultPricePerKwh;
-    return double.tryParse(raw) ?? defaultPricePerKwh;
+    final val = double.tryParse(raw);
+    if (val == null || val <= 0) return defaultPricePerKwh;
+    // Auto-migrate legacy 0.10 placeholder to realistic benchmark
+    if (val == 0.10) return defaultPricePerKwh;
+    return val;
   }
 
   /// Persists the price per kWh used to estimate costs.

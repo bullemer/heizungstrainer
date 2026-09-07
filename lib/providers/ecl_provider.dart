@@ -21,6 +21,7 @@ import 'package:heizungstrainer/services/brunata_local_scraper_service.dart';
 import 'package:heizungstrainer/services/database_service.dart';
 import 'package:heizungstrainer/services/device_registry.dart';
 import 'package:heizungstrainer/services/discovery_service.dart';
+import 'package:heizungstrainer/services/energy_price_service.dart';
 import 'package:heizungstrainer/services/modbus_service.dart';
 
 /// Connection lifecycle states for the ECL 310 controller.
@@ -39,6 +40,7 @@ class ECLProvider extends ChangeNotifier {
   final DiscoveryService _discoveryService;
   final BrunataLocalScraperService _brunataScraper;
   final DatabaseService _databaseService;
+  final EnergyPriceService _energyPriceService;
   final FlutterSecureStorage _secureStorage;
 
   static const String _controllerStorageKey = 'selected_controller_id';
@@ -97,6 +99,7 @@ class ECLProvider extends ChangeNotifier {
   String get selectedBillingId => _selectedBillingId;
   HeatingController get activeController => _activeController;
   BillingProvider get activeBillingProvider => _activeBillingProvider;
+  EnergyPriceService get energyPriceService => _energyPriceService;
   ControllerDescriptor get currentControllerDescriptor =>
       DeviceRegistry.getControllerDescriptor(_selectedControllerId);
   BillingProviderDescriptor get currentBillingDescriptor =>
@@ -135,13 +138,18 @@ class ECLProvider extends ChangeNotifier {
     DiscoveryService? discoveryService,
     BrunataLocalScraperService? brunataScraper,
     DatabaseService? databaseService,
+    EnergyPriceService? energyPriceService,
     FlutterSecureStorage? secureStorage,
     bool autoLoadDatabase = true,
   })  : _modbusService = modbusService ?? ModbusService(),
         _discoveryService = discoveryService ?? DiscoveryService(),
         _brunataScraper = brunataScraper ?? BrunataLocalScraperService(),
         _databaseService = databaseService ?? DatabaseService.instance,
-        _secureStorage = secureStorage ?? const FlutterSecureStorage() {
+        _secureStorage = secureStorage ?? const FlutterSecureStorage(),
+        _energyPriceService = energyPriceService ??
+            EnergyPriceService(
+              secureStorage: secureStorage ?? const FlutterSecureStorage(),
+            ) {
     _activeController = DeviceRegistry.createController(
       _selectedControllerId,
       modbusService: _modbusService,
@@ -259,7 +267,15 @@ class ECLProvider extends ChangeNotifier {
 
       final cachedBrunata = await _databaseService.getCachedBrunataData();
       if (cachedBrunata != null && _brunataData == null) {
-        _brunataData = cachedBrunata;
+        if (cachedBrunata.pricePerKwh == 0.10) {
+          final effectivePrice = await _energyPriceService.getEffectivePrice(
+            billingProviderId: _selectedBillingId,
+          );
+          _brunataData = cachedBrunata.copyWithPrice(effectivePrice);
+          await _databaseService.cacheBrunataData(_brunataData!);
+        } else {
+          _brunataData = cachedBrunata;
+        }
         notifyListeners();
       }
     } catch (e) {
@@ -664,13 +680,52 @@ class ECLProvider extends ChangeNotifier {
   Future<String?> getBrunataPassword() => _brunataScraper.getPassword();
 
   /// Configured price per kWh used to estimate heating cost.
-  Future<double> getPricePerKwh() => _activeBillingProvider.getPricePerKwh();
+  ///
+  /// Uses [EnergyPriceService] which respects user custom overrides
+  /// and realistic energy carrier market benchmarks.
+  Future<double> getPricePerKwh() =>
+      _energyPriceService.getEffectivePrice(billingProviderId: _selectedBillingId);
+
+  /// Queries dynamic market price benchmark for a given carrier.
+  Future<EnergyCarrier> fetchDynamicMarketPrice({String? carrierId}) {
+    return _energyPriceService.fetchDynamicMarketPrice(
+      carrierId: carrierId ??
+          (_selectedBillingId == 'brunata_hamburg'
+              ? 'district_heating_hamburg'
+              : 'national_average'),
+    );
+  }
+
+  /// Directly updates and saves the energy price with optional carrier metadata.
+  Future<void> updateEnergyPrice(
+    double price, {
+    String? carrierId,
+    bool isCustom = true,
+  }) async {
+    await _energyPriceService.saveUserPrice(
+      price,
+      carrierId: carrierId,
+      isCustom: isCustom,
+    );
+    await _activeBillingProvider.setPricePerKwh(price);
+    if (_selectedBillingId == 'brunata_hamburg') {
+      await _brunataScraper.savePricePerKwh(price);
+    }
+    final existing = _brunataData;
+    if (existing != null) {
+      _brunataData = existing.copyWithPrice(price);
+      await _databaseService.cacheBrunataData(_brunataData!);
+    }
+    notifyListeners();
+  }
 
   /// Persists settings for the active billing provider.
   Future<void> saveBillingSettings({
     required String username,
     required String password,
     required double pricePerKwh,
+    String? carrierId,
+    bool isCustom = true,
     bool syncAfterSave = false,
   }) async {
     await _activeBillingProvider.saveCredentials(
@@ -678,6 +733,11 @@ class ECLProvider extends ChangeNotifier {
       password: password,
     );
     await _activeBillingProvider.setPricePerKwh(pricePerKwh);
+    await _energyPriceService.saveUserPrice(
+      pricePerKwh,
+      carrierId: carrierId,
+      isCustom: isCustom,
+    );
 
     if (_selectedBillingId == 'brunata_hamburg') {
       await _brunataScraper.saveCredentials(
@@ -703,12 +763,16 @@ class ECLProvider extends ChangeNotifier {
     required String username,
     required String password,
     required double pricePerKwh,
+    String? carrierId,
+    bool isCustom = true,
     bool syncAfterSave = false,
   }) =>
       saveBillingSettings(
         username: username,
         password: password,
         pricePerKwh: pricePerKwh,
+        carrierId: carrierId,
+        isCustom: isCustom,
         syncAfterSave: syncAfterSave,
       );
 

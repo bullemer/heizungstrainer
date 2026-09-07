@@ -46,7 +46,7 @@ class BrunataMeterData {
     required this.communityComparisonPercentage,
     required this.periodStart,
     required this.periodEnd,
-    this.pricePerKwh = 0.10,
+    this.pricePerKwh = 0.128,
     this.heatingYtdActual = 0,
     this.heatingProjection = 0,
     this.warmWaterYtdActual = 0,
@@ -104,7 +104,7 @@ class BrunataMeterData {
           (json['communityComparisonPercentage'] as num).toDouble(),
       periodStart: DateTime.parse(json['periodStart'] as String),
       periodEnd: DateTime.parse(json['periodEnd'] as String),
-      pricePerKwh: (json['pricePerKwh'] as num?)?.toDouble() ?? 0.10,
+      pricePerKwh: (json['pricePerKwh'] as num?)?.toDouble() ?? 0.128,
       heatingYtdActual:
           (json['heatingYtdActual'] as num?)?.toDouble() ?? 0.0,
       heatingProjection:

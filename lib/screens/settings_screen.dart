@@ -6,6 +6,7 @@ import 'package:heizungstrainer/billing/billing_provider.dart';
 import 'package:heizungstrainer/controllers/heating_controller.dart';
 import 'package:heizungstrainer/providers/ecl_provider.dart';
 import 'package:heizungstrainer/services/device_registry.dart';
+import 'package:heizungstrainer/services/energy_price_service.dart';
 
 /// Hub for hardware controller selection, sub-metering provider configuration,
 /// tariff pricing, and offline storage settings.
@@ -25,6 +26,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _obscurePassword = true;
   bool _loading = true;
   bool _saving = false;
+  bool _fetchingMarketPrice = false;
+  String? _selectedCarrierId;
+  bool _isCustomPrice = false;
 
   @override
   void initState() {
@@ -38,17 +42,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
       final username = await provider.getBrunataUsername();
       final password = await provider.getBrunataPassword();
       final price = await provider.getPricePerKwh();
+      final isCustom = await provider.energyPriceService.isCustomPrice();
+      final savedCarrierId = await provider.energyPriceService.getSavedCarrierId();
       if (!mounted) return;
       setState(() {
         _usernameController.text = username ?? '';
         _passwordController.text = password ?? '';
         _priceController.text = _formatPrice(price);
+        _selectedCarrierId = savedCarrierId ??
+            (provider.selectedBillingId == 'brunata_hamburg'
+                ? 'district_heating_hamburg'
+                : 'national_average');
+        _isCustomPrice = isCustom;
         _loading = false;
       });
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _priceController.text = '0.1';
+        _priceController.text =
+            _formatPrice(EnergyPriceService.defaultRealisticPrice);
+        _selectedCarrierId = 'district_heating_hamburg';
         _loading = false;
       });
     }
@@ -73,6 +86,41 @@ class _SettingsScreenState extends State<SettingsScreen> {
   double? _parsePrice(String raw) =>
       double.tryParse(raw.trim().replaceAll(',', '.'));
 
+  Future<void> _fetchDynamicMarketPrice(ECLProvider provider) async {
+    setState(() => _fetchingMarketPrice = true);
+    try {
+      final carrier = await provider.fetchDynamicMarketPrice(
+        carrierId: _selectedCarrierId,
+      );
+      if (!mounted) return;
+      setState(() {
+        _priceController.text = _formatPrice(carrier.benchmarkPricePerKwh);
+        _selectedCarrierId = carrier.id;
+        _isCustomPrice = false;
+        _fetchingMarketPrice = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Marktpreis für ${carrier.name} übernommen: '
+            '${_formatPrice(carrier.benchmarkPricePerKwh)} €/kWh (${carrier.source})',
+          ),
+          backgroundColor: const Color(0xFF1E2836),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _fetchingMarketPrice = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Fehler beim Abrufen des Marktpreises: $e'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
   Future<void> _save({required bool sync}) async {
     if (!_formKey.currentState!.validate()) return;
     FocusScope.of(context).unfocus();
@@ -83,6 +131,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       username: _usernameController.text.trim(),
       password: _passwordController.text,
       pricePerKwh: _parsePrice(_priceController.text)!,
+      carrierId: _selectedCarrierId,
+      isCustom: _isCustomPrice,
       syncAfterSave: sync,
     );
 
@@ -189,27 +239,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             'diesem Arbeitspreis berechnet.',
                       ),
                       const SizedBox(height: 14),
-                      TextFormField(
-                        controller: _priceController,
-                        keyboardType: const TextInputType.numberWithOptions(
-                            decimal: true),
-                        inputFormatters: [
-                          FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
-                        ],
-                        decoration: _decoration(
-                          label: 'Arbeitspreis pro kWh',
-                          icon: Icons.sell_outlined,
-                          suffixText: '€/kWh',
-                        ),
-                        validator: (v) {
-                          final p = _parsePrice(v ?? '');
-                          if (p == null) return 'Bitte gültigen Preis eingeben';
-                          if (p <= 0 || p > 5) {
-                            return 'Preis muss zwischen 0 und 5 € liegen';
-                          }
-                          return null;
-                        },
-                      ),
+                      _buildTariffCard(provider),
                       const SizedBox(height: 28),
 
                       // ── SECTION 4: OFFLINE & DATABASE ─────────────
@@ -478,14 +508,275 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  Widget _buildTariffCard(ECLProvider provider) {
+    final currentCarrier = _selectedCarrierId != null
+        ? EnergyPriceService.getCarrierById(_selectedCarrierId!)
+        : EnergyPriceService.knownCarriers.first;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF24242C),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFF3A3A44)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ── Status & Dynamic Sync Row ───────────────────────
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: _isCustomPrice
+                        ? const Color(0xFF0284C7).withValues(alpha: 0.15)
+                        : const Color(0xFFFFA726).withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: _isCustomPrice
+                          ? const Color(0xFF38BDF8).withValues(alpha: 0.4)
+                          : const Color(0xFFFFA726).withValues(alpha: 0.4),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        _isCustomPrice
+                            ? Icons.edit_note_rounded
+                            : Icons.auto_graph_rounded,
+                        size: 16,
+                        color: _isCustomPrice
+                            ? const Color(0xFF38BDF8)
+                            : const Color(0xFFFFA726),
+                      ),
+                      const SizedBox(width: 6),
+                      Flexible(
+                        child: Text(
+                          _isCustomPrice
+                              ? 'Manueller Vertragspreis'
+                              : 'Markt-Benchmark aktiv',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: _isCustomPrice
+                                ? const Color(0xFF38BDF8)
+                                : const Color(0xFFFFA726),
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              OutlinedButton.icon(
+                onPressed: _fetchingMarketPrice
+                    ? null
+                    : () => _fetchDynamicMarketPrice(provider),
+                icon: _fetchingMarketPrice
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Color(0xFFFFA726),
+                        ),
+                      )
+                    : const Icon(Icons.sync_rounded, size: 16),
+                label: const Text('Marktpreis abrufen',
+                    style: TextStyle(fontSize: 12)),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFFFFA726),
+                  side: const BorderSide(color: Color(0xFFFFA726)),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  visualDensity: VisualDensity.compact,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+
+          // ── Quick-Select Chips ─────────────────────────────
+          const Text(
+            'Energieträger & Benchmark (2026)',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFFECECF0),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Wähle einen Referenz-Benchmark für deinen Energieträger oder überschreibe ihn frei.',
+            style: TextStyle(
+              fontSize: 11.5,
+              color: Colors.white.withValues(alpha: 0.5),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: EnergyPriceService.knownCarriers.map((carrier) {
+              final isSelected =
+                  _selectedCarrierId == carrier.id && !_isCustomPrice;
+              return ChoiceChip(
+                label: Text(
+                  '${carrier.name} (${_formatPrice(carrier.benchmarkPricePerKwh)} €)',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                    color: isSelected ? Colors.black : const Color(0xFFECECF0),
+                  ),
+                ),
+                selected: isSelected,
+                selectedColor: const Color(0xFFFFA726),
+                backgroundColor: const Color(0xFF2A2A32),
+                side: BorderSide(
+                  color: isSelected
+                      ? const Color(0xFFFFA726)
+                      : const Color(0xFF3A3A44),
+                ),
+                onSelected: (selected) {
+                  if (selected) {
+                    setState(() {
+                      _selectedCarrierId = carrier.id;
+                      _priceController.text =
+                          _formatPrice(carrier.benchmarkPricePerKwh);
+                      _isCustomPrice = false;
+                    });
+                  }
+                },
+              );
+            }).toList(),
+          ),
+          const SizedBox(height: 12),
+
+          // ── Selected Benchmark Detail ─────────────────────
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFF1E2028),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFF2E303C)),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(Icons.info_outline_rounded,
+                    color: Color(0xFF9E9EA8), size: 18),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        currentCarrier.description,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Color(0xFFECECF0),
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        'Quelle: ${currentCarrier.source}',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontStyle: FontStyle.italic,
+                          color: Colors.white.withValues(alpha: 0.5),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // ── Text Input for Overwrite ───────────────────────
+          TextFormField(
+            controller: _priceController,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            inputFormatters: [
+              FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
+            ],
+            decoration: _decoration(
+              label: 'Arbeitspreis pro kWh (manuell anpassbar)',
+              icon: Icons.sell_outlined,
+              suffixText: '€/kWh',
+              helperText:
+                  'Frei anpassbar. Ein manueller Eintrag überschreibt den Benchmark.',
+            ),
+            onChanged: (val) {
+              final parsed = _parsePrice(val);
+              setState(() {
+                if (parsed == null ||
+                    (parsed - currentCarrier.benchmarkPricePerKwh).abs() >
+                        0.0001) {
+                  _isCustomPrice = true;
+                } else {
+                  _isCustomPrice = false;
+                }
+              });
+            },
+            validator: (v) {
+              final p = _parsePrice(v ?? '');
+              if (p == null) return 'Bitte gültigen Preis eingeben';
+              if (p <= 0 || p > 5) {
+                return 'Preis muss zwischen 0 und 5 € liegen';
+              }
+              return null;
+            },
+          ),
+          const SizedBox(height: 12),
+
+          // ── Tip Pill ───────────────────────────────────────
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.04),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.lightbulb_outline_rounded,
+                    color: Color(0xFFFFA726), size: 16),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Tipp: Den genauen Arbeitspreis entnimmst du deiner letzten Abrechnung.',
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      color: Colors.white.withValues(alpha: 0.65),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   InputDecoration _decoration({
     required String label,
     required IconData icon,
     Widget? suffix,
     String? suffixText,
+    String? helperText,
   }) {
     return InputDecoration(
       labelText: label,
+      helperText: helperText,
       prefixIcon: Icon(icon, size: 20),
       suffixIcon: suffix,
       suffixText: suffixText,
