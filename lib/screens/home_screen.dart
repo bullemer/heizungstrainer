@@ -1,0 +1,899 @@
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
+
+import 'package:heizungstrainer/models/ecl_parameter.dart';
+import 'package:heizungstrainer/models/ecl_reading.dart';
+import 'package:heizungstrainer/providers/ecl_provider.dart';
+import 'package:heizungstrainer/screens/settings_screen.dart';
+import 'package:heizungstrainer/widgets/analysis_section.dart';
+import 'package:heizungstrainer/widgets/sparkline_chart.dart';
+import 'package:heizungstrainer/widgets/radial_indicator.dart';
+
+/// Primary "Mein Zuhause" dashboard — consumer-grade heating control.
+class HomeScreen extends StatelessWidget {
+  const HomeScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text(
+          'Mein Zuhause',
+          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 20),
+        ),
+        actions: [
+          IconButton(
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const SettingsScreen()),
+              );
+            },
+            icon: const Icon(Icons.settings_outlined, size: 22),
+            tooltip: 'Einstellungen',
+          ),
+          Consumer<ECLProvider>(
+            builder: (_, p, child) => IconButton(
+              onPressed: p.refreshReadings,
+              icon: const Icon(Icons.refresh_rounded, size: 22),
+              tooltip: 'Aktualisieren',
+            ),
+          ),
+          Consumer<ECLProvider>(
+            builder: (_, p, child) => PopupMenuButton<String>(
+              onSelected: (v) {
+                if (v == 'disconnect') {
+                  p.disconnect();
+                }
+              },
+              itemBuilder: (_) => [
+                PopupMenuItem(
+                  value: 'ip',
+                  enabled: false,
+                  child: Row(
+                    children: [
+                      const Icon(Icons.router_outlined, size: 18),
+                      const SizedBox(width: 8),
+                      Text(p.controllerIp ?? '—'),
+                    ],
+                  ),
+                ),
+                const PopupMenuDivider(),
+                const PopupMenuItem(
+                  value: 'disconnect',
+                  child: Row(
+                    children: [
+                      Icon(Icons.logout_rounded, size: 18),
+                      SizedBox(width: 8),
+                      Text('Trennen'),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+      body: Consumer<ECLProvider>(
+        builder: (context, provider, _) {
+          return RefreshIndicator(
+            onRefresh: provider.refreshReadings,
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 32),
+              children: [
+                // ── Smart Status Banner ─────────────────────
+                _SmartStatusBanner(provider: provider),
+                const SizedBox(height: 18),
+
+                // ── Zone 1: Raumheizung ─────────────────────
+                _HeatingComfortCard(provider: provider),
+                const SizedBox(height: 14),
+
+                // ── Zone 2: Warmwasser ──────────────────────
+                _HotWaterCard(provider: provider),
+                const SizedBox(height: 18),
+
+                // ── Metrics Grid ────────────────────────────
+                _SectionLabel(label: 'Systemwerte'),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _MetricCard(
+                        icon: Icons.local_fire_department_rounded,
+                        label: 'Heizwasser Zufluss',
+                        parameter: ECLRegisters.flowTemp,
+                        history: provider.getHistory(ECLRegisters.flowTemp),
+                        reading: provider.getReading(ECLRegisters.flowTemp),
+                        accentColor: const Color(0xFFFF7043),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: _MetricCard(
+                        icon: Icons.water_drop_outlined,
+                        label: 'Heizwasser Rückfluss',
+                        parameter: ECLRegisters.returnTemp,
+                        history: provider.getHistory(ECLRegisters.returnTemp),
+                        reading: provider.getReading(ECLRegisters.returnTemp),
+                        accentColor: const Color(0xFF66BB6A),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+
+                // ── Delta Chip ──────────────────────────────
+                _EfficiencyDeltaChip(provider: provider),
+                const SizedBox(height: 24),
+
+                // ── Analysis & Savings Section ──────────────
+                AnalysisSection(
+                  currentOutdoorTemp:
+                      provider.getReading(ECLRegisters.outdoorTemp)?.displayValue ?? 0,
+                  currentFlowTemp:
+                      provider.getReading(ECLRegisters.flowTemp)?.displayValue ?? 0,
+                  currentReturnTemp:
+                      provider.getReading(ECLRegisters.returnTemp)?.displayValue ?? 0,
+                  parallelShift:
+                      provider.getReading(ECLRegisters.heatingCurveShift)?.displayValue ?? 0,
+                  brunataData: provider.brunataData,
+                  brunataSyncState: provider.brunataSyncState,
+                  brunataSyncError: provider.brunataSyncError,
+                  onSyncBrunata: provider.syncBrunataData,
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Smart Status Banner
+// ═══════════════════════════════════════════════════════════════════════════
+
+class _SmartStatusBanner extends StatelessWidget {
+  final ECLProvider provider;
+  const _SmartStatusBanner({required this.provider});
+
+  @override
+  Widget build(BuildContext context) {
+    final outdoorReading = provider.getReading(ECLRegisters.outdoorTemp);
+    final shiftReading = provider.getReading(ECLRegisters.heatingCurveShift);
+    final outdoorTemp = outdoorReading?.displayValue ?? 0;
+    final shift = shiftReading?.displayValue ?? 0;
+
+    final isSummerMode = outdoorTemp > 17.0;
+    final isHighConsumption = shift.abs() > 3;
+
+    final bannerColor = isSummerMode
+        ? const Color(0xFF1B5E20).withValues(alpha: 0.35)
+        : const Color(0xFF2A2A32);
+    final borderColor = isSummerMode
+        ? const Color(0xFF66BB6A).withValues(alpha: 0.4)
+        : const Color(0xFF3A3A44);
+    final iconColor =
+        isSummerMode ? const Color(0xFF66BB6A) : const Color(0xFFFFA726);
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: bannerColor,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: borderColor),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                isSummerMode ? Icons.wb_sunny_rounded : Icons.thermostat,
+                color: iconColor,
+                size: 22,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  isSummerMode
+                      ? '${outdoorTemp.toStringAsFixed(1)}°C draußen — Sommer-Sparbetrieb'
+                      : '${outdoorTemp.toStringAsFixed(1)}°C draußen — Heizbetrieb aktiv',
+                  style: TextStyle(
+                    color: iconColor,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            isSummerMode
+                ? 'Die Raumheizung schläft automatisch, um Kosten zu senken.'
+                : 'Die Heizung reguliert aktiv deine Raumtemperatur.',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.7),
+              fontSize: 12.5,
+            ),
+          ),
+          // Warning chip for high consumption
+          if (isHighConsumption) ...[
+            const SizedBox(height: 12),
+            _HighConsumptionWarning(provider: provider, shiftValue: shift),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _HighConsumptionWarning extends StatelessWidget {
+  final ECLProvider provider;
+  final double shiftValue;
+  const _HighConsumptionWarning({
+    required this.provider,
+    required this.shiftValue,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: () async {
+          HapticFeedback.mediumImpact();
+          final confirmed = await showDialog<bool>(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              title: const Text('Heizkurve zurücksetzen?'),
+              content: Text(
+                'Die Heizkurve steht aktuell auf '
+                '${shiftValue > 0 ? '+' : ''}${shiftValue.toStringAsFixed(0)}. '
+                'Möchtest du sie auf 0 (Neutral) zurücksetzen, '
+                'um den Verbrauch zu optimieren?',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: const Text('Abbrechen'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.pop(ctx, true),
+                  child: const Text('Zurücksetzen'),
+                ),
+              ],
+            ),
+          );
+          if (confirmed == true && context.mounted) {
+            try {
+              await provider.writeParameter(ECLRegisters.heatingCurveShift, 0);
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                  content: Text('✅ Heizkurve auf Neutral zurückgesetzt'),
+                  backgroundColor: Color(0xFF66BB6A),
+                ));
+              }
+            } catch (_) {
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                  content: Text('Fehler beim Zurücksetzen'),
+                  backgroundColor: Color(0xFFEF5350),
+                ));
+              }
+            }
+          }
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: const Color(0xFFFFA726).withValues(alpha: 0.15),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: const Color(0xFFFFA726).withValues(alpha: 0.35),
+            ),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.warning_amber_rounded,
+                  color: Color(0xFFFFA726), size: 18),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Erhöhter Verbrauch! Tippe zum Optimieren.',
+                  style: TextStyle(
+                    color: const Color(0xFFFFA726).withValues(alpha: 0.9),
+                    fontWeight: FontWeight.w500,
+                    fontSize: 12.5,
+                  ),
+                ),
+              ),
+              const Icon(Icons.chevron_right_rounded,
+                  color: Color(0xFFFFA726), size: 18),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Zone 1: Heating Comfort Slider
+// ═══════════════════════════════════════════════════════════════════════════
+
+class _HeatingComfortCard extends StatefulWidget {
+  final ECLProvider provider;
+  const _HeatingComfortCard({required this.provider});
+
+  @override
+  State<_HeatingComfortCard> createState() => _HeatingComfortCardState();
+}
+
+class _HeatingComfortCardState extends State<_HeatingComfortCard> {
+  late double _sliderValue;
+  bool _isEditing = false;
+  bool _isSaving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _syncFromProvider();
+  }
+
+  void _syncFromProvider() {
+    final raw = widget.provider
+            .getReading(ECLRegisters.heatingCurveShift)
+            ?.displayValue ??
+        0;
+    _sliderValue = raw.clamp(-3, 3).toDouble();
+  }
+
+  @override
+  void didUpdateWidget(covariant _HeatingComfortCard old) {
+    super.didUpdateWidget(old);
+    if (!_isEditing) _syncFromProvider();
+  }
+
+  String _comfortLabel(double value) {
+    if (value <= -3) return 'Sparmodus';
+    if (value <= -2) return 'Etwas kühler';
+    if (value <= -1) return 'Leicht reduziert';
+    if (value == 0) return 'Neutral';
+    if (value <= 1) return 'Leicht erhöht';
+    if (value <= 2) return 'Etwas wärmer';
+    return 'Max. Komfort';
+  }
+
+  Color _comfortColor(double value) {
+    if (value <= -2) return const Color(0xFF42A5F5);
+    if (value <= -1) return const Color(0xFF66BB6A);
+    if (value <= 1) return const Color(0xFF8BC34A);
+    if (value <= 2) return const Color(0xFFFFA726);
+    return const Color(0xFFFF7043);
+  }
+
+  Future<void> _save() async {
+    setState(() => _isSaving = true);
+    HapticFeedback.mediumImpact();
+    try {
+      await widget.provider
+          .writeParameter(ECLRegisters.heatingCurveShift, _sliderValue);
+      if (mounted) {
+        setState(() {
+          _isEditing = false;
+          _isSaving = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Heizkurve auf ${_comfortLabel(_sliderValue)} gesetzt'),
+          backgroundColor: const Color(0xFF66BB6A),
+        ));
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => _isSaving = false);
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Fehler beim Speichern'),
+          backgroundColor: Color(0xFFEF5350),
+        ));
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = _comfortColor(_sliderValue);
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: const Color(0xFF2A2A32),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: _isEditing
+              ? accent.withValues(alpha: 0.5)
+              : const Color(0xFF3A3A44),
+          width: _isEditing ? 1.5 : 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.2),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header
+          Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  color: accent.withValues(alpha: 0.12),
+                ),
+                child: Icon(Icons.thermostat_rounded, color: accent, size: 22),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Haus Basis-Wärme',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 15,
+                        color: Color(0xFFECECF0),
+                      ),
+                    ),
+                    Text(
+                      'Heizkurve',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.white.withValues(alpha: 0.5),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // Current value badge
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: accent.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: accent.withValues(alpha: 0.3),
+                  ),
+                ),
+                child: Text(
+                  _comfortLabel(_sliderValue),
+                  style: TextStyle(
+                    color: accent,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+
+          // Slider
+          SliderTheme(
+            data: SliderThemeData(
+              activeTrackColor: accent,
+              inactiveTrackColor: accent.withValues(alpha: 0.15),
+              thumbColor: accent,
+              overlayColor: accent.withValues(alpha: 0.12),
+              trackHeight: 8,
+              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 12),
+            ),
+            child: Slider(
+              value: _sliderValue,
+              min: -3,
+              max: 3,
+              divisions: 6,
+              onChanged: (v) {
+                HapticFeedback.selectionClick();
+                setState(() {
+                  _sliderValue = v;
+                  _isEditing = true;
+                });
+              },
+            ),
+          ),
+
+          // Scale labels
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  '❄️ Sparmodus',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: Colors.white.withValues(alpha: 0.4),
+                  ),
+                ),
+                Text(
+                  '🔥 Max. Komfort',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: Colors.white.withValues(alpha: 0.4),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // Save/Cancel buttons
+          if (_isEditing) ...[
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: _isSaving
+                        ? null
+                        : () {
+                            setState(() {
+                              _isEditing = false;
+                              _syncFromProvider();
+                            });
+                          },
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      side: BorderSide(
+                        color: Colors.white.withValues(alpha: 0.2),
+                      ),
+                    ),
+                    child: const Text('Abbrechen'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: _isSaving ? null : _save,
+                    icon: _isSaving
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Icon(Icons.check_rounded),
+                    label: Text(_isSaving ? 'Sende…' : 'Übernehmen'),
+                    style: FilledButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      backgroundColor: accent,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Zone 2: Hot Water Card
+// ═══════════════════════════════════════════════════════════════════════════
+
+class _HotWaterCard extends StatelessWidget {
+  final ECLProvider provider;
+  const _HotWaterCard({required this.provider});
+
+  @override
+  Widget build(BuildContext context) {
+    final reading = provider.getReading(ECLRegisters.hotWaterTemp);
+    final temp = reading?.displayValue ?? 0;
+    final isReady = temp >= 50.0;
+    final accent =
+        isReady ? const Color(0xFF42A5F5) : const Color(0xFFFFA726);
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: const Color(0xFF2A2A32),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFF3A3A44)),
+      ),
+      child: Row(
+        children: [
+          // Radial indicator
+          RadialTemperatureIndicator(
+            currentTemp: temp,
+            targetTemp: 55.0,
+            size: 100,
+            accentColor: accent,
+          ),
+          const SizedBox(width: 20),
+          // Info
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(
+                      Icons.water_drop_rounded,
+                      color: accent,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 8),
+                    const Expanded(
+                      child: Text(
+                        'Dusch- & Trinkwarmwasser',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14,
+                          color: Color(0xFFECECF0),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                // Status label
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: accent.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        isReady ? '💧' : '⏳',
+                        style: const TextStyle(fontSize: 14),
+                      ),
+                      const SizedBox(width: 6),
+                      Flexible(
+                        child: Text(
+                          isReady
+                              ? 'Heiß & Bereit'
+                              : 'Wird nachgeheizt...',
+                          style: TextStyle(
+                            color: accent,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 12.5,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Zieltemperatur: 55.0°C',
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    color: Colors.white.withValues(alpha: 0.4),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Metric Card (Vorlauf / Rücklauf)
+// ═══════════════════════════════════════════════════════════════════════════
+
+class _MetricCard extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final ECLParameter parameter;
+  final List<double> history;
+  final ECLReading? reading;
+  final Color accentColor;
+
+  const _MetricCard({
+    required this.icon,
+    required this.label,
+    required this.parameter,
+    required this.history,
+    required this.reading,
+    required this.accentColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final temp = reading?.displayValue ?? 0;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF2A2A32),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFF3A3A44)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Icon + label
+          Row(
+            children: [
+              Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: accentColor.withValues(alpha: 0.12),
+                ),
+                child: Icon(icon, color: accentColor, size: 17),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.white.withValues(alpha: 0.6),
+                  ),
+                  maxLines: 2,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          // Temperature
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                temp.toStringAsFixed(1),
+                style: const TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFFECECF0),
+                ),
+              ),
+              const Padding(
+                padding: EdgeInsets.only(bottom: 4),
+                child: Text(
+                  '°C',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Color(0xFF9E9EA8),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          // Sparkline
+          if (history.length >= 2) ...[
+            const SizedBox(height: 10),
+            SparklineChart(
+              data: history,
+              lineColor: accentColor,
+              height: 32,
+              strokeWidth: 1.5,
+            ),
+          ],
+          // Heat bar
+          const SizedBox(height: 8),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(3),
+            child: SizedBox(
+              height: 4,
+              child: LinearProgressIndicator(
+                value: (temp / 80.0).clamp(0.0, 1.0),
+                backgroundColor: accentColor.withValues(alpha: 0.1),
+                valueColor: AlwaysStoppedAnimation(accentColor),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Efficiency Delta Chip
+// ═══════════════════════════════════════════════════════════════════════════
+
+class _EfficiencyDeltaChip extends StatelessWidget {
+  final ECLProvider provider;
+  const _EfficiencyDeltaChip({required this.provider});
+
+  @override
+  Widget build(BuildContext context) {
+    final flow =
+        provider.getReading(ECLRegisters.flowTemp)?.displayValue ?? 0;
+    final ret =
+        provider.getReading(ECLRegisters.returnTemp)?.displayValue ?? 0;
+    final delta = flow - ret;
+    final isHealthy = delta >= 5 && delta <= 25;
+    final color =
+        isHealthy ? const Color(0xFF66BB6A) : const Color(0xFFFFA726);
+
+    return Center(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: color.withValues(alpha: 0.25)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              isHealthy
+                  ? Icons.check_circle_outline_rounded
+                  : Icons.info_outline_rounded,
+              color: color,
+              size: 18,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              'Effizienz-Delta: ${delta.toStringAsFixed(1)}°C',
+              style: TextStyle(
+                color: color,
+                fontWeight: FontWeight.w600,
+                fontSize: 13,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Section Label
+// ═══════════════════════════════════════════════════════════════════════════
+
+class _SectionLabel extends StatelessWidget {
+  final String label;
+  const _SectionLabel({required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      label,
+      style: TextStyle(
+        fontSize: 13,
+        fontWeight: FontWeight.w600,
+        color: Colors.white.withValues(alpha: 0.5),
+        letterSpacing: 0.5,
+      ),
+    );
+  }
+}

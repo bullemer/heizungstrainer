@@ -1,0 +1,708 @@
+/// Analysis & savings potential section for the dashboard.
+///
+/// Combines Brunata cost data, the interactive heating curve chart,
+/// and the smart intelligence engine into a unified card.
+library;
+
+import 'package:flutter/material.dart';
+
+import 'package:heizungstrainer/models/brunata_meter_data.dart';
+import 'package:heizungstrainer/screens/brunata_detail_screen.dart';
+import 'package:heizungstrainer/services/brunata_local_scraper_service.dart';
+import 'package:heizungstrainer/services/heating_analytics_service.dart';
+import 'package:heizungstrainer/widgets/heating_curve_chart.dart';
+
+/// The full "Analyse & Sparpotenzial" section.
+///
+/// Accepts live sensor data and renders:
+/// 1. Brunata cost summary with community comparison
+/// 2. Interactive heating curve line chart
+/// 3. Smart savings advice engine
+class AnalysisSection extends StatelessWidget {
+  final double currentOutdoorTemp;
+  final double currentFlowTemp;
+  final double currentReturnTemp;
+  final double parallelShift;
+  final BrunataMeterData? brunataData;
+  final BrunataSyncState brunataSyncState;
+  final String? brunataSyncError;
+  final VoidCallback? onSyncBrunata;
+
+  const AnalysisSection({
+    super.key,
+    required this.currentOutdoorTemp,
+    required this.currentFlowTemp,
+    required this.currentReturnTemp,
+    required this.parallelShift,
+    this.brunataData,
+    this.brunataSyncState = BrunataSyncState.idle,
+    this.brunataSyncError,
+    this.onSyncBrunata,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final brunata = brunataData ?? BrunataMeterData.demo();
+    final savings = HeatingAnalyticsService.analyzeSavings(
+      currentShift: parallelShift,
+      // Use the real synced heating cost; 0 falls back to an estimate.
+      annualBaseCost: brunataData?.currentBillingPeriodCost ?? 0,
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // ── Section Header ──────────────────────────────────
+        Row(
+          children: [
+            Container(
+              width: 30,
+              height: 30,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(8),
+                color: const Color(0xFF7C4DFF).withValues(alpha: 0.12),
+              ),
+              child: const Icon(
+                Icons.analytics_outlined,
+                color: Color(0xFF7C4DFF),
+                size: 16,
+              ),
+            ),
+            const SizedBox(width: 10),
+            const Text(
+              'Analyse & Sparpotenzial',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF9E9EA8),
+                letterSpacing: 0.5,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+
+        // ── A. Brunata Cost Card (tap to drill down) ────────
+        GestureDetector(
+          onTap: (brunata.hasDetail &&
+                  brunataSyncState != BrunataSyncState.initializing &&
+                  brunataSyncState != BrunataSyncState.loggingIn &&
+                  brunataSyncState != BrunataSyncState.navigating &&
+                  brunataSyncState != BrunataSyncState.scraping)
+              ? () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => BrunataDetailScreen(data: brunata),
+                    ),
+                  )
+              : null,
+          child: _BrunataCostCard(
+            brunata: brunata,
+            syncState: brunataSyncState,
+            syncError: brunataSyncError,
+            onSync: onSyncBrunata,
+            showDetailHint: brunata.hasDetail,
+          ),
+        ),
+        const SizedBox(height: 12),
+
+        // ── B. Heating Curve Chart ──────────────────────────
+        _HeatingCurveSection(
+          parallelShift: parallelShift,
+          currentOutdoorTemp: currentOutdoorTemp,
+          currentFlowTemp: currentFlowTemp,
+        ),
+        const SizedBox(height: 12),
+
+        // ── C. Smart Savings Advice ─────────────────────────
+        if (savings.hasOptimizationPotential)
+          _SavingsAdviceCard(savings: savings),
+      ],
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// A. Brunata Cost Card
+// ═══════════════════════════════════════════════════════════════════════════
+
+class _BrunataCostCard extends StatelessWidget {
+  final BrunataMeterData brunata;
+  final BrunataSyncState syncState;
+  final String? syncError;
+  final VoidCallback? onSync;
+  final bool showDetailHint;
+
+  const _BrunataCostCard({
+    required this.brunata,
+    this.syncState = BrunataSyncState.idle,
+    this.syncError,
+    this.onSync,
+    this.showDetailHint = false,
+  });
+
+  bool get _isSyncing =>
+      syncState != BrunataSyncState.idle &&
+      syncState != BrunataSyncState.complete &&
+      syncState != BrunataSyncState.error;
+
+  String get _syncLabel {
+    switch (syncState) {
+      case BrunataSyncState.initializing:
+        return 'Browser wird gestartet…';
+      case BrunataSyncState.loggingIn:
+        return 'Anmeldung bei Brunata…';
+      case BrunataSyncState.navigating:
+        return 'Portal wird geladen…';
+      case BrunataSyncState.scraping:
+        return 'Daten werden gelesen…';
+      default:
+        return '';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: const Color(0xFF2A2A32),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFF3A3A44)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header
+          Row(
+            children: [
+              const Icon(Icons.euro_rounded,
+                  color: Color(0xFFFFA726), size: 20),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text(
+                  'Heizkosten dieses Jahr',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13.5,
+                    color: Color(0xFFECECF0),
+                  ),
+                ),
+              ),
+              if (showDetailHint) ...[
+                Text(
+                  'Details',
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w600,
+                    color: const Color(0xFFFFA726).withValues(alpha: 0.9),
+                  ),
+                ),
+                const Icon(Icons.chevron_right_rounded,
+                    color: Color(0xFFFFA726), size: 18),
+                const SizedBox(width: 4),
+              ],
+              if (brunata.isAboveCommunityAverage)
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFA726).withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: const Color(0xFFFFA726).withValues(alpha: 0.3),
+                    ),
+                  ),
+                  child: Text(
+                    '⚠️ ${brunata.communityComparisonPercentage.toStringAsFixed(0)}% über Schnitt',
+                    style: const TextStyle(
+                      color: Color(0xFFFFA726),
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          // Sync loading overlay
+          if (_isSyncing)
+            Container(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const SizedBox(
+                    width: 18, height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2, color: Color(0xFFFFA726),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(_syncLabel, style: TextStyle(
+                    fontSize: 13, color: Colors.white.withValues(alpha: 0.7),
+                  )),
+                ],
+              ),
+            )
+          else ...[
+            // Cost & consumption
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '${brunata.currentBillingPeriodCost.toStringAsFixed(2)} €',
+                        style: const TextStyle(
+                          fontSize: 28, fontWeight: FontWeight.bold,
+                          color: Color(0xFFECECF0),
+                        ),
+                      ),
+                      Text('Heizkosten bisher (geschätzt)', style: TextStyle(
+                        fontSize: 11.5, color: Colors.white.withValues(alpha: 0.4),
+                      )),
+                    ],
+                  ),
+                ),
+                Container(width: 1, height: 40, color: const Color(0xFF3A3A44)),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '${brunata.consumedKwh.toStringAsFixed(0)} kWh',
+                        style: const TextStyle(
+                          fontSize: 22, fontWeight: FontWeight.bold,
+                          color: Color(0xFF9E9EA8),
+                        ),
+                      ),
+                      Text('Heizung Ist-Verbrauch', style: TextStyle(
+                        fontSize: 11.5, color: Colors.white.withValues(alpha: 0.4),
+                      )),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Text(
+              '${(brunata.costPerKwh * 100).toStringAsFixed(1)} ct/kWh',
+              style: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.35)),
+            ),
+          ],
+          // Error
+          if (syncState == BrunataSyncState.error && syncError != null) ...[
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: const Color(0xFFEF5350).withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Row(children: [
+                const Icon(Icons.error_outline, color: Color(0xFFEF5350), size: 16),
+                const SizedBox(width: 8),
+                Expanded(child: Text(syncError!, style: const TextStyle(
+                  color: Color(0xFFEF5350), fontSize: 11.5,
+                ))),
+              ]),
+            ),
+          ],
+          // Sync button
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: _isSyncing ? null : onSync,
+              icon: _isSyncing
+                  ? const SizedBox(width: 16, height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFFFFA726)))
+                  : const Icon(Icons.sync_rounded, size: 18),
+              label: Text(_isSyncing ? 'Synchronisiere…' : 'Brunata Portal synchronisieren'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: const Color(0xFFFFA726),
+                side: BorderSide(color: const Color(0xFFFFA726).withValues(alpha: 0.3)),
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// B. Heating Curve Chart Section
+// ═══════════════════════════════════════════════════════════════════════════
+
+class _HeatingCurveSection extends StatelessWidget {
+  final double parallelShift;
+  final double currentOutdoorTemp;
+  final double currentFlowTemp;
+
+  const _HeatingCurveSection({
+    required this.parallelShift,
+    required this.currentOutdoorTemp,
+    required this.currentFlowTemp,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: const Color(0xFF2A2A32),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFF3A3A44)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Title
+          Row(
+            children: [
+              const Icon(Icons.show_chart_rounded,
+                  color: Color(0xFFFFA726), size: 18),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text(
+                  'Heizkurve & Betriebspunkt',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13.5,
+                    color: Color(0xFFECECF0),
+                  ),
+                ),
+              ),
+              // Shift badge
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFA726).withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  'Shift: ${parallelShift > 0 ? '+' : ''}${parallelShift.toStringAsFixed(0)}',
+                  style: const TextStyle(
+                    color: Color(0xFFFFA726),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+
+          // Chart
+          HeatingCurveChart(
+            parallelShift: parallelShift,
+            currentOutdoorTemp: currentOutdoorTemp,
+            currentFlowTemp: currentFlowTemp,
+          ),
+          const SizedBox(height: 12),
+
+          // Legend
+          HeatingCurveLegend(
+            parallelShift: parallelShift,
+            currentOutdoorTemp: currentOutdoorTemp,
+            currentFlowTemp: currentFlowTemp,
+          ),
+
+          // Operating point label
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            decoration: BoxDecoration(
+              color: const Color(0xFF7C4DFF).withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: const Color(0xFF7C4DFF).withValues(alpha: 0.25),
+              ),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 8,
+                  height: 8,
+                  decoration: const BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Color(0xFF7C4DFF),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Dein aktueller Betriebspunkt: '
+                    '${currentOutdoorTemp.toStringAsFixed(1)}°C Außen → '
+                    '${currentFlowTemp.toStringAsFixed(1)}°C Vorlauf',
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      color: Colors.white.withValues(alpha: 0.7),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// C. Savings Advice Card
+// ═══════════════════════════════════════════════════════════════════════════
+
+class _SavingsAdviceCard extends StatelessWidget {
+  final SavingsAnalysis savings;
+  const _SavingsAdviceCard({required this.savings});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1B5E20).withValues(alpha: 0.2),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: const Color(0xFF66BB6A).withValues(alpha: 0.3),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header
+          Row(
+            children: [
+              const Icon(Icons.lightbulb_outline_rounded,
+                  color: Color(0xFF66BB6A), size: 20),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text(
+                  'Sparpotenzial erkannt',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
+                    color: Color(0xFF66BB6A),
+                  ),
+                ),
+              ),
+              // Savings amount
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF66BB6A).withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  'Ca. ${savings.annualSavingsEuro.toStringAsFixed(0)} €/Jahr',
+                  style: const TextStyle(
+                    color: Color(0xFF66BB6A),
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+
+          // Savings bar visualization
+          _SavingsBar(
+            currentShift: savings.currentShift,
+            idealShift: savings.idealShift,
+          ),
+          const SizedBox(height: 14),
+
+          // Advice text
+          Text(
+            savings.adviceText,
+            style: TextStyle(
+              fontSize: 13,
+              color: Colors.white.withValues(alpha: 0.75),
+              height: 1.5,
+            ),
+          ),
+          const SizedBox(height: 10),
+
+          // Stats row
+          Row(
+            children: [
+              _StatChip(
+                icon: Icons.trending_down_rounded,
+                label: '${savings.stepsToFix} Stufen senken',
+                color: const Color(0xFF66BB6A),
+              ),
+              const SizedBox(width: 10),
+              _StatChip(
+                icon: Icons.bolt_rounded,
+                label: '${(savings.savingsPercent * 100).round()}% Energie',
+                color: const Color(0xFFFFA726),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            savings.basedOnActualCost
+                ? 'Basierend auf deinen tatsächlichen Heizkosten '
+                    '(${savings.annualBaseCost.toStringAsFixed(0)} €/Jahr aus Brunata).'
+                : 'Schätzung — synchronisiere Brunata für eine Berechnung '
+                    'auf Basis deiner tatsächlichen Kosten.',
+            style: TextStyle(
+              fontSize: 11,
+              fontStyle: FontStyle.italic,
+              color: Colors.white.withValues(alpha: 0.4),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SavingsBar extends StatelessWidget {
+  final double currentShift;
+  final double idealShift;
+
+  const _SavingsBar({
+    required this.currentShift,
+    required this.idealShift,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    // Map shift -15..+15 to 0..1
+    final currentPos = ((currentShift + 15) / 30).clamp(0.0, 1.0);
+    final idealPos = ((idealShift + 15) / 30).clamp(0.0, 1.0);
+
+    return Column(
+      children: [
+        SizedBox(
+          height: 24,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final width = constraints.maxWidth;
+              return Stack(
+                children: [
+                  // Track
+                  Positioned(
+                    top: 10,
+                    left: 0,
+                    right: 0,
+                    child: Container(
+                      height: 4,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(2),
+                        gradient: const LinearGradient(
+                          colors: [
+                            Color(0xFF42A5F5),
+                            Color(0xFF66BB6A),
+                            Color(0xFFFFA726),
+                            Color(0xFFFF7043),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  // Ideal marker
+                  Positioned(
+                    left: idealPos * width - 4,
+                    top: 6,
+                    child: Container(
+                      width: 8,
+                      height: 12,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF66BB6A),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  // Current marker
+                  Positioned(
+                    left: currentPos * width - 6,
+                    top: 4,
+                    child: Container(
+                      width: 12,
+                      height: 16,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFA726),
+                        borderRadius: BorderRadius.circular(3),
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.3),
+                          width: 1,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text('Spar', style: TextStyle(
+              fontSize: 9,
+              color: Colors.white.withValues(alpha: 0.3),
+            )),
+            Text('Neutral', style: TextStyle(
+              fontSize: 9,
+              color: Colors.white.withValues(alpha: 0.3),
+            )),
+            Text('Komfort', style: TextStyle(
+              fontSize: 9,
+              color: Colors.white.withValues(alpha: 0.3),
+            )),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _StatChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+
+  const _StatChip({
+    required this.icon,
+    required this.label,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: color, size: 14),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: TextStyle(
+              color: color,
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}

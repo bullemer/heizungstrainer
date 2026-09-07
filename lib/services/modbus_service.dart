@@ -1,0 +1,259 @@
+/// Low-level Modbus TCP communication service for the Danfoss ECL 310 controller.
+///
+/// Handles connection lifecycle, register reads, and safety-validated writes.
+/// All write operations pass through strict bounds checking before any
+/// Modbus frame is compiled and transmitted.
+library;
+
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
+import 'package:modbus_client/modbus_client.dart';
+import 'package:modbus_client_tcp/modbus_client_tcp.dart';
+
+import 'package:heizungstrainer/exceptions/modbus_exceptions.dart';
+import 'package:heizungstrainer/models/ecl_parameter.dart';
+import 'package:heizungstrainer/models/ecl_reading.dart';
+
+/// Core Modbus TCP service for reading sensor values and safely writing
+/// setpoints to the ECL 310 heating controller.
+///
+/// ## Safety Architecture
+///
+/// Every write operation follows a strict three-stage validation pipeline:
+/// 1. **Writability check** — reject read-only parameters.
+/// 2. **Bounds validation** — reject values outside the parameter's
+///    hardcoded `[minValue, maxValue]` range.
+/// 3. **Transmission** — only after both checks pass is the Modbus
+///    write frame compiled and sent.
+class ModbusService {
+  static const Duration _requestTimeout = Duration(seconds: 5);
+
+  ModbusClientTcp? _client;
+  String? _currentIp;
+  bool _isConnected = false;
+
+  /// Whether the service currently has an active connection.
+  bool get isConnected => _isConnected;
+
+  /// The IP address of the currently connected controller, or `null`.
+  String? get currentIp => _currentIp;
+
+  // ──────────────────────────────────────────────────────────────────
+  // Connection Lifecycle
+  // ──────────────────────────────────────────────────────────────────
+
+  /// Establishes a Modbus TCP connection to the ECL controller at [ip].
+  ///
+  /// If already connected to a different IP, the existing connection
+  /// is cleanly torn down first.
+  ///
+  /// Throws [ModbusCommunicationException] on failure.
+  Future<void> connect(String ip) async {
+    // Disconnect existing connection when switching targets
+    if (_currentIp != null && _currentIp != ip) {
+      await disconnect();
+    }
+
+    _client = ModbusClientTcp(
+      ip,
+      unitId: 1,
+      connectionMode: ModbusConnectionMode.autoConnectAndKeepConnected,
+    );
+    _currentIp = ip;
+
+    try {
+      final connected = await _client!.connect();
+      _isConnected = connected;
+      debugPrint('[Modbus] Connected to $ip: $connected');
+      if (!connected) {
+        throw ModbusCommunicationException(
+          message: 'Verbindung zum ECL-Regler unter $ip konnte nicht hergestellt werden.',
+        );
+      }
+    } catch (e) {
+      if (e is ModbusCommunicationException) rethrow;
+      _isConnected = false;
+      _client = null;
+      _currentIp = null;
+      throw ModbusCommunicationException(
+        message: 'Verbindung zum ECL-Regler unter $ip fehlgeschlagen.',
+        underlyingError: e,
+      );
+    }
+  }
+
+  /// Disconnects from the controller and releases all resources.
+  Future<void> disconnect() async {
+    try {
+      await _client?.disconnect();
+    } catch (_) {}
+    _client = null;
+    _isConnected = false;
+    _currentIp = null;
+  }
+
+  /// Asserts that a connection is active. Throws if not.
+  void _ensureConnected() {
+    if (_client == null || !_isConnected) {
+      throw const ModbusCommunicationException(
+        message: 'Keine Verbindung zum ECL-Regler. '
+            'Bitte zuerst verbinden.',
+      );
+    }
+  }
+
+  // ──────────────────────────────────────────────────────────────────
+  // Reading
+  // ──────────────────────────────────────────────────────────────────
+
+  /// Reads a single [parameter] from the connected controller.
+  ///
+  /// Returns an [ECLReading] with the raw value and timestamp.
+  /// Throws [ModbusCommunicationException] on failure or timeout.
+  Future<ECLReading> readParameter(ECLParameter parameter) async {
+    _ensureConnected();
+
+    // Create register without multiplier — we handle conversion in ECLParameter
+    final register = ModbusInt16Register(
+      name: parameter.id,
+      type: ModbusElementType.holdingRegister,
+      address: parameter.modbusAddress,
+    );
+
+    try {
+      final response = await _client!
+          .send(register.getReadRequest())
+          .timeout(_requestTimeout);
+
+      debugPrint('[Modbus] Read ${parameter.id}: response=$response, value=${register.value} (${register.value.runtimeType})');
+
+      if (response != ModbusResponseCode.requestSucceed) {
+        throw ModbusCommunicationException(
+          message: 'Lesefehler für ${parameter.name}: '
+              'Modbus-Fehlercode $response',
+        );
+      }
+
+      final rawValue = register.value;
+      if (rawValue == null) {
+        throw ModbusCommunicationException(
+          message: 'Kein Wert empfangen für ${parameter.name}.',
+        );
+      }
+
+      return ECLReading(
+        parameter: parameter,
+        rawValue: rawValue.toInt(),
+        timestamp: DateTime.now(),
+      );
+    } on TimeoutException {
+      throw ModbusCommunicationException(
+        message: 'Zeitüberschreitung beim Lesen von ${parameter.name}.',
+      );
+    } catch (e) {
+      if (e is ModbusCommunicationException) rethrow;
+      throw ModbusCommunicationException(
+        message: 'Fehler beim Lesen von ${parameter.name}.',
+        underlyingError: e,
+      );
+    }
+  }
+
+  /// Reads all registered parameters sequentially.
+  ///
+  /// Returns a map keyed by [ECLParameter.id].
+  Future<Map<String, ECLReading>> readAllParameters() async {
+    final results = <String, ECLReading>{};
+    for (final param in ECLRegisters.all) {
+      results[param.id] = await readParameter(param);
+    }
+    return results;
+  }
+
+  // ──────────────────────────────────────────────────────────────────
+  // Writing (with Fail-Safe Validation)
+  // ──────────────────────────────────────────────────────────────────
+
+  /// Safely writes a display-unit [displayValue] to a writable [parameter].
+  ///
+  /// ## Safety Pipeline
+  /// 1. **Writability gate**: Rejects read-only parameters immediately.
+  /// 2. **Bounds gate**: Validates [displayValue] against the parameter's
+  ///    `[minValue, maxValue]` range. On violation, throws
+  ///    [ParameterBoundsException] **before** any Modbus I/O occurs.
+  /// 3. **Transmission**: Converts to raw value and sends the write command.
+  Future<void> writeParameter(
+    ECLParameter parameter,
+    double displayValue,
+  ) async {
+    _ensureConnected();
+
+    // ── SAFETY CHECK 1: Writability ──────────────────────────────
+    if (!parameter.isWritable) {
+      throw ModbusCommunicationException(
+        message: '${parameter.name} ist schreibgeschützt und kann '
+            'nicht verändert werden.',
+      );
+    }
+
+    // ── SAFETY CHECK 2: Bounds validation (BEFORE any Modbus I/O) ──
+    final validationError = parameter.validateDisplayValue(displayValue);
+    if (validationError != null) {
+      throw ParameterBoundsException(
+        parameter: parameter,
+        attemptedValue: displayValue,
+      );
+    }
+
+    // ── Convert display → raw ────────────────────────────────────
+    final rawValue = parameter.displayToRaw(displayValue);
+    debugPrint('[Modbus] Writing ${parameter.id}: display=$displayValue → raw=$rawValue');
+
+    // ── SAFETY CHECK 3: Transmit ─────────────────────────────────
+    final register = ModbusInt16Register(
+      name: parameter.id,
+      type: ModbusElementType.holdingRegister,
+      address: parameter.modbusAddress,
+    );
+
+    try {
+      final response = await _client!
+          .send(register.getWriteRequest(rawValue))
+          .timeout(_requestTimeout);
+
+      debugPrint('[Modbus] Write response for ${parameter.id}: $response');
+
+      if (response != ModbusResponseCode.requestSucceed) {
+        throw ModbusCommunicationException(
+          message: 'Schreibfehler für ${parameter.name}: '
+              'Modbus-Fehlercode $response',
+        );
+      }
+    } on TimeoutException {
+      throw ModbusCommunicationException(
+        message: 'Zeitüberschreitung beim Schreiben von ${parameter.name}.',
+      );
+    } catch (e) {
+      if (e is ModbusCommunicationException ||
+          e is ParameterBoundsException) {
+        rethrow;
+      }
+      throw ModbusCommunicationException(
+        message: 'Fehler beim Schreiben von ${parameter.name}.',
+        underlyingError: e,
+      );
+    }
+  }
+
+  /// Writes a value and immediately reads it back for verification.
+  Future<ECLReading> writeAndVerify(
+    ECLParameter parameter,
+    double displayValue,
+  ) async {
+    await writeParameter(parameter, displayValue);
+    // Brief delay to let the controller process the write
+    await Future.delayed(const Duration(milliseconds: 200));
+    return readParameter(parameter);
+  }
+}
