@@ -22,6 +22,8 @@ class ViessmannController implements HeatingController {
       StreamController<ControllerTelemetry>.broadcast();
 
   HttpClient? _httpClient;
+  DateTime? _lastVicarePoll;
+  ControllerTelemetry? _cachedVicareTelemetry;
 
   ViessmannController({
     ViessmannConfig? config,
@@ -101,9 +103,15 @@ class ViessmannController implements HeatingController {
       final initial = await readTelemetry();
       _telemetryController.add(initial);
 
-      // Start periodic polling timer (10s)
+      // Start periodic polling timer decoupled:
+      // - ViCare Cloud REST: 60s+ to strictly protect the 1,450 calls/day quota
+      // - Local Optolink: 10s fast local polling
+      final interval = _config.connectionType == ViessmannConnectionType.vicareRest
+          ? Duration(seconds: _config.cloudPollingIntervalSeconds.clamp(60, 300))
+          : const Duration(seconds: 10);
+
       _pollingTimer?.cancel();
-      _pollingTimer = Timer.periodic(const Duration(seconds: 10), (_) async {
+      _pollingTimer = Timer.periodic(interval, (_) async {
         if (!_isConnected) return;
         try {
           final t = await readTelemetry();
@@ -249,6 +257,11 @@ class ViessmannController implements HeatingController {
     final resp = await req.close().timeout(
       Duration(seconds: _config.timeoutSeconds),
     );
+    if (resp.statusCode == 429) {
+      debugPrint('[ViessmannController] ViCare 429 Too Many Requests: Rate limit exceeded (~1,450 calls/day). Throttling...');
+      await resp.drain<void>();
+      return null;
+    }
     if (resp.statusCode != 200) {
       await resp.drain<void>();
       return null;
@@ -310,6 +323,17 @@ class ViessmannController implements HeatingController {
   }
 
   Future<ControllerTelemetry> _readVicareTelemetry() async {
+    // Rate-limiting protection: Developer accounts are strictly limited to ~1,450 calls/24h.
+    // If called within 55 seconds and we have cached data, reuse it.
+    final now = DateTime.now();
+    if (_lastVicarePoll != null &&
+        now.difference(_lastVicarePoll!) < const Duration(seconds: 55) &&
+        _cachedVicareTelemetry != null) {
+      debugPrint('[ViessmannController] Using cached ViCare telemetry to respect daily call quota');
+      return _cachedVicareTelemetry!;
+    }
+    _lastVicarePoll = now;
+
     final rawValues = <String, double>{};
     double? outdoor;
     double? flow;
@@ -366,7 +390,7 @@ class ViessmannController implements HeatingController {
     if (room != null) rawValues['roomTarget'] = room;
     if (shift != null) rawValues['shift'] = shift;
 
-    return ControllerTelemetry(
+    final telemetry = ControllerTelemetry(
       timestamp: DateTime.now(),
       outdoorTemp: outdoor,
       flowTemp: flow,
@@ -376,6 +400,9 @@ class ViessmannController implements HeatingController {
       heatingCurveShift: shift,
       rawValues: rawValues,
     );
+
+    _cachedVicareTelemetry = telemetry;
+    return telemetry;
   }
 
   // ──────────────────────────────────────────────────────────────────

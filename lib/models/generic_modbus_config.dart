@@ -1,5 +1,84 @@
 import 'dart:convert';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:modbus_client/modbus_client.dart';
+
+/// Supported byte/word ordering (endianness) for Modbus registers.
+enum ModbusWordOrder {
+  /// Standard Big-Endian (High Byte / High Word first, ABCD).
+  bigEndian,
+
+  /// Little-Endian (Low Byte / Low Word first, DCBA).
+  littleEndian,
+
+  /// Mid-Big-Endian / Word Swap (CDAB) - commonly used in Luxtronik and Siemens controllers.
+  wordSwap,
+
+  /// Mid-Little-Endian / Byte Swap (BADC).
+  byteSwap,
+}
+
+extension ModbusWordOrderExtension on ModbusWordOrder {
+  ModbusEndianness get toModbusEndianness {
+    switch (this) {
+      case ModbusWordOrder.bigEndian:
+        return ModbusEndianness.ABCD;
+      case ModbusWordOrder.littleEndian:
+        return ModbusEndianness.DCBA;
+      case ModbusWordOrder.wordSwap:
+        return ModbusEndianness.CDAB;
+      case ModbusWordOrder.byteSwap:
+        return ModbusEndianness.BADC;
+    }
+  }
+
+  String get displayName {
+    switch (this) {
+      case ModbusWordOrder.bigEndian:
+        return 'Big-Endian (ABCD - Standard)';
+      case ModbusWordOrder.littleEndian:
+        return 'Little-Endian (DCBA)';
+      case ModbusWordOrder.wordSwap:
+        return 'Word-Swap (CDAB - Luxtronik/Siemens)';
+      case ModbusWordOrder.byteSwap:
+        return 'Byte-Swap (BADC)';
+    }
+  }
+}
+
+/// Supported register data types.
+enum ModbusRegisterDataType {
+  /// 16-Bit signed integer (most heating controllers).
+  int16,
+
+  /// 16-Bit unsigned integer.
+  uint16,
+
+  /// 32-Bit signed integer spanning 2 consecutive 16-bit registers.
+  int32,
+
+  /// 32-Bit unsigned integer spanning 2 consecutive 16-bit registers.
+  uint32,
+
+  /// 32-Bit IEEE 754 floating-point number spanning 2 consecutive 16-bit registers.
+  float32,
+}
+
+extension ModbusRegisterDataTypeExtension on ModbusRegisterDataType {
+  String get displayName {
+    switch (this) {
+      case ModbusRegisterDataType.int16:
+        return '16-Bit Vorzeichenbehaftet (int16)';
+      case ModbusRegisterDataType.uint16:
+        return '16-Bit Vorzeichenlos (uint16)';
+      case ModbusRegisterDataType.int32:
+        return '32-Bit Vorzeichenbehaftet (int32)';
+      case ModbusRegisterDataType.uint32:
+        return '32-Bit Vorzeichenlos (uint32)';
+      case ModbusRegisterDataType.float32:
+        return '32-Bit Fließkommazahl (float32)';
+    }
+  }
+}
 
 /// Predefined configuration presets for popular Modbus-capable heating controllers.
 class GenericModbusPreset {
@@ -16,6 +95,9 @@ class GenericModbusPreset {
   final int? heatingCurveShiftRegister;
   final double multiplier;
   final bool isHoldingRegister;
+  final ModbusWordOrder wordOrder;
+  final ModbusRegisterDataType dataType;
+  final int pollingIntervalSeconds;
 
   const GenericModbusPreset({
     required this.id,
@@ -31,6 +113,9 @@ class GenericModbusPreset {
     this.heatingCurveShiftRegister,
     this.multiplier = 0.1,
     this.isHoldingRegister = true,
+    this.wordOrder = ModbusWordOrder.bigEndian,
+    this.dataType = ModbusRegisterDataType.int16,
+    this.pollingIntervalSeconds = 10,
   });
 }
 
@@ -53,6 +138,9 @@ class GenericModbusConfig {
   final int? heatingCurveShiftRegister;
   final double multiplier;
   final bool isHoldingRegister;
+  final ModbusWordOrder wordOrder;
+  final ModbusRegisterDataType dataType;
+  final int pollingIntervalSeconds;
   final String presetId;
   final String presetName;
 
@@ -68,6 +156,41 @@ class GenericModbusConfig {
       roomTargetRegister: 5,
       heatingCurveShiftRegister: 6,
       multiplier: 0.1,
+      wordOrder: ModbusWordOrder.bigEndian,
+      dataType: ModbusRegisterDataType.int16,
+      pollingIntervalSeconds: 10,
+    ),
+    GenericModbusPreset(
+      id: 'stiebel_isg',
+      name: 'Stiebel Eltron (ISG Modbus)',
+      description: 'ISG Web Modbus TCP (501=Außen, 502=Vorlauf HK1, 503=Rücklauf, 504=Warmwasser, 1501=Raum-Soll HK1, 1502=Soll HK2), 5s Polling-Drosselung',
+      outdoorRegister: 501,
+      flowRegister: 502,
+      returnRegister: 503,
+      hotWaterRegister: 504,
+      roomTargetRegister: 1501,
+      heatingCurveShiftRegister: 1502,
+      multiplier: 0.1,
+      isHoldingRegister: true,
+      wordOrder: ModbusWordOrder.bigEndian,
+      dataType: ModbusRegisterDataType.int16,
+      pollingIntervalSeconds: 5,
+    ),
+    GenericModbusPreset(
+      id: 'luxtronik',
+      name: 'Luxtronik 2.0 / 2.1 (Alpha Innotec / Novelan)',
+      description: 'Luxtronik Wärmepumpenregelung über Modbus TCP (32-Bit / Word-Swap CDAB)',
+      outdoorRegister: 100,
+      flowRegister: 101,
+      returnRegister: 102,
+      hotWaterRegister: 103,
+      roomTargetRegister: 105,
+      heatingCurveShiftRegister: 106,
+      multiplier: 0.1,
+      isHoldingRegister: true,
+      wordOrder: ModbusWordOrder.wordSwap,
+      dataType: ModbusRegisterDataType.int32,
+      pollingIntervalSeconds: 10,
     ),
     GenericModbusPreset(
       id: 'ta_cmi',
@@ -79,6 +202,9 @@ class GenericModbusConfig {
       hotWaterRegister: 4,
       roomTargetRegister: 5,
       multiplier: 0.1,
+      wordOrder: ModbusWordOrder.bigEndian,
+      dataType: ModbusRegisterDataType.int16,
+      pollingIntervalSeconds: 10,
     ),
     GenericModbusPreset(
       id: 'siemens_synco',
@@ -90,6 +216,9 @@ class GenericModbusConfig {
       hotWaterRegister: 15,
       roomTargetRegister: 20,
       multiplier: 0.1,
+      wordOrder: ModbusWordOrder.bigEndian,
+      dataType: ModbusRegisterDataType.int16,
+      pollingIntervalSeconds: 10,
     ),
     GenericModbusPreset(
       id: 'wolf_bm2',
@@ -101,11 +230,14 @@ class GenericModbusConfig {
       hotWaterRegister: 103,
       roomTargetRegister: 105,
       multiplier: 0.1,
+      wordOrder: ModbusWordOrder.bigEndian,
+      dataType: ModbusRegisterDataType.int16,
+      pollingIntervalSeconds: 10,
     ),
     GenericModbusPreset(
       id: 'custom',
       name: 'Benutzerdefiniert',
-      description: 'Vollständig freie Konfiguration aller Register und Parameter',
+      description: 'Vollständig freie Konfiguration aller Register, Datentypen und Wort-Reihenfolgen',
       outdoorRegister: 1,
       flowRegister: 2,
       returnRegister: 3,
@@ -113,6 +245,9 @@ class GenericModbusConfig {
       roomTargetRegister: 5,
       heatingCurveShiftRegister: 6,
       multiplier: 0.1,
+      wordOrder: ModbusWordOrder.bigEndian,
+      dataType: ModbusRegisterDataType.int16,
+      pollingIntervalSeconds: 10,
     ),
   ];
 
@@ -128,6 +263,9 @@ class GenericModbusConfig {
     this.heatingCurveShiftRegister = 6,
     this.multiplier = 0.1,
     this.isHoldingRegister = true,
+    this.wordOrder = ModbusWordOrder.bigEndian,
+    this.dataType = ModbusRegisterDataType.int16,
+    this.pollingIntervalSeconds = 10,
     this.presetId = 'standard',
     this.presetName = 'Standard Modbus Heizung',
   });
@@ -145,6 +283,9 @@ class GenericModbusConfig {
       heatingCurveShiftRegister: preset.heatingCurveShiftRegister,
       multiplier: preset.multiplier,
       isHoldingRegister: preset.isHoldingRegister,
+      wordOrder: preset.wordOrder,
+      dataType: preset.dataType,
+      pollingIntervalSeconds: preset.pollingIntervalSeconds,
       presetId: preset.id,
       presetName: preset.name,
     );
@@ -162,6 +303,9 @@ class GenericModbusConfig {
     int? heatingCurveShiftRegister,
     double? multiplier,
     bool? isHoldingRegister,
+    ModbusWordOrder? wordOrder,
+    ModbusRegisterDataType? dataType,
+    int? pollingIntervalSeconds,
     String? presetId,
     String? presetName,
   }) {
@@ -178,6 +322,10 @@ class GenericModbusConfig {
           heatingCurveShiftRegister ?? this.heatingCurveShiftRegister,
       multiplier: multiplier ?? this.multiplier,
       isHoldingRegister: isHoldingRegister ?? this.isHoldingRegister,
+      wordOrder: wordOrder ?? this.wordOrder,
+      dataType: dataType ?? this.dataType,
+      pollingIntervalSeconds:
+          pollingIntervalSeconds ?? this.pollingIntervalSeconds,
       presetId: presetId ?? this.presetId,
       presetName: presetName ?? this.presetName,
     );
@@ -195,11 +343,26 @@ class GenericModbusConfig {
         'heatingCurveShiftRegister': heatingCurveShiftRegister,
         'multiplier': multiplier,
         'isHoldingRegister': isHoldingRegister,
+        'wordOrder': wordOrder.name,
+        'dataType': dataType.name,
+        'pollingIntervalSeconds': pollingIntervalSeconds,
         'presetId': presetId,
         'presetName': presetName,
       };
 
   factory GenericModbusConfig.fromJson(Map<String, dynamic> json) {
+    final wordOrderStr = json['wordOrder'] as String?;
+    final wordOrder = ModbusWordOrder.values.firstWhere(
+      (e) => e.name == wordOrderStr,
+      orElse: () => ModbusWordOrder.bigEndian,
+    );
+
+    final dataTypeStr = json['dataType'] as String?;
+    final dataType = ModbusRegisterDataType.values.firstWhere(
+      (e) => e.name == dataTypeStr,
+      orElse: () => ModbusRegisterDataType.int16,
+    );
+
     return GenericModbusConfig(
       host: json['host'] as String? ?? '192.168.1.50',
       port: (json['port'] as num?)?.toInt() ?? 502,
@@ -213,6 +376,9 @@ class GenericModbusConfig {
           (json['heatingCurveShiftRegister'] as num?)?.toInt(),
       multiplier: (json['multiplier'] as num?)?.toDouble() ?? 0.1,
       isHoldingRegister: json['isHoldingRegister'] as bool? ?? true,
+      wordOrder: wordOrder,
+      dataType: dataType,
+      pollingIntervalSeconds: (json['pollingIntervalSeconds'] as num?)?.toInt() ?? 10,
       presetId: json['presetId'] as String? ?? 'standard',
       presetName: json['presetName'] as String? ?? 'Standard Modbus Heizung',
     );

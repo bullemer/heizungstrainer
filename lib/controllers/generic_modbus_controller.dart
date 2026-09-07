@@ -19,6 +19,10 @@ class GenericModbusController implements HeatingController {
   GenericModbusConfig _config;
   ModbusClientTcp? _client;
   bool _isConnected = false;
+  Timer? _pollingTimer;
+  DateTime? _lastPollTime;
+  ControllerTelemetry? _cachedTelemetry;
+
   final StreamController<ControllerTelemetry> _telemetryStreamController =
       StreamController<ControllerTelemetry>.broadcast();
 
@@ -94,6 +98,26 @@ class GenericModbusController implements HeatingController {
           message: 'Verbindung zum Modbus-TCP-Regler unter $host:$targetPort fehlgeschlagen.',
         );
       }
+
+      // Initial read
+      final initial = await readTelemetry();
+      _telemetryStreamController.add(initial);
+
+      // Start periodic polling timer respecting configured polling interval
+      // (e.g. 5s for Stiebel ISG to prevent gateway crash, 10s default)
+      _pollingTimer?.cancel();
+      _pollingTimer = Timer.periodic(
+        Duration(seconds: _config.pollingIntervalSeconds.clamp(2, 300)),
+        (_) async {
+          if (!_isConnected) return;
+          try {
+            final t = await readTelemetry();
+            _telemetryStreamController.add(t);
+          } catch (e) {
+            debugPrint('[GenericModbus] Polling error: $e');
+          }
+        },
+      );
     } catch (e) {
       _isConnected = false;
       _client = null;
@@ -107,6 +131,8 @@ class GenericModbusController implements HeatingController {
 
   @override
   Future<void> disconnect() async {
+    _pollingTimer?.cancel();
+    _pollingTimer = null;
     try {
       await _client?.disconnect();
     } catch (_) {}
@@ -114,12 +140,17 @@ class GenericModbusController implements HeatingController {
     _isConnected = false;
   }
 
-  bool _isDisconnectedRaw(int? raw) {
+  bool _isDisconnectedRaw(num? raw) {
     if (raw == null) return true;
-    return raw == 0x7FFF || raw == -32768 || raw == 0xFFFF || raw == 32767;
+    return raw == 0x7FFF ||
+        raw == -32768 ||
+        raw == 0xFFFF ||
+        raw == 32767 ||
+        raw == 0x7FFFFFFF ||
+        raw == -2147483648;
   }
 
-  double? _convertRaw(int? raw) {
+  double? _convertRaw(num? raw) {
     if (raw == null || _isDisconnectedRaw(raw)) return null;
     return double.parse((raw * _config.multiplier).toStringAsFixed(2));
   }
@@ -128,17 +159,58 @@ class GenericModbusController implements HeatingController {
       ? ModbusElementType.holdingRegister
       : ModbusElementType.inputRegister;
 
-  Future<int?> _readSingleRegister(int address) async {
+  Future<num?> _readRegisterRaw(int address) async {
     if (_client == null || !_isConnected) return null;
-    final reg = ModbusInt16Register(
-      name: 'reg_$address',
-      type: _elementType,
-      address: address,
-    );
+    final endianness = _config.wordOrder.toModbusEndianness;
+    final ModbusElement element;
+
+    switch (_config.dataType) {
+      case ModbusRegisterDataType.int16:
+        element = ModbusInt16Register(
+          name: 'reg_$address',
+          type: _elementType,
+          address: address,
+          endianness: endianness,
+        );
+        break;
+      case ModbusRegisterDataType.uint16:
+        element = ModbusUint16Register(
+          name: 'reg_$address',
+          type: _elementType,
+          address: address,
+          endianness: endianness,
+        );
+        break;
+      case ModbusRegisterDataType.int32:
+        element = ModbusInt32Register(
+          name: 'reg_$address',
+          type: _elementType,
+          address: address,
+          endianness: endianness,
+        );
+        break;
+      case ModbusRegisterDataType.uint32:
+        element = ModbusUint32Register(
+          name: 'reg_$address',
+          type: _elementType,
+          address: address,
+          endianness: endianness,
+        );
+        break;
+      case ModbusRegisterDataType.float32:
+        element = ModbusFloatRegister(
+          name: 'reg_$address',
+          type: _elementType,
+          address: address,
+          endianness: endianness,
+        );
+        break;
+    }
+
     try {
-      final res = await _client!.send(reg.getReadRequest()).timeout(_timeout);
+      final res = await _client!.send(element.getReadRequest()).timeout(_timeout);
       if (res == ModbusResponseCode.requestSucceed) {
-        return reg.value?.toInt();
+        return element.value as num?;
       }
     } catch (e) {
       debugPrint('[GenericModbus] Read reg $address error: $e');
@@ -154,19 +226,29 @@ class GenericModbusController implements HeatingController {
       );
     }
 
-    final rawOutdoor = await _readSingleRegister(_config.outdoorRegister);
-    final rawFlow = await _readSingleRegister(_config.flowRegister);
-    final rawReturn = await _readSingleRegister(_config.returnRegister);
-    final rawHotWater = await _readSingleRegister(_config.hotWaterRegister);
+    // Rate-limiting throttle: if called too frequently (within 1.5s),
+    // return cached telemetry to protect fragile gateways (e.g. Stiebel ISG).
+    final now = DateTime.now();
+    if (_lastPollTime != null &&
+        now.difference(_lastPollTime!) < const Duration(milliseconds: 1500) &&
+        _cachedTelemetry != null) {
+      return _cachedTelemetry!;
+    }
+    _lastPollTime = now;
 
-    int? rawRoom;
+    final rawOutdoor = await _readRegisterRaw(_config.outdoorRegister);
+    final rawFlow = await _readRegisterRaw(_config.flowRegister);
+    final rawReturn = await _readRegisterRaw(_config.returnRegister);
+    final rawHotWater = await _readRegisterRaw(_config.hotWaterRegister);
+
+    num? rawRoom;
     if (_config.roomTargetRegister != null) {
-      rawRoom = await _readSingleRegister(_config.roomTargetRegister!);
+      rawRoom = await _readRegisterRaw(_config.roomTargetRegister!);
     }
 
-    int? rawShift;
+    num? rawShift;
     if (_config.heatingCurveShiftRegister != null) {
-      rawShift = await _readSingleRegister(_config.heatingCurveShiftRegister!);
+      rawShift = await _readRegisterRaw(_config.heatingCurveShiftRegister!);
     }
 
     final outdoor = _convertRaw(rawOutdoor);
@@ -196,8 +278,76 @@ class GenericModbusController implements HeatingController {
       },
     );
 
+    _cachedTelemetry = telemetry;
     _telemetryStreamController.add(telemetry);
     return telemetry;
+  }
+
+  Future<void> _writeRegisterValue(int address, double value, String label) async {
+    if (_client == null || !_isConnected) {
+      throw const ModbusCommunicationException(
+        message: 'Keine Verbindung zum Modbus-TCP-Regler.',
+      );
+    }
+
+    final endianness = _config.wordOrder.toModbusEndianness;
+    final ModbusElement element;
+    final dynamic writeValue;
+
+    switch (_config.dataType) {
+      case ModbusRegisterDataType.int16:
+        element = ModbusInt16Register(
+          name: 'write_$address',
+          type: ModbusElementType.holdingRegister,
+          address: address,
+          endianness: endianness,
+        );
+        writeValue = (value / _config.multiplier).round();
+        break;
+      case ModbusRegisterDataType.uint16:
+        element = ModbusUint16Register(
+          name: 'write_$address',
+          type: ModbusElementType.holdingRegister,
+          address: address,
+          endianness: endianness,
+        );
+        writeValue = (value / _config.multiplier).round();
+        break;
+      case ModbusRegisterDataType.int32:
+        element = ModbusInt32Register(
+          name: 'write_$address',
+          type: ModbusElementType.holdingRegister,
+          address: address,
+          endianness: endianness,
+        );
+        writeValue = (value / _config.multiplier).round();
+        break;
+      case ModbusRegisterDataType.uint32:
+        element = ModbusUint32Register(
+          name: 'write_$address',
+          type: ModbusElementType.holdingRegister,
+          address: address,
+          endianness: endianness,
+        );
+        writeValue = (value / _config.multiplier).round();
+        break;
+      case ModbusRegisterDataType.float32:
+        element = ModbusFloatRegister(
+          name: 'write_$address',
+          type: ModbusElementType.holdingRegister,
+          address: address,
+          endianness: endianness,
+        );
+        writeValue = value / _config.multiplier;
+        break;
+    }
+
+    final res = await _client!.send(element.getWriteRequest(writeValue)).timeout(_timeout);
+    if (res != ModbusResponseCode.requestSucceed) {
+      throw ModbusCommunicationException(
+        message: 'Schreiben von $label fehlgeschlagen (Code $res).',
+      );
+    }
   }
 
   @override
@@ -207,25 +357,11 @@ class GenericModbusController implements HeatingController {
         message: 'Kein Register für Parallelverschiebung konfiguriert.',
       );
     }
-    if (_client == null || !_isConnected) {
-      throw const ModbusCommunicationException(
-        message: 'Keine Verbindung zum Modbus-TCP-Regler.',
-      );
-    }
-
-    final raw = (shift / _config.multiplier).round();
-    final reg = ModbusInt16Register(
-      name: 'shift_reg',
-      type: ModbusElementType.holdingRegister,
-      address: _config.heatingCurveShiftRegister!,
+    await _writeRegisterValue(
+      _config.heatingCurveShiftRegister!,
+      shift,
+      'Parallelverschiebung',
     );
-
-    final res = await _client!.send(reg.getWriteRequest(raw)).timeout(_timeout);
-    if (res != ModbusResponseCode.requestSucceed) {
-      throw ModbusCommunicationException(
-        message: 'Schreiben der Parallelverschiebung fehlgeschlagen (Code $res).',
-      );
-    }
   }
 
   @override
@@ -235,25 +371,11 @@ class GenericModbusController implements HeatingController {
         message: 'Kein Register für Raum-Sollwert konfiguriert.',
       );
     }
-    if (_client == null || !_isConnected) {
-      throw const ModbusCommunicationException(
-        message: 'Keine Verbindung zum Modbus-TCP-Regler.',
-      );
-    }
-
-    final raw = (temperature / _config.multiplier).round();
-    final reg = ModbusInt16Register(
-      name: 'room_reg',
-      type: ModbusElementType.holdingRegister,
-      address: _config.roomTargetRegister!,
+    await _writeRegisterValue(
+      _config.roomTargetRegister!,
+      temperature,
+      'Raum-Solltemperatur',
     );
-
-    final res = await _client!.send(reg.getWriteRequest(raw)).timeout(_timeout);
-    if (res != ModbusResponseCode.requestSucceed) {
-      throw ModbusCommunicationException(
-        message: 'Schreiben der Raum-Soll-Temperatur fehlgeschlagen (Code $res).',
-      );
-    }
   }
 
   /// Attempts a quick connection and telemetry read to verify configuration.
@@ -279,5 +401,10 @@ class GenericModbusController implements HeatingController {
         'error': e.toString(),
       };
     }
+  }
+
+  void dispose() {
+    disconnect();
+    _telemetryStreamController.close();
   }
 }

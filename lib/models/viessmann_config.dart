@@ -44,14 +44,15 @@ class ViessmannConfig {
   final String installationId;
   final String circuit;
   final int timeoutSeconds;
+  final int cloudPollingIntervalSeconds;
   final String presetId;
   final String presetName;
 
   static const List<ViessmannPreset> presets = [
     ViessmannPreset(
       id: 'optolink_vcontrold',
-      name: 'Viessmann Optolink (vcontrold / TCP)',
-      description: 'Lokaler vcontrold Telnet/TCP-Daemon über USB-Optolink (Port 3002)',
+      name: 'Viessmann Optolink (vcontrold / Open3E)',
+      description: 'Lokaler vcontrold oder Open3E Daemon über Optolink (Port 3002)',
       connectionType: ViessmannConnectionType.optolinkTcp,
       defaultPort: 3002,
       defaultCircuit: '0',
@@ -67,7 +68,7 @@ class ViessmannConfig {
     ViessmannPreset(
       id: 'vicare_cloud',
       name: 'Viessmann ViCare Developer API (Cloud REST)',
-      description: 'Offizielle Viessmann IoT Cloud-Schnittstelle über Vitoconnect & API-Token',
+      description: 'Offizielle Viessmann IoT Cloud-Schnittstelle über Vitoconnect & API-Token (60s Quoten-Schutz)',
       connectionType: ViessmannConnectionType.vicareRest,
       defaultPort: 443,
       defaultCircuit: '0',
@@ -75,7 +76,7 @@ class ViessmannConfig {
     ViessmannPreset(
       id: 'vitotronic_200',
       name: 'Viessmann Vitotronic 200 (Optolink)',
-      description: 'Optimiert für Vitotronic 200 KW2/KO1B/HO1B Regelungen über vcontrold',
+      description: 'Optimiert für Vitotronic 200 KW2/KO1B/HO1B Regelungen über vcontrold / Open3E',
       connectionType: ViessmannConnectionType.optolinkTcp,
       defaultPort: 3002,
       defaultCircuit: '0',
@@ -98,8 +99,9 @@ class ViessmannConfig {
     this.installationId = '',
     this.circuit = '0',
     this.timeoutSeconds = 5,
+    this.cloudPollingIntervalSeconds = 60,
     this.presetId = 'optolink_vcontrold',
-    this.presetName = 'Viessmann Optolink (vcontrold / TCP)',
+    this.presetName = 'Viessmann Optolink (vcontrold / Open3E)',
   });
 
   factory ViessmannConfig.fromPreset(
@@ -126,6 +128,7 @@ class ViessmannConfig {
     String? installationId,
     String? circuit,
     int? timeoutSeconds,
+    int? cloudPollingIntervalSeconds,
     String? presetId,
     String? presetName,
   }) {
@@ -137,6 +140,8 @@ class ViessmannConfig {
       installationId: installationId ?? this.installationId,
       circuit: circuit ?? this.circuit,
       timeoutSeconds: timeoutSeconds ?? this.timeoutSeconds,
+      cloudPollingIntervalSeconds:
+          cloudPollingIntervalSeconds ?? this.cloudPollingIntervalSeconds,
       presetId: presetId ?? this.presetId,
       presetName: presetName ?? this.presetName,
     );
@@ -151,6 +156,7 @@ class ViessmannConfig {
       'installationId': installationId,
       'circuit': circuit,
       'timeoutSeconds': timeoutSeconds,
+      'cloudPollingIntervalSeconds': cloudPollingIntervalSeconds,
       'presetId': presetId,
       'presetName': presetName,
     };
@@ -171,8 +177,10 @@ class ViessmannConfig {
       installationId: json['installationId'] as String? ?? '',
       circuit: json['circuit'] as String? ?? '0',
       timeoutSeconds: (json['timeoutSeconds'] as num?)?.toInt() ?? 5,
+      cloudPollingIntervalSeconds:
+          (json['cloudPollingIntervalSeconds'] as num?)?.toInt() ?? 60,
       presetId: json['presetId'] as String? ?? 'optolink_vcontrold',
-      presetName: json['presetName'] as String? ?? 'Viessmann Optolink (vcontrold / TCP)',
+      presetName: json['presetName'] as String? ?? 'Viessmann Optolink (vcontrold / Open3E)',
     );
   }
 

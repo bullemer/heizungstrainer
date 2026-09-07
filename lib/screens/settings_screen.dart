@@ -44,19 +44,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final _modbusHwRegController = TextEditingController();
   final _modbusRoomRegController = TextEditingController();
   final _modbusShiftRegController = TextEditingController();
+  final _modbusPollingIntervalController = TextEditingController(text: '10');
   String _modbusPresetId = 'standard';
   double _modbusMultiplier = 0.1;
   bool _modbusIsHolding = true;
+  ModbusWordOrder _modbusWordOrder = ModbusWordOrder.bigEndian;
+  ModbusRegisterDataType _modbusDataType = ModbusRegisterDataType.int16;
   bool _testingModbus = false;
 
   final _emsHostController = TextEditingController();
   final _emsPortController = TextEditingController();
   final _emsTokenController = TextEditingController();
+  final _emsGatewayPassController = TextEditingController();
+  final _emsPrivatePassController = TextEditingController();
+  final _emsKm200KeyController = TextEditingController();
   String _emsCircuit = 'hc1';
   bool _emsUseHttps = false;
+  BoschGatewayType _emsGatewayType = BoschGatewayType.emsEsp;
   String _emsPresetId = 'standard';
   bool _obscureEmsToken = true;
+  bool _obscureKm200Pass = true;
   bool _testingEms = false;
+  bool _discoveringEms = false;
 
   final _viessmannHostController = TextEditingController();
   final _viessmannPortController = TextEditingController();
@@ -64,6 +73,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final _viessmannInstallIdController = TextEditingController();
   ViessmannConnectionType _viessmannConnType = ViessmannConnectionType.optolinkTcp;
   String _viessmannCircuit = '0';
+  int _viessmannCloudPollingInterval = 60;
   String _viessmannPresetId = 'optolink_vcontrold';
   bool _obscureViessmannToken = true;
   bool _testingViessmann = false;
@@ -139,16 +149,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
           modbusCfg.roomTargetRegister?.toString() ?? '';
       _modbusShiftRegController.text =
           modbusCfg.heatingCurveShiftRegister?.toString() ?? '';
+      _modbusPollingIntervalController.text =
+          modbusCfg.pollingIntervalSeconds.toString();
       _modbusPresetId = modbusCfg.presetId;
       _modbusMultiplier = modbusCfg.multiplier;
       _modbusIsHolding = modbusCfg.isHoldingRegister;
+      _modbusWordOrder = modbusCfg.wordOrder;
+      _modbusDataType = modbusCfg.dataType;
 
       final emsCfg = provider.boschBuderusConfig;
       _emsHostController.text = emsCfg.host;
       _emsPortController.text = emsCfg.port.toString();
       _emsTokenController.text = emsCfg.apiToken;
+      _emsGatewayPassController.text = emsCfg.gatewayPassword;
+      _emsPrivatePassController.text = emsCfg.privatePassword;
+      _emsKm200KeyController.text = emsCfg.km200Key;
       _emsCircuit = emsCfg.circuit;
       _emsUseHttps = emsCfg.useHttps;
+      _emsGatewayType = emsCfg.gatewayType;
       _emsPresetId = emsCfg.presetId;
 
       final vCfg = provider.viessmannConfig;
@@ -158,6 +176,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _viessmannInstallIdController.text = vCfg.installationId;
       _viessmannConnType = vCfg.connectionType;
       _viessmannCircuit = vCfg.circuit;
+      _viessmannCloudPollingInterval = vCfg.cloudPollingIntervalSeconds;
       _viessmannPresetId = vCfg.presetId;
 
       final vaillantCfg = provider.vaillantConfig;
@@ -245,9 +264,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _modbusHwRegController.dispose();
     _modbusRoomRegController.dispose();
     _modbusShiftRegController.dispose();
+    _modbusPollingIntervalController.dispose();
     _emsHostController.dispose();
     _emsPortController.dispose();
     _emsTokenController.dispose();
+    _emsGatewayPassController.dispose();
+    _emsPrivatePassController.dispose();
+    _emsKm200KeyController.dispose();
     _viessmannHostController.dispose();
     _viessmannPortController.dispose();
     _viessmannTokenController.dispose();
@@ -337,6 +360,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
           int.tryParse(_modbusShiftRegController.text.trim()),
       multiplier: _modbusMultiplier,
       isHoldingRegister: _modbusIsHolding,
+      wordOrder: _modbusWordOrder,
+      dataType: _modbusDataType,
+      pollingIntervalSeconds:
+          int.tryParse(_modbusPollingIntervalController.text.trim()) ?? 10,
       presetId: _modbusPresetId,
     );
 
@@ -381,6 +408,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
       apiToken: _emsTokenController.text.trim(),
       circuit: _emsCircuit,
       useHttps: _emsUseHttps,
+      gatewayType: _emsGatewayType,
+      gatewayPassword: _emsGatewayPassController.text.trim(),
+      privatePassword: _emsPrivatePassController.text.trim(),
+      km200Key: _emsKm200KeyController.text.trim(),
       presetId: _emsPresetId,
     );
 
@@ -392,7 +423,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'EMS-ESP Test erfolgreich! (Version: ${res['version'] ?? "v3"})\n'
+            '${res['message'] ?? "Test erfolgreich!"}\n'
             'Vorlauf: ${res['flowTemp'] != null ? "${res['flowTemp']} °C" : "-"} | '
             'Rücklauf: ${res['returnTemp'] != null ? "${res['returnTemp']} °C" : "-"} | '
             'Außen: ${res['outdoorTemp'] != null ? "${res['outdoorTemp']} °C" : "-"} | '
@@ -406,12 +437,53 @@ class _SettingsScreenState extends State<SettingsScreen> {
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('EMS-ESP Verbindung fehlgeschlagen: ${res['message']}'),
+          content: Text('Bosch/Buderus Verbindung fehlgeschlagen: ${res['message']}'),
           backgroundColor: const Color(0xFF5C1D1D),
           behavior: SnackBarBehavior.floating,
           duration: const Duration(seconds: 5),
         ),
       );
+    }
+  }
+
+  Future<void> _discoverEmsGateways() async {
+    setState(() => _discoveringEms = true);
+    try {
+      final gateways = await BoschBuderusEmsController.discoverEmsGateways();
+      if (!mounted) return;
+      if (gateways.isNotEmpty) {
+        final gw = gateways.first;
+        setState(() {
+          _emsHostController.text = gw.ip;
+          _emsPortController.text = gw.port.toString();
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${gw.model} gefunden unter ${gw.ip} (${gw.version})!'),
+            backgroundColor: const Color(0xFF1B3D2F),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Kein EMS-ESP Gateway über mDNS gefunden. Bitte IP manuell eintragen.'),
+            backgroundColor: Color(0xFF3A3A44),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Fehler bei der Gateway-Suche: $e'),
+          backgroundColor: const Color(0xFF5C1D1D),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _discoveringEms = false);
     }
   }
 
@@ -427,6 +499,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       apiToken: _viessmannTokenController.text.trim(),
       installationId: _viessmannInstallIdController.text.trim(),
       circuit: _viessmannCircuit,
+      cloudPollingIntervalSeconds: _viessmannCloudPollingInterval,
       presetId: _viessmannPresetId,
     );
 
@@ -636,6 +709,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
             int.tryParse(_modbusShiftRegController.text.trim()),
         multiplier: _modbusMultiplier,
         isHoldingRegister: _modbusIsHolding,
+        wordOrder: _modbusWordOrder,
+        dataType: _modbusDataType,
+        pollingIntervalSeconds:
+            int.tryParse(_modbusPollingIntervalController.text.trim()) ?? 10,
         presetId: _modbusPresetId,
         presetName: GenericModbusConfig.presets
             .firstWhere((p) => p.id == _modbusPresetId,
@@ -654,6 +731,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
         apiToken: _emsTokenController.text.trim(),
         circuit: _emsCircuit,
         useHttps: _emsUseHttps,
+        gatewayType: _emsGatewayType,
+        gatewayPassword: _emsGatewayPassController.text.trim(),
+        privatePassword: _emsPrivatePassController.text.trim(),
+        km200Key: _emsKm200KeyController.text.trim(),
         presetId: _emsPresetId,
         presetName: BoschBuderusEmsConfig.presets
             .firstWhere((p) => p.id == _emsPresetId,
@@ -674,6 +755,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         apiToken: _viessmannTokenController.text.trim(),
         installationId: _viessmannInstallIdController.text.trim(),
         circuit: _viessmannCircuit,
+        cloudPollingIntervalSeconds: _viessmannCloudPollingInterval,
         presetId: _viessmannPresetId,
         presetName: ViessmannConfig.presets
             .firstWhere((p) => p.id == _viessmannPresetId,
@@ -1027,6 +1109,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     preset.heatingCurveShiftRegister?.toString() ?? '';
                 _modbusMultiplier = preset.multiplier;
                 _modbusIsHolding = preset.isHoldingRegister;
+                _modbusWordOrder = preset.wordOrder;
+                _modbusDataType = preset.dataType;
+                _modbusPollingIntervalController.text =
+                    preset.pollingIntervalSeconds.toString();
               });
             },
           ),
@@ -1234,6 +1320,108 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ],
           ),
+          const SizedBox(height: 14),
+
+          // ── Endianness & Data Type ───────────────────────────
+          Row(
+            children: [
+              Expanded(
+                flex: 3,
+                child: DropdownButtonFormField<ModbusWordOrder>(
+                  initialValue: _modbusWordOrder,
+                  decoration: _decoration(
+                    label: 'Word- / Byte-Order',
+                    icon: Icons.swap_horiz_rounded,
+                  ),
+                  dropdownColor: const Color(0xFF2A2A32),
+                  items: const [
+                    DropdownMenuItem(
+                      value: ModbusWordOrder.bigEndian,
+                      child: Text('Big-Endian (ABCD)',
+                          style: TextStyle(fontSize: 12)),
+                    ),
+                    DropdownMenuItem(
+                      value: ModbusWordOrder.wordSwap,
+                      child: Text('Word-Swap (CDAB, Luxtronik)',
+                          style: TextStyle(fontSize: 12)),
+                    ),
+                    DropdownMenuItem(
+                      value: ModbusWordOrder.littleEndian,
+                      child: Text('Little-Endian (DCBA)',
+                          style: TextStyle(fontSize: 12)),
+                    ),
+                    DropdownMenuItem(
+                      value: ModbusWordOrder.byteSwap,
+                      child: Text('Byte-Swap (BADC)',
+                          style: TextStyle(fontSize: 12)),
+                    ),
+                  ],
+                  onChanged: (val) {
+                    if (val != null) setState(() => _modbusWordOrder = val);
+                  },
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                flex: 2,
+                child: DropdownButtonFormField<ModbusRegisterDataType>(
+                  initialValue: _modbusDataType,
+                  decoration: _decoration(
+                    label: 'Datentyp',
+                    icon: Icons.data_object_rounded,
+                  ),
+                  dropdownColor: const Color(0xFF2A2A32),
+                  items: const [
+                    DropdownMenuItem(
+                      value: ModbusRegisterDataType.int16,
+                      child: Text('16-bit Int', style: TextStyle(fontSize: 12)),
+                    ),
+                    DropdownMenuItem(
+                      value: ModbusRegisterDataType.uint16,
+                      child: Text('16-bit UInt', style: TextStyle(fontSize: 12)),
+                    ),
+                    DropdownMenuItem(
+                      value: ModbusRegisterDataType.int32,
+                      child: Text('32-bit Int', style: TextStyle(fontSize: 12)),
+                    ),
+                    DropdownMenuItem(
+                      value: ModbusRegisterDataType.uint32,
+                      child: Text('32-bit UInt', style: TextStyle(fontSize: 12)),
+                    ),
+                    DropdownMenuItem(
+                      value: ModbusRegisterDataType.float32,
+                      child: Text('32-bit Float', style: TextStyle(fontSize: 12)),
+                    ),
+                  ],
+                  onChanged: (val) {
+                    if (val != null) setState(() => _modbusDataType = val);
+                  },
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+
+          // ── Polling Interval & Throttling ────────────────────
+          TextFormField(
+            controller: _modbusPollingIntervalController,
+            keyboardType: TextInputType.number,
+            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+            decoration: _decoration(
+              label: 'Abfrage-Intervall (Sekunden)',
+              icon: Icons.timer_outlined,
+            ).copyWith(
+              helperText: _modbusPresetId == 'stiebel_isg'
+                  ? 'ISG Throttling: Min. 5 Sek. empfohlen, um Abstürze des ISG-Webservers zu vermeiden.'
+                  : 'Empfohlen: 5 bis 30 Sekunden.',
+              helperStyle: TextStyle(
+                fontSize: 11,
+                color: _modbusPresetId == 'stiebel_isg'
+                    ? const Color(0xFFFFA726)
+                    : Colors.white.withValues(alpha: 0.4),
+              ),
+            ),
+          ),
           const SizedBox(height: 16),
 
           // ── Test & Connect Row ───────────────────────────────
@@ -1349,10 +1537,67 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 _emsPortController.text = preset.defaultPort.toString();
                 _emsCircuit = preset.defaultCircuit;
                 _emsUseHttps = preset.defaultUseHttps;
+                _emsGatewayType = preset.defaultGatewayType;
               });
             },
           ),
           const SizedBox(height: 14),
+
+          // ── Gateway-Typ Selector ─────────────────────────────
+          DropdownButtonFormField<BoschGatewayType>(
+            initialValue: _emsGatewayType,
+            decoration: _decoration(
+              label: 'Gateway-Typ & Protokoll',
+              icon: Icons.device_hub_rounded,
+            ),
+            dropdownColor: const Color(0xFF2A2A32),
+            items: const [
+              DropdownMenuItem(
+                value: BoschGatewayType.emsEsp,
+                child: Text('EMS-ESP Gateway (BBQKees REST API v3)',
+                    style: TextStyle(fontSize: 13)),
+              ),
+              DropdownMenuItem(
+                value: BoschGatewayType.km200,
+                child: Text('Buderus KM200 / MB LAN 2 / MX300 (AES-128 lokal)',
+                    style: TextStyle(fontSize: 13)),
+              ),
+            ],
+            onChanged: (val) {
+              if (val != null) {
+                setState(() {
+                  _emsGatewayType = val;
+                  if (val == BoschGatewayType.km200 && _emsPortController.text == '80') {
+                    _emsPortController.text = '80';
+                  }
+                });
+              }
+            },
+          ),
+          const SizedBox(height: 14),
+
+          // ── Auto-Discovery (EMS-ESP) ──────────────────────────
+          if (_emsGatewayType == BoschGatewayType.emsEsp) ...[
+            OutlinedButton.icon(
+              onPressed: _discoveringEms ? null : _discoverEmsGateways,
+              icon: _discoveringEms
+                  ? const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: accent),
+                    )
+                  : const Icon(Icons.radar_outlined, size: 16),
+              label: Text(_discoveringEms
+                  ? 'Suche EMS-ESP Gateways...'
+                  : 'EMS-ESP Gateway im Heimnetz suchen (mDNS)'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: accent,
+                side: const BorderSide(color: Color(0xFF4A2A2A)),
+                minimumSize: const Size.fromHeight(38),
+              ),
+            ),
+            const SizedBox(height: 14),
+          ],
 
           // ── Host & Port ──────────────────────────────────────
           Row(
@@ -1385,95 +1630,196 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           const SizedBox(height: 14),
 
-          // ── Circuit & HTTPS ──────────────────────────────────
-          Row(
-            children: [
-              Expanded(
-                flex: 3,
-                child: DropdownButtonFormField<String>(
-                  initialValue: _emsCircuit,
-                  decoration: _decoration(
-                    label: 'Heizkreis (Circuit)',
-                    icon: Icons.tune_rounded,
-                  ),
-                  dropdownColor: const Color(0xFF2A2A32),
-                  items: const [
-                    DropdownMenuItem(
-                      value: 'hc1',
-                      child: Text('Heizkreis 1 (hc1)', style: TextStyle(fontSize: 13)),
+          // ── Circuit & HTTPS (EMS-ESP) or Circuit & Info (KM200)
+          if (_emsGatewayType == BoschGatewayType.emsEsp) ...[
+            Row(
+              children: [
+                Expanded(
+                  flex: 3,
+                  child: DropdownButtonFormField<String>(
+                    initialValue: _emsCircuit,
+                    decoration: _decoration(
+                      label: 'Heizkreis (Circuit)',
+                      icon: Icons.tune_rounded,
                     ),
-                    DropdownMenuItem(
-                      value: 'hc2',
-                      child: Text('Heizkreis 2 (hc2)', style: TextStyle(fontSize: 13)),
-                    ),
-                    DropdownMenuItem(
-                      value: 'hc3',
-                      child: Text('Heizkreis 3 (hc3)', style: TextStyle(fontSize: 13)),
-                    ),
-                    DropdownMenuItem(
-                      value: 'hc4',
-                      child: Text('Heizkreis 4 (hc4)', style: TextStyle(fontSize: 13)),
-                    ),
-                  ],
-                  onChanged: (val) {
-                    if (val != null) setState(() => _emsCircuit = val);
-                  },
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                flex: 2,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF2A2A32),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: const Color(0xFF3A3A44)),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text(
-                        'HTTPS',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFFECECF0),
-                        ),
+                    dropdownColor: const Color(0xFF2A2A32),
+                    items: const [
+                      DropdownMenuItem(
+                        value: 'hc1',
+                        child: Text('Heizkreis 1 (hc1)', style: TextStyle(fontSize: 13)),
                       ),
-                      Switch(
-                        value: _emsUseHttps,
-                        activeThumbColor: accent,
-                        onChanged: (v) => setState(() => _emsUseHttps = v),
+                      DropdownMenuItem(
+                        value: 'hc2',
+                        child: Text('Heizkreis 2 (hc2)', style: TextStyle(fontSize: 13)),
+                      ),
+                      DropdownMenuItem(
+                        value: 'hc3',
+                        child: Text('Heizkreis 3 (hc3)', style: TextStyle(fontSize: 13)),
+                      ),
+                      DropdownMenuItem(
+                        value: 'hc4',
+                        child: Text('Heizkreis 4 (hc4)', style: TextStyle(fontSize: 13)),
                       ),
                     ],
+                    onChanged: (val) {
+                      if (val != null) setState(() => _emsCircuit = val);
+                    },
                   ),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-
-          // ── API Token ────────────────────────────────────────
-          TextFormField(
-            controller: _emsTokenController,
-            obscureText: _obscureEmsToken,
-            decoration: _decoration(
-              label: 'API Token / Bearer Token (Optional)',
-              icon: Icons.key_rounded,
-            ).copyWith(
-              helperText: 'Optional: Nur notwendig, wenn im EMS-ESP Token-Authentifizierung aktiviert ist.',
-              helperStyle: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.4)),
-              suffixIcon: IconButton(
-                icon: Icon(
-                  _obscureEmsToken ? Icons.visibility_outlined : Icons.visibility_off_outlined,
-                  color: Colors.white54,
-                  size: 20,
+                const SizedBox(width: 8),
+                Expanded(
+                  flex: 2,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF2A2A32),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: const Color(0xFF3A3A44)),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'HTTPS',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFFECECF0),
+                          ),
+                        ),
+                        Switch(
+                          value: _emsUseHttps,
+                          activeThumbColor: accent,
+                          onChanged: (v) => setState(() => _emsUseHttps = v),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
-                onPressed: () => setState(() => _obscureEmsToken = !_obscureEmsToken),
+              ],
+            ),
+            const SizedBox(height: 14),
+
+            // ── API Token ────────────────────────────────────────
+            TextFormField(
+              controller: _emsTokenController,
+              obscureText: _obscureEmsToken,
+              decoration: _decoration(
+                label: 'API Token / Bearer Token (Optional)',
+                icon: Icons.key_rounded,
+              ).copyWith(
+                helperText: 'Optional: Nur notwendig, wenn im EMS-ESP Token-Authentifizierung aktiviert ist.',
+                helperStyle: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.4)),
+                suffixIcon: IconButton(
+                  icon: Icon(
+                    _obscureEmsToken ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                    color: Colors.white54,
+                    size: 20,
+                  ),
+                  onPressed: () => setState(() => _obscureEmsToken = !_obscureEmsToken),
+                ),
               ),
             ),
-          ),
+          ] else ...[
+            // ── KM200 / MB LAN ──────────────────────────────────
+            DropdownButtonFormField<String>(
+              initialValue: _emsCircuit,
+              decoration: _decoration(
+                label: 'Heizkreis (Circuit)',
+                icon: Icons.tune_rounded,
+              ),
+              dropdownColor: const Color(0xFF2A2A32),
+              items: const [
+                DropdownMenuItem(
+                  value: 'hc1',
+                  child: Text('Heizkreis 1 (hc1)', style: TextStyle(fontSize: 13)),
+                ),
+                DropdownMenuItem(
+                  value: 'hc2',
+                  child: Text('Heizkreis 2 (hc2)', style: TextStyle(fontSize: 13)),
+                ),
+                DropdownMenuItem(
+                  value: 'hc3',
+                  child: Text('Heizkreis 3 (hc3)', style: TextStyle(fontSize: 13)),
+                ),
+                DropdownMenuItem(
+                  value: 'hc4',
+                  child: Text('Heizkreis 4 (hc4)', style: TextStyle(fontSize: 13)),
+                ),
+              ],
+              onChanged: (val) {
+                if (val != null) setState(() => _emsCircuit = val);
+              },
+            ),
+            const SizedBox(height: 14),
+            TextFormField(
+              controller: _emsGatewayPassController,
+              obscureText: _obscureKm200Pass,
+              decoration: _decoration(
+                label: 'Gateway-Passwort (Geräteaufkleber)',
+                icon: Icons.vpn_key_outlined,
+              ).copyWith(
+                helperText: 'Format z.B. xxxx-xxxx-xxxx-xxxx vom Aufkleber am Gateway/Kessel.',
+                helperStyle: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.4)),
+                suffixIcon: IconButton(
+                  icon: Icon(
+                    _obscureKm200Pass ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                    color: Colors.white54,
+                    size: 20,
+                  ),
+                  onPressed: () => setState(() => _obscureKm200Pass = !_obscureKm200Pass),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _emsPrivatePassController,
+              obscureText: _obscureKm200Pass,
+              decoration: _decoration(
+                label: 'Persönliches App-Passwort',
+                icon: Icons.password_rounded,
+              ).copyWith(
+                helperText: 'Passwort aus der Buderus MyDevice / Bosch EasyControl App.',
+                helperStyle: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.4)),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _emsKm200KeyController,
+              obscureText: true,
+              decoration: _decoration(
+                label: 'Direkter AES-Schlüssel (32 Hex-Zeichen, optional)',
+                icon: Icons.security_rounded,
+              ).copyWith(
+                helperText: 'Optional: Überschreibt die Passwort-Schlüsselableitung.',
+                helperStyle: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.4)),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1E1E26),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0xFF33333E)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.lock_rounded, size: 16, color: Color(0xFF81C784)),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Zero-Cloud: Der 128-Bit AES-Schlüssel wird lokal auf diesem Gerät generiert. Keine Daten verlassen dein Heimnetz.',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.white.withValues(alpha: 0.7),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
           const SizedBox(height: 16),
 
           // ── Test & Connect Row ───────────────────────────────
@@ -1729,6 +2075,49 @@ class _SettingsScreenState extends State<SettingsScreen> {
               if (val != null) setState(() => _viessmannCircuit = val);
             },
           ),
+          if (_viessmannConnType == ViessmannConnectionType.vicareRest) ...[
+            const SizedBox(height: 14),
+            DropdownButtonFormField<int>(
+              initialValue: _viessmannCloudPollingInterval,
+              decoration: _decoration(
+                label: 'Cloud Abfrage-Intervall',
+                icon: Icons.timer_outlined,
+              ).copyWith(
+                helperText:
+                    'ViCare Cloud-Kontingent: Max. 1.450 Aufrufe/Tag. 60–120s schützt vor Sperren (HTTP 429).',
+                helperStyle: const TextStyle(fontSize: 11, color: Color(0xFFFFB74D)),
+                helperMaxLines: 2,
+              ),
+              dropdownColor: const Color(0xFF2A2A32),
+              items: const [
+                DropdownMenuItem(
+                  value: 60,
+                  child: Text('60 Sekunden (Empfohlen - ~1.440 Anfragen/Tag)',
+                      style: TextStyle(fontSize: 12.5)),
+                ),
+                DropdownMenuItem(
+                  value: 90,
+                  child: Text('90 Sekunden (Sicher - ~960 Anfragen/Tag)',
+                      style: TextStyle(fontSize: 12.5)),
+                ),
+                DropdownMenuItem(
+                  value: 120,
+                  child: Text('120 Sekunden (Sparsam - ~720 Anfragen/Tag)',
+                      style: TextStyle(fontSize: 12.5)),
+                ),
+                DropdownMenuItem(
+                  value: 180,
+                  child: Text('180 Sekunden (Minimal - ~480 Anfragen/Tag)',
+                      style: TextStyle(fontSize: 12.5)),
+                ),
+              ],
+              onChanged: (val) {
+                if (val != null) {
+                  setState(() => _viessmannCloudPollingInterval = val);
+                }
+              },
+            ),
+          ],
           const SizedBox(height: 16),
 
           // ── Test & Connect Row ───────────────────────────────

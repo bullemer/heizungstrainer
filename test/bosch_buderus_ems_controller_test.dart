@@ -16,14 +16,43 @@ void main() {
   group('BoschBuderusEmsConfig & Presets Tests', () {
     test('contains expected factory presets', () {
       final presets = BoschBuderusEmsConfig.presets;
-      expect(presets.length, greaterThanOrEqualTo(5));
+      expect(presets.length, greaterThanOrEqualTo(6));
 
       final ids = presets.map((p) => p.id).toSet();
       expect(ids.contains('standard'), isTrue);
       expect(ids.contains('bbqkees'), isTrue);
+      expect(ids.contains('km200_mblan'), isTrue);
       expect(ids.contains('buderus_logamatic'), isTrue);
       expect(ids.contains('bosch_junkers'), isTrue);
       expect(ids.contains('custom'), isTrue);
+    });
+
+    test('km200_mblan preset defaults to km200 gateway type', () {
+      final kmPreset = BoschBuderusEmsConfig.presets.firstWhere((p) => p.id == 'km200_mblan');
+      expect(kmPreset.defaultGatewayType, BoschGatewayType.km200);
+      expect(kmPreset.defaultPort, 80);
+    });
+
+    test('KM200 AES key derivation calculates 16-byte key correctly', () {
+      const config = BoschBuderusEmsConfig(
+        gatewayType: BoschGatewayType.km200,
+        gatewayPassword: '1234-5678-9012-3456',
+        privatePassword: 'MySecretUserPass',
+      );
+      final keyBytes = config.getKm200KeyBytes();
+      expect(keyBytes, isNotNull);
+      expect(keyBytes!.length, 16);
+
+      // Direct hex key fallback
+      const hexConfig = BoschBuderusEmsConfig(
+        gatewayType: BoschGatewayType.km200,
+        km200Key: '0123456789abcdef0123456789abcdef',
+      );
+      final hexBytes = hexConfig.getKm200KeyBytes();
+      expect(hexBytes, isNotNull);
+      expect(hexBytes!.length, 16);
+      expect(hexBytes[0], 0x01);
+      expect(hexBytes[15], 0xef);
     });
 
     test('default config values are valid', () {
