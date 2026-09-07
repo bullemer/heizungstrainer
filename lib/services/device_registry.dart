@@ -3,8 +3,10 @@ import 'package:heizungstrainer/billing/billing_provider.dart';
 import 'package:heizungstrainer/billing/brunata_hamburg_billing_provider.dart';
 import 'package:heizungstrainer/billing/mock_billing_provider.dart';
 import 'package:heizungstrainer/controllers/danfoss_ecl_310_controller.dart';
+import 'package:heizungstrainer/controllers/generic_modbus_controller.dart';
 import 'package:heizungstrainer/controllers/heating_controller.dart';
 import 'package:heizungstrainer/controllers/mock_heating_controller.dart';
+import 'package:heizungstrainer/models/generic_modbus_config.dart';
 import 'package:heizungstrainer/services/brunata_local_scraper_service.dart';
 import 'package:heizungstrainer/services/modbus_service.dart';
 
@@ -86,8 +88,8 @@ class DeviceRegistry {
       brand: 'Generisch',
       model: 'Modbus TCP Heizungsregler',
       protocol: ConnectionProtocol.modbusTcp,
-      description: 'Konfigurierbare Registerzuordnung für TA UVR16x2, Siemens Synco u.a.',
-      isSupported: false,
+      description: 'Vollwertiger Modbus-TCP-Betrieb für TA UVR16x2, Siemens Synco, Wolf u.a.',
+      isSupported: true,
       icon: Icons.settings_input_component_rounded,
     ),
   ];
@@ -165,9 +167,13 @@ class DeviceRegistry {
   static HeatingController createController(
     String id, {
     ModbusService? modbusService,
+    GenericModbusConfig? genericModbusConfig,
   }) {
     if (id == 'danfoss_ecl_310') {
       return DanfossEcl310Controller(modbusService: modbusService);
+    }
+    if (id == 'generic_modbus') {
+      return GenericModbusController(config: genericModbusConfig);
     }
     final desc = getControllerDescriptor(id);
     return MockHeatingController(

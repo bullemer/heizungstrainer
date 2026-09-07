@@ -12,10 +12,12 @@ import 'package:permission_handler/permission_handler.dart';
 
 import 'package:heizungstrainer/billing/billing_provider.dart';
 import 'package:heizungstrainer/controllers/heating_controller.dart';
+import 'package:heizungstrainer/controllers/generic_modbus_controller.dart';
 import 'package:heizungstrainer/exceptions/modbus_exceptions.dart';
 import 'package:heizungstrainer/models/brunata_meter_data.dart';
 import 'package:heizungstrainer/models/ecl_parameter.dart';
 import 'package:heizungstrainer/models/ecl_reading.dart';
+import 'package:heizungstrainer/models/generic_modbus_config.dart';
 import 'package:heizungstrainer/models/telemetry_sample.dart';
 import 'package:heizungstrainer/services/brunata_local_scraper_service.dart';
 import 'package:heizungstrainer/services/database_service.dart';
@@ -95,16 +97,23 @@ class ECLProvider extends ChangeNotifier {
   DateTime? get lastSuccessfulPoll => _lastSuccessfulPoll;
   DatabaseService get databaseService => _databaseService;
 
+  GenericModbusConfig _genericModbusConfig = const GenericModbusConfig();
+
   String get selectedControllerId => _selectedControllerId;
   String get selectedBillingId => _selectedBillingId;
   HeatingController get activeController => _activeController;
   BillingProvider get activeBillingProvider => _activeBillingProvider;
   EnergyPriceService get energyPriceService => _energyPriceService;
+  GenericModbusConfig get genericModbusConfig => _genericModbusConfig;
   ControllerDescriptor get currentControllerDescriptor =>
       DeviceRegistry.getControllerDescriptor(_selectedControllerId);
   BillingProviderDescriptor get currentBillingDescriptor =>
       DeviceRegistry.getBillingProviderDescriptor(_selectedBillingId);
-  bool get isSimulatedController => _selectedControllerId != 'danfoss_ecl_310';
+  bool get isSimulatedController =>
+      _selectedControllerId != 'danfoss_ecl_310' &&
+      _selectedControllerId != 'generic_modbus';
+  bool get isGenericModbusController =>
+      _selectedControllerId == 'generic_modbus';
   bool get isSimulatedBilling => _selectedBillingId != 'brunata_hamburg';
 
   BrunataSyncState get brunataSyncState => _brunataSyncState;
@@ -170,14 +179,16 @@ class ECLProvider extends ChangeNotifier {
 
   Future<void> _initHardwareSettings() async {
     try {
+      _genericModbusConfig = await GenericModbusConfig.load(_secureStorage);
       final savedCtrl = await _secureStorage.read(key: _controllerStorageKey);
       if (savedCtrl != null && savedCtrl.isNotEmpty && savedCtrl != _selectedControllerId) {
         _selectedControllerId = savedCtrl;
-        _activeController = DeviceRegistry.createController(
-          savedCtrl,
-          modbusService: _modbusService,
-        );
       }
+      _activeController = DeviceRegistry.createController(
+        _selectedControllerId,
+        modbusService: _modbusService,
+        genericModbusConfig: _genericModbusConfig,
+      );
       final savedBill = await _secureStorage.read(key: _billingStorageKey);
       if (savedBill != null && savedBill.isNotEmpty && savedBill != _selectedBillingId) {
         _selectedBillingId = savedBill;
@@ -202,11 +213,30 @@ class ECLProvider extends ChangeNotifier {
     _activeController = DeviceRegistry.createController(
       id,
       modbusService: _modbusService,
+      genericModbusConfig: _genericModbusConfig,
     );
     try {
       await _secureStorage.write(key: _controllerStorageKey, value: id);
     } catch (e) {
       debugPrint('[Provider] Could not persist selected controller: $e');
+    }
+    notifyListeners();
+  }
+
+  /// Updates and persists the Generic Modbus TCP configuration.
+  Future<void> updateGenericModbusConfig(GenericModbusConfig config) async {
+    _genericModbusConfig = config;
+    await config.save(_secureStorage);
+    if (_selectedControllerId == 'generic_modbus') {
+      if (_activeController is GenericModbusController) {
+        (_activeController as GenericModbusController).updateConfig(config);
+      } else {
+        _activeController = DeviceRegistry.createController(
+          'generic_modbus',
+          modbusService: _modbusService,
+          genericModbusConfig: config,
+        );
+      }
     }
     notifyListeners();
   }
@@ -306,6 +336,11 @@ class ECLProvider extends ChangeNotifier {
       return;
     }
 
+    if (_selectedControllerId == 'generic_modbus') {
+      await connectToIp(_genericModbusConfig.host, port: _genericModbusConfig.port);
+      return;
+    }
+
     _connectionState = ECLConnectionState.discovering;
     _errorMessage = null;
     _discoveryProgress = 0.0;
@@ -348,7 +383,7 @@ class ECLProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> connectToIp(String ip) async {
+  Future<void> connectToIp(String ip, {int? port}) async {
     _connectionState = ECLConnectionState.connecting;
     _errorMessage = null;
     _controllerIp = ip;
@@ -357,7 +392,11 @@ class ECLProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      await _modbusService.connect(ip);
+      if (_selectedControllerId == 'danfoss_ecl_310') {
+        await _modbusService.connect(ip);
+      } else {
+        await _activeController.connect(host: ip, port: port);
+      }
       await _discoveryService.saveControllerIp(ip);
       _connectionState = ECLConnectionState.connected;
       _consecutivePollErrors = 0;
@@ -375,10 +414,10 @@ class ECLProvider extends ChangeNotifier {
 
   void disconnect() {
     _stopPolling();
-    if (isSimulatedController) {
-      _activeController.disconnect();
-    } else {
+    if (_selectedControllerId == 'danfoss_ecl_310') {
       _modbusService.disconnect();
+    } else {
+      _activeController.disconnect();
     }
     _connectionState = ECLConnectionState.disconnected;
     _controllerIp = null;
@@ -398,7 +437,7 @@ class ECLProvider extends ChangeNotifier {
   Future<void> refreshReadings() async {
     if (!isConnected) return;
 
-    if (isSimulatedController) {
+    if (_selectedControllerId != 'danfoss_ecl_310') {
       try {
         final telemetry = await _activeController.readTelemetry();
         _readings[ECLRegisters.outdoorTemp.id] = ECLReading(
@@ -457,7 +496,18 @@ class ECLProvider extends ChangeNotifier {
         await _persistReadings(_readings);
         notifyListeners();
       } catch (e) {
-        debugPrint('[Provider] Simulation reading error: $e');
+        debugPrint('[Provider] Controller reading error: $e');
+        if (!isSimulatedController) {
+          _consecutivePollErrors++;
+          if (_consecutivePollErrors < _maxConsecutivePollErrors) {
+            _isReconnecting = true;
+            notifyListeners();
+          } else {
+            _stopPolling();
+            _isReconnecting = false;
+            _setError('Fehler beim Auslesen des Reglers: $e');
+          }
+        }
       }
       return;
     }
@@ -577,7 +627,7 @@ class ECLProvider extends ChangeNotifier {
       );
     }
 
-    if (isSimulatedController) {
+    if (_selectedControllerId != 'danfoss_ecl_310') {
       if (parameter.id == ECLRegisters.heatingCurveShift.id) {
         await _activeController.setHeatingCurveShift(value);
       } else if (parameter.id == ECLRegisters.roomTargetTemp.id) {

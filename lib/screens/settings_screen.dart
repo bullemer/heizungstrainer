@@ -3,7 +3,9 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import 'package:heizungstrainer/billing/billing_provider.dart';
+import 'package:heizungstrainer/controllers/generic_modbus_controller.dart';
 import 'package:heizungstrainer/controllers/heating_controller.dart';
+import 'package:heizungstrainer/models/generic_modbus_config.dart';
 import 'package:heizungstrainer/providers/ecl_provider.dart';
 import 'package:heizungstrainer/services/device_registry.dart';
 import 'package:heizungstrainer/services/energy_price_service.dart';
@@ -22,6 +24,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
   final _priceController = TextEditingController();
+
+  final _modbusHostController = TextEditingController();
+  final _modbusPortController = TextEditingController();
+  final _modbusUnitIdController = TextEditingController();
+  final _modbusOutdoorRegController = TextEditingController();
+  final _modbusFlowRegController = TextEditingController();
+  final _modbusReturnRegController = TextEditingController();
+  final _modbusHwRegController = TextEditingController();
+  final _modbusRoomRegController = TextEditingController();
+  final _modbusShiftRegController = TextEditingController();
+  String _modbusPresetId = 'standard';
+  double _modbusMultiplier = 0.1;
+  bool _modbusIsHolding = true;
+  bool _testingModbus = false;
 
   bool _obscurePassword = true;
   bool _loading = true;
@@ -44,6 +60,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
       final price = await provider.getPricePerKwh();
       final isCustom = await provider.energyPriceService.isCustomPrice();
       final savedCarrierId = await provider.energyPriceService.getSavedCarrierId();
+
+      final modbusCfg = provider.genericModbusConfig;
+      _modbusHostController.text = modbusCfg.host;
+      _modbusPortController.text = modbusCfg.port.toString();
+      _modbusUnitIdController.text = modbusCfg.unitId.toString();
+      _modbusOutdoorRegController.text = modbusCfg.outdoorRegister.toString();
+      _modbusFlowRegController.text = modbusCfg.flowRegister.toString();
+      _modbusReturnRegController.text = modbusCfg.returnRegister.toString();
+      _modbusHwRegController.text = modbusCfg.hotWaterRegister.toString();
+      _modbusRoomRegController.text =
+          modbusCfg.roomTargetRegister?.toString() ?? '';
+      _modbusShiftRegController.text =
+          modbusCfg.heatingCurveShiftRegister?.toString() ?? '';
+      _modbusPresetId = modbusCfg.presetId;
+      _modbusMultiplier = modbusCfg.multiplier;
+      _modbusIsHolding = modbusCfg.isHoldingRegister;
+
       if (!mounted) return;
       setState(() {
         _usernameController.text = username ?? '';
@@ -80,6 +113,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _usernameController.dispose();
     _passwordController.dispose();
     _priceController.dispose();
+    _modbusHostController.dispose();
+    _modbusPortController.dispose();
+    _modbusUnitIdController.dispose();
+    _modbusOutdoorRegController.dispose();
+    _modbusFlowRegController.dispose();
+    _modbusReturnRegController.dispose();
+    _modbusHwRegController.dispose();
+    _modbusRoomRegController.dispose();
+    _modbusShiftRegController.dispose();
     super.dispose();
   }
 
@@ -121,12 +163,99 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  Future<void> _testGenericModbusConnection() async {
+    setState(() => _testingModbus = true);
+    final modbusCfg = GenericModbusConfig(
+      host: _modbusHostController.text.trim().isEmpty
+          ? '192.168.1.50'
+          : _modbusHostController.text.trim(),
+      port: int.tryParse(_modbusPortController.text.trim()) ?? 502,
+      unitId: int.tryParse(_modbusUnitIdController.text.trim()) ?? 1,
+      outdoorRegister:
+          int.tryParse(_modbusOutdoorRegController.text.trim()) ?? 1,
+      flowRegister:
+          int.tryParse(_modbusFlowRegController.text.trim()) ?? 2,
+      returnRegister:
+          int.tryParse(_modbusReturnRegController.text.trim()) ?? 3,
+      hotWaterRegister:
+          int.tryParse(_modbusHwRegController.text.trim()) ?? 4,
+      roomTargetRegister:
+          int.tryParse(_modbusRoomRegController.text.trim()),
+      heatingCurveShiftRegister:
+          int.tryParse(_modbusShiftRegController.text.trim()),
+      multiplier: _modbusMultiplier,
+      isHoldingRegister: _modbusIsHolding,
+      presetId: _modbusPresetId,
+    );
+
+    final res = await GenericModbusController.testConnection(modbusCfg);
+    if (!mounted) return;
+    setState(() => _testingModbus = false);
+
+    if (res['success'] == true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Verbindungstest erfolgreich!\n'
+            'Vorlauf: ${res['flow'] ?? "-"} °C | '
+            'Rücklauf: ${res['return'] ?? "-"} °C | '
+            'Außen: ${res['outdoor'] ?? "-"} °C | '
+            'WW: ${res['hotWater'] ?? "-"} °C',
+          ),
+          backgroundColor: const Color(0xFF1B3D2F),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Verbindungstest fehlgeschlagen: ${res['error']}'),
+          backgroundColor: const Color(0xFF5C1D1D),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 5),
+        ),
+      );
+    }
+  }
+
   Future<void> _save({required bool sync}) async {
     if (!_formKey.currentState!.validate()) return;
     FocusScope.of(context).unfocus();
     setState(() => _saving = true);
 
     final provider = context.read<ECLProvider>();
+
+    if (provider.selectedControllerId == 'generic_modbus') {
+      final modbusCfg = GenericModbusConfig(
+        host: _modbusHostController.text.trim().isEmpty
+            ? '192.168.1.50'
+            : _modbusHostController.text.trim(),
+        port: int.tryParse(_modbusPortController.text.trim()) ?? 502,
+        unitId: int.tryParse(_modbusUnitIdController.text.trim()) ?? 1,
+        outdoorRegister:
+            int.tryParse(_modbusOutdoorRegController.text.trim()) ?? 1,
+        flowRegister:
+            int.tryParse(_modbusFlowRegController.text.trim()) ?? 2,
+        returnRegister:
+            int.tryParse(_modbusReturnRegController.text.trim()) ?? 3,
+        hotWaterRegister:
+            int.tryParse(_modbusHwRegController.text.trim()) ?? 4,
+        roomTargetRegister:
+            int.tryParse(_modbusRoomRegController.text.trim()),
+        heatingCurveShiftRegister:
+            int.tryParse(_modbusShiftRegController.text.trim()),
+        multiplier: _modbusMultiplier,
+        isHoldingRegister: _modbusIsHolding,
+        presetId: _modbusPresetId,
+        presetName: GenericModbusConfig.presets
+            .firstWhere((p) => p.id == _modbusPresetId,
+                orElse: () => GenericModbusConfig.presets.first)
+            .name,
+      );
+      await provider.updateGenericModbusConfig(modbusCfg);
+    }
+
     await provider.saveBillingSettings(
       username: _usernameController.text.trim(),
       password: _passwordController.text,
@@ -196,6 +325,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           onDisconnect: () => provider.disconnect(),
                         );
                       }),
+                      if (provider.selectedControllerId == 'generic_modbus') ...[
+                        const SizedBox(height: 8),
+                        _buildGenericModbusConfigCard(provider),
+                      ],
                       const SizedBox(height: 24),
 
                       // ── SECTION 2: BILLING PROVIDER ───────────────
@@ -291,6 +424,340 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 );
               },
             ),
+    );
+  }
+
+  Widget _buildGenericModbusConfigCard(ECLProvider provider) {
+    const accent = Color(0xFFFFA726);
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF24242C),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFF3A3A44)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.settings_input_component_rounded,
+                  color: accent, size: 20),
+              const SizedBox(width: 8),
+              const Text(
+                'Modbus TCP Register-Konfiguration',
+                style: TextStyle(
+                  fontSize: 14.5,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFFECECF0),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Konfiguriere IP, Port und Register-Adressen passend zu deinem Heizungssystem.',
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.white.withValues(alpha: 0.5),
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // ── Preset Selector ──────────────────────────────────
+          DropdownButtonFormField<String>(
+            initialValue: _modbusPresetId,
+            decoration: _decoration(
+              label: 'Hersteller-Profil / Preset',
+              icon: Icons.bookmarks_outlined,
+            ),
+            dropdownColor: const Color(0xFF2A2A32),
+            items: GenericModbusConfig.presets.map((preset) {
+              return DropdownMenuItem(
+                value: preset.id,
+                child: Text(preset.name, style: const TextStyle(fontSize: 13.5)),
+              );
+            }).toList(),
+            onChanged: (id) {
+              if (id == null) return;
+              final preset =
+                  GenericModbusConfig.presets.firstWhere((p) => p.id == id);
+              setState(() {
+                _modbusPresetId = id;
+                _modbusPortController.text = preset.defaultPort.toString();
+                _modbusUnitIdController.text = preset.defaultUnitId.toString();
+                _modbusOutdoorRegController.text =
+                    preset.outdoorRegister.toString();
+                _modbusFlowRegController.text = preset.flowRegister.toString();
+                _modbusReturnRegController.text =
+                    preset.returnRegister.toString();
+                _modbusHwRegController.text =
+                    preset.hotWaterRegister.toString();
+                _modbusRoomRegController.text =
+                    preset.roomTargetRegister?.toString() ?? '';
+                _modbusShiftRegController.text =
+                    preset.heatingCurveShiftRegister?.toString() ?? '';
+                _modbusMultiplier = preset.multiplier;
+                _modbusIsHolding = preset.isHoldingRegister;
+              });
+            },
+          ),
+          const SizedBox(height: 14),
+
+          // ── Host, Port & Unit ID ─────────────────────────────
+          Row(
+            children: [
+              Expanded(
+                flex: 3,
+                child: TextFormField(
+                  controller: _modbusHostController,
+                  keyboardType: TextInputType.text,
+                  decoration: _decoration(
+                    label: 'Host / IP-Adresse',
+                    icon: Icons.lan_outlined,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                flex: 2,
+                child: TextFormField(
+                  controller: _modbusPortController,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  decoration: _decoration(
+                    label: 'Port',
+                    icon: Icons.numbers_rounded,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                flex: 2,
+                child: TextFormField(
+                  controller: _modbusUnitIdController,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  decoration: _decoration(
+                    label: 'Unit ID',
+                    icon: Icons.tag_rounded,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+
+          // ── Register Addresses Grid ──────────────────────────
+          const Text(
+            'Modbus Register-Adressen',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFFECECF0),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: TextFormField(
+                  controller: _modbusOutdoorRegController,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  decoration: _decoration(
+                    label: 'Außentemperatur',
+                    icon: Icons.thermostat_outlined,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: TextFormField(
+                  controller: _modbusFlowRegController,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  decoration: _decoration(
+                    label: 'Vorlauftemperatur',
+                    icon: Icons.waves_rounded,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: TextFormField(
+                  controller: _modbusReturnRegController,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  decoration: _decoration(
+                    label: 'Rücklauftemperatur',
+                    icon: Icons.rotate_left_rounded,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: TextFormField(
+                  controller: _modbusHwRegController,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  decoration: _decoration(
+                    label: 'Warmwasserspeicher',
+                    icon: Icons.water_drop_outlined,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: TextFormField(
+                  controller: _modbusRoomRegController,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  decoration: _decoration(
+                    label: 'Raum-Soll (optional)',
+                    icon: Icons.home_outlined,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: TextFormField(
+                  controller: _modbusShiftRegController,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  decoration: _decoration(
+                    label: 'Verschiebung (opt.)',
+                    icon: Icons.tune_outlined,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+
+          // ── Multiplier & Type ────────────────────────────────
+          Row(
+            children: [
+              Expanded(
+                flex: 3,
+                child: DropdownButtonFormField<double>(
+                  initialValue: _modbusMultiplier,
+                  decoration: _decoration(
+                    label: 'Skalierungsfaktor',
+                    icon: Icons.scale_outlined,
+                  ),
+                  dropdownColor: const Color(0xFF2A2A32),
+                  items: const [
+                    DropdownMenuItem(
+                      value: 0.1,
+                      child: Text('× 0.1 (°C, z.B. 215 = 21.5°C)',
+                          style: TextStyle(fontSize: 12)),
+                    ),
+                    DropdownMenuItem(
+                      value: 0.01,
+                      child: Text('× 0.01 (z.B. 2150 = 21.5°C)',
+                          style: TextStyle(fontSize: 12)),
+                    ),
+                    DropdownMenuItem(
+                      value: 1.0,
+                      child: Text('× 1.0 (z.B. 21 = 21°C)',
+                          style: TextStyle(fontSize: 12)),
+                    ),
+                  ],
+                  onChanged: (val) {
+                    if (val != null) setState(() => _modbusMultiplier = val);
+                  },
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                flex: 2,
+                child: DropdownButtonFormField<bool>(
+                  initialValue: _modbusIsHolding,
+                  decoration: _decoration(
+                    label: 'Registertyp',
+                    icon: Icons.memory_outlined,
+                  ),
+                  dropdownColor: const Color(0xFF2A2A32),
+                  items: const [
+                    DropdownMenuItem(
+                      value: true,
+                      child: Text('Holding (FC 03)',
+                          style: TextStyle(fontSize: 12)),
+                    ),
+                    DropdownMenuItem(
+                      value: false,
+                      child: Text('Input (FC 04)',
+                          style: TextStyle(fontSize: 12)),
+                    ),
+                  ],
+                  onChanged: (val) {
+                    if (val != null) setState(() => _modbusIsHolding = val);
+                  },
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+
+          // ── Test & Connect Row ───────────────────────────────
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _testingModbus ? null : _testGenericModbusConnection,
+                  icon: _testingModbus
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: accent,
+                          ),
+                        )
+                      : const Icon(Icons.network_check_rounded, size: 18),
+                  label: const Text('Verbindung testen'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: accent,
+                    side: const BorderSide(color: accent),
+                    minimumSize: const Size.fromHeight(46),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              if (!provider.isConnected)
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: () {
+                      final host = _modbusHostController.text.trim();
+                      final port =
+                          int.tryParse(_modbusPortController.text.trim());
+                      if (host.isNotEmpty) {
+                        provider.connectToIp(host, port: port);
+                      }
+                    },
+                    icon: const Icon(Icons.power_rounded, size: 18),
+                    label: const Text('Jetzt verbinden'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: accent,
+                      foregroundColor: Colors.black,
+                      minimumSize: const Size.fromHeight(46),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 
