@@ -6,6 +6,7 @@ import 'package:heizungstrainer/billing/brunata_hamburg_billing_provider.dart';
 import 'package:heizungstrainer/billing/mock_billing_provider.dart';
 import 'package:heizungstrainer/controllers/danfoss_ecl_310_controller.dart';
 import 'package:heizungstrainer/controllers/bosch_buderus_ems_controller.dart';
+import 'package:heizungstrainer/controllers/viessmann_controller.dart';
 import 'package:heizungstrainer/controllers/heating_controller.dart';
 import 'package:heizungstrainer/controllers/mock_heating_controller.dart';
 import 'package:heizungstrainer/models/brunata_meter_data.dart';
@@ -107,7 +108,7 @@ void main() {
       expect(danfoss.isSupported, isTrue);
 
       final viessmann = controllers.firstWhere((c) => c.id == 'viessmann_vicare');
-      expect(viessmann.isSupported, isFalse);
+      expect(viessmann.isSupported, isTrue);
 
       final bosch = controllers.firstWhere((c) => c.id == 'bosch_buderus_ems');
       expect(bosch.isSupported, isTrue);
@@ -140,7 +141,7 @@ void main() {
       expect(danfoss, isA<DanfossEcl310Controller>());
 
       final viessmann = DeviceRegistry.createController('viessmann_vicare');
-      expect(viessmann, isA<MockHeatingController>());
+      expect(viessmann, isA<ViessmannController>());
       expect(viessmann.brandName, 'Viessmann');
 
       final bosch = DeviceRegistry.createController('bosch_buderus_ems');
@@ -173,12 +174,12 @@ void main() {
       expect(provider.currentBillingDescriptor.name, 'Brunata Hamburg');
     });
 
-    test('switches controller to Viessmann simulation and runs simulated telemetry', () async {
+    test('switches controller to Viessmann and runs simulation mode', () async {
       final provider = ECLProvider(autoLoadDatabase: false);
 
       await provider.setSelectedController('viessmann_vicare');
       expect(provider.selectedControllerId, 'viessmann_vicare');
-      expect(provider.isSimulatedController, isTrue);
+      expect(provider.isSimulatedController, isFalse);
       expect(provider.currentControllerDescriptor.brand, 'Viessmann');
 
       // Start simulation

@@ -5,10 +5,12 @@ import 'package:heizungstrainer/billing/mock_billing_provider.dart';
 import 'package:heizungstrainer/controllers/danfoss_ecl_310_controller.dart';
 import 'package:heizungstrainer/controllers/generic_modbus_controller.dart';
 import 'package:heizungstrainer/controllers/bosch_buderus_ems_controller.dart';
+import 'package:heizungstrainer/controllers/viessmann_controller.dart';
 import 'package:heizungstrainer/controllers/heating_controller.dart';
 import 'package:heizungstrainer/controllers/mock_heating_controller.dart';
 import 'package:heizungstrainer/models/generic_modbus_config.dart';
 import 'package:heizungstrainer/models/bosch_buderus_ems_config.dart';
+import 'package:heizungstrainer/models/viessmann_config.dart';
 import 'package:heizungstrainer/services/brunata_local_scraper_service.dart';
 import 'package:heizungstrainer/services/modbus_service.dart';
 
@@ -71,9 +73,9 @@ class DeviceRegistry {
       id: 'viessmann_vicare',
       brand: 'Viessmann',
       model: 'Vitotronic & ViCare',
-      protocol: ConnectionProtocol.restApi,
-      description: 'Cloud- und Optolink-Anbindung für Vitodens und Vitocal.',
-      isSupported: false,
+      protocol: ConnectionProtocol.proprietary,
+      description: 'Vollwertiger Betrieb über lokales Optolink (vcontrold) oder ViCare API.',
+      isSupported: true,
       icon: Icons.heat_pump_rounded,
     ),
     ControllerDescriptor(
@@ -164,13 +166,14 @@ class DeviceRegistry {
 
   /// Creates a controller instance for the given ID.
   ///
-  /// Returns a real adapter for supported hardware (Danfoss, Generic Modbus, Bosch/Buderus)
+  /// Returns a real adapter for supported hardware (Danfoss, Generic Modbus, Bosch/Buderus, Viessmann)
   /// or a simulated mock adapter for brand previews.
   static HeatingController createController(
     String id, {
     ModbusService? modbusService,
     GenericModbusConfig? genericModbusConfig,
     BoschBuderusEmsConfig? boschBuderusConfig,
+    ViessmannConfig? viessmannConfig,
   }) {
     if (id == 'danfoss_ecl_310') {
       return DanfossEcl310Controller(modbusService: modbusService);
@@ -180,6 +183,9 @@ class DeviceRegistry {
     }
     if (id == 'bosch_buderus_ems') {
       return BoschBuderusEmsController(config: boschBuderusConfig);
+    }
+    if (id == 'viessmann_vicare') {
+      return ViessmannController(config: viessmannConfig);
     }
     final desc = getControllerDescriptor(id);
     return MockHeatingController(

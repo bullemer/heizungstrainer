@@ -67,7 +67,7 @@ void main() {
       expect(find.text('Nur speichern'), findsOneWidget);
     });
 
-    testWidgets('selecting Viessmann controller updates state and shows simulation button',
+    testWidgets('selecting Viessmann controller updates state and shows hardware config card',
         (WidgetTester tester) async {
       tester.view.physicalSize = const Size(1080, 2400);
       tester.view.devicePixelRatio = 1.0;
@@ -85,8 +85,8 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(provider.selectedControllerId, 'viessmann_vicare');
-      expect(provider.isSimulatedController, isTrue);
-      expect(find.text('Simulation testen'), findsOneWidget);
+      expect(provider.isSimulatedController, isFalse);
+      expect(find.text('Viessmann Vitotronic & ViCare Konfiguration'), findsOneWidget);
     });
 
     testWidgets('selecting Techem billing provider updates state and displays simulation note',

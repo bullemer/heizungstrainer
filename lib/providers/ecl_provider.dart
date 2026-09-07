@@ -14,12 +14,15 @@ import 'package:heizungstrainer/billing/billing_provider.dart';
 import 'package:heizungstrainer/controllers/heating_controller.dart';
 import 'package:heizungstrainer/controllers/generic_modbus_controller.dart';
 import 'package:heizungstrainer/controllers/bosch_buderus_ems_controller.dart';
+import 'package:heizungstrainer/controllers/viessmann_controller.dart';
+import 'package:heizungstrainer/controllers/mock_heating_controller.dart';
 import 'package:heizungstrainer/exceptions/modbus_exceptions.dart';
 import 'package:heizungstrainer/models/brunata_meter_data.dart';
 import 'package:heizungstrainer/models/ecl_parameter.dart';
 import 'package:heizungstrainer/models/ecl_reading.dart';
 import 'package:heizungstrainer/models/generic_modbus_config.dart';
 import 'package:heizungstrainer/models/bosch_buderus_ems_config.dart';
+import 'package:heizungstrainer/models/viessmann_config.dart';
 import 'package:heizungstrainer/models/telemetry_sample.dart';
 import 'package:heizungstrainer/services/brunata_local_scraper_service.dart';
 import 'package:heizungstrainer/services/database_service.dart';
@@ -101,6 +104,7 @@ class ECLProvider extends ChangeNotifier {
 
   GenericModbusConfig _genericModbusConfig = const GenericModbusConfig();
   BoschBuderusEmsConfig _boschBuderusConfig = const BoschBuderusEmsConfig();
+  ViessmannConfig _viessmannConfig = const ViessmannConfig();
 
   String get selectedControllerId => _selectedControllerId;
   String get selectedBillingId => _selectedBillingId;
@@ -109,6 +113,7 @@ class ECLProvider extends ChangeNotifier {
   EnergyPriceService get energyPriceService => _energyPriceService;
   GenericModbusConfig get genericModbusConfig => _genericModbusConfig;
   BoschBuderusEmsConfig get boschBuderusConfig => _boschBuderusConfig;
+  ViessmannConfig get viessmannConfig => _viessmannConfig;
   ControllerDescriptor get currentControllerDescriptor =>
       DeviceRegistry.getControllerDescriptor(_selectedControllerId);
   BillingProviderDescriptor get currentBillingDescriptor =>
@@ -116,11 +121,14 @@ class ECLProvider extends ChangeNotifier {
   bool get isSimulatedController =>
       _selectedControllerId != 'danfoss_ecl_310' &&
       _selectedControllerId != 'generic_modbus' &&
-      _selectedControllerId != 'bosch_buderus_ems';
+      _selectedControllerId != 'bosch_buderus_ems' &&
+      _selectedControllerId != 'viessmann_vicare';
   bool get isGenericModbusController =>
       _selectedControllerId == 'generic_modbus';
   bool get isBoschBuderusEmsController =>
       _selectedControllerId == 'bosch_buderus_ems';
+  bool get isViessmannController =>
+      _selectedControllerId == 'viessmann_vicare';
   bool get isSimulatedBilling => _selectedBillingId != 'brunata_hamburg';
 
   BrunataSyncState get brunataSyncState => _brunataSyncState;
@@ -188,16 +196,21 @@ class ECLProvider extends ChangeNotifier {
     try {
       _genericModbusConfig = await GenericModbusConfig.load(_secureStorage);
       _boschBuderusConfig = await BoschBuderusEmsConfig.load(_secureStorage);
+      _viessmannConfig = await ViessmannConfig.load(_secureStorage);
       final savedCtrl = await _secureStorage.read(key: _controllerStorageKey);
       if (savedCtrl != null && savedCtrl.isNotEmpty && savedCtrl != _selectedControllerId) {
         _selectedControllerId = savedCtrl;
       }
-      _activeController = DeviceRegistry.createController(
-        _selectedControllerId,
-        modbusService: _modbusService,
-        genericModbusConfig: _genericModbusConfig,
-        boschBuderusConfig: _boschBuderusConfig,
-      );
+      if (_connectionState == ECLConnectionState.disconnected &&
+          _activeController is! MockHeatingController) {
+        _activeController = DeviceRegistry.createController(
+          _selectedControllerId,
+          modbusService: _modbusService,
+          genericModbusConfig: _genericModbusConfig,
+          boschBuderusConfig: _boschBuderusConfig,
+          viessmannConfig: _viessmannConfig,
+        );
+      }
       final savedBill = await _secureStorage.read(key: _billingStorageKey);
       if (savedBill != null && savedBill.isNotEmpty && savedBill != _selectedBillingId) {
         _selectedBillingId = savedBill;
@@ -224,6 +237,7 @@ class ECLProvider extends ChangeNotifier {
       modbusService: _modbusService,
       genericModbusConfig: _genericModbusConfig,
       boschBuderusConfig: _boschBuderusConfig,
+      viessmannConfig: _viessmannConfig,
     );
     try {
       await _secureStorage.write(key: _controllerStorageKey, value: id);
@@ -246,6 +260,7 @@ class ECLProvider extends ChangeNotifier {
           modbusService: _modbusService,
           genericModbusConfig: config,
           boschBuderusConfig: _boschBuderusConfig,
+          viessmannConfig: _viessmannConfig,
         );
       }
     }
@@ -265,6 +280,27 @@ class ECLProvider extends ChangeNotifier {
           modbusService: _modbusService,
           genericModbusConfig: _genericModbusConfig,
           boschBuderusConfig: config,
+          viessmannConfig: _viessmannConfig,
+        );
+      }
+    }
+    notifyListeners();
+  }
+
+  /// Updates and persists the Viessmann configuration.
+  Future<void> updateViessmannConfig(ViessmannConfig config) async {
+    _viessmannConfig = config;
+    await config.save(_secureStorage);
+    if (_selectedControllerId == 'viessmann_vicare') {
+      if (_activeController is ViessmannController) {
+        (_activeController as ViessmannController).updateConfig(config);
+      } else {
+        _activeController = DeviceRegistry.createController(
+          'viessmann_vicare',
+          modbusService: _modbusService,
+          genericModbusConfig: _genericModbusConfig,
+          boschBuderusConfig: _boschBuderusConfig,
+          viessmannConfig: config,
         );
       }
     }
@@ -287,7 +323,7 @@ class ECLProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Starts simulation mode for previewing non-Danfoss controllers.
+  /// Starts simulation mode for previewing controllers.
   Future<void> startSimulation() async {
     _connectionState = ECLConnectionState.connecting;
     _controllerIp = 'Simulation (${currentControllerDescriptor.brand})';
@@ -295,6 +331,15 @@ class ECLProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
+      if (_activeController is! MockHeatingController) {
+        final desc = currentControllerDescriptor;
+        _activeController = MockHeatingController(
+          id: desc.id,
+          brandName: desc.brand,
+          modelName: desc.model,
+          protocol: desc.protocol,
+        );
+      }
       await _activeController.connect(host: '127.0.0.1');
       _connectionState = ECLConnectionState.connected;
       _isReconnecting = false;
@@ -376,6 +421,11 @@ class ECLProvider extends ChangeNotifier {
       return;
     }
 
+    if (_selectedControllerId == 'viessmann_vicare') {
+      await connectToIp(_viessmannConfig.host, port: _viessmannConfig.port);
+      return;
+    }
+
     _connectionState = ECLConnectionState.discovering;
     _errorMessage = null;
     _discoveryProgress = 0.0;
@@ -453,6 +503,15 @@ class ECLProvider extends ChangeNotifier {
       _modbusService.disconnect();
     } else {
       _activeController.disconnect();
+    }
+    if (_activeController is MockHeatingController) {
+      _activeController = DeviceRegistry.createController(
+        _selectedControllerId,
+        modbusService: _modbusService,
+        genericModbusConfig: _genericModbusConfig,
+        boschBuderusConfig: _boschBuderusConfig,
+        viessmannConfig: _viessmannConfig,
+      );
     }
     _connectionState = ECLConnectionState.disconnected;
     _controllerIp = null;
@@ -662,7 +721,9 @@ class ECLProvider extends ChangeNotifier {
       );
     }
 
-    if (_selectedControllerId != 'danfoss_ecl_310') {
+    if (_selectedControllerId != 'danfoss_ecl_310' ||
+        _activeController is MockHeatingController ||
+        _controllerIp?.contains('Simulation') == true) {
       if (parameter.id == ECLRegisters.heatingCurveShift.id) {
         await _activeController.setHeatingCurveShift(value);
       } else if (parameter.id == ECLRegisters.roomTargetTemp.id) {

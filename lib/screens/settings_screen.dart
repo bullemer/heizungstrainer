@@ -5,9 +5,11 @@ import 'package:provider/provider.dart';
 import 'package:heizungstrainer/billing/billing_provider.dart';
 import 'package:heizungstrainer/controllers/generic_modbus_controller.dart';
 import 'package:heizungstrainer/controllers/bosch_buderus_ems_controller.dart';
+import 'package:heizungstrainer/controllers/viessmann_controller.dart';
 import 'package:heizungstrainer/controllers/heating_controller.dart';
 import 'package:heizungstrainer/models/generic_modbus_config.dart';
 import 'package:heizungstrainer/models/bosch_buderus_ems_config.dart';
+import 'package:heizungstrainer/models/viessmann_config.dart';
 import 'package:heizungstrainer/providers/ecl_provider.dart';
 import 'package:heizungstrainer/services/device_registry.dart';
 import 'package:heizungstrainer/services/energy_price_service.dart';
@@ -49,6 +51,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String _emsPresetId = 'standard';
   bool _obscureEmsToken = true;
   bool _testingEms = false;
+
+  final _viessmannHostController = TextEditingController();
+  final _viessmannPortController = TextEditingController();
+  final _viessmannTokenController = TextEditingController();
+  final _viessmannInstallIdController = TextEditingController();
+  ViessmannConnectionType _viessmannConnType = ViessmannConnectionType.optolinkTcp;
+  String _viessmannCircuit = '0';
+  String _viessmannPresetId = 'optolink_vcontrold';
+  bool _obscureViessmannToken = true;
+  bool _testingViessmann = false;
 
   bool _obscurePassword = true;
   bool _loading = true;
@@ -95,6 +107,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _emsCircuit = emsCfg.circuit;
       _emsUseHttps = emsCfg.useHttps;
       _emsPresetId = emsCfg.presetId;
+
+      final vCfg = provider.viessmannConfig;
+      _viessmannHostController.text = vCfg.host;
+      _viessmannPortController.text = vCfg.port.toString();
+      _viessmannTokenController.text = vCfg.apiToken;
+      _viessmannInstallIdController.text = vCfg.installationId;
+      _viessmannConnType = vCfg.connectionType;
+      _viessmannCircuit = vCfg.circuit;
+      _viessmannPresetId = vCfg.presetId;
 
       if (!mounted) return;
       setState(() {
@@ -144,6 +165,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _emsHostController.dispose();
     _emsPortController.dispose();
     _emsTokenController.dispose();
+    _viessmannHostController.dispose();
+    _viessmannPortController.dispose();
+    _viessmannTokenController.dispose();
+    _viessmannInstallIdController.dispose();
     super.dispose();
   }
 
@@ -285,6 +310,53 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  Future<void> _testViessmannConnection() async {
+    setState(() => _testingViessmann = true);
+    final vCfg = ViessmannConfig(
+      connectionType: _viessmannConnType,
+      host: _viessmannHostController.text.trim().isEmpty
+          ? '192.168.1.130'
+          : _viessmannHostController.text.trim(),
+      port: int.tryParse(_viessmannPortController.text.trim()) ??
+          (_viessmannConnType == ViessmannConnectionType.optolinkTcp ? 3002 : 443),
+      apiToken: _viessmannTokenController.text.trim(),
+      installationId: _viessmannInstallIdController.text.trim(),
+      circuit: _viessmannCircuit,
+      presetId: _viessmannPresetId,
+    );
+
+    final res = await ViessmannController.testConnection(vCfg);
+    if (!mounted) return;
+    setState(() => _testingViessmann = false);
+
+    if (res['success'] == true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '${res['message']}\n'
+            'Typ: ${res['type']}\n'
+            'Vorlauf: ${res['flowTemp'] != null ? "${res['flowTemp']} °C" : "-"} | '
+            'Rücklauf: ${res['returnTemp'] != null ? "${res['returnTemp']} °C" : "-"} | '
+            'Außen: ${res['outdoorTemp'] != null ? "${res['outdoorTemp']} °C" : "-"} | '
+            'WW: ${res['hotWaterTemp'] != null ? "${res['hotWaterTemp']} °C" : "-"}',
+          ),
+          backgroundColor: const Color(0xFF1B3D2F),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${res['message']}'),
+          backgroundColor: const Color(0xFF5C1D1D),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 5),
+        ),
+      );
+    }
+  }
+
   Future<void> _save({required bool sync}) async {
     if (!_formKey.currentState!.validate()) return;
     FocusScope.of(context).unfocus();
@@ -338,6 +410,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
             .name,
       );
       await provider.updateBoschBuderusConfig(emsCfg);
+    }
+
+    if (provider.selectedControllerId == 'viessmann_vicare') {
+      final vCfg = ViessmannConfig(
+        connectionType: _viessmannConnType,
+        host: _viessmannHostController.text.trim().isEmpty
+            ? '192.168.1.130'
+            : _viessmannHostController.text.trim(),
+        port: int.tryParse(_viessmannPortController.text.trim()) ??
+            (_viessmannConnType == ViessmannConnectionType.optolinkTcp ? 3002 : 443),
+        apiToken: _viessmannTokenController.text.trim(),
+        installationId: _viessmannInstallIdController.text.trim(),
+        circuit: _viessmannCircuit,
+        presetId: _viessmannPresetId,
+        presetName: ViessmannConfig.presets
+            .firstWhere((p) => p.id == _viessmannPresetId,
+                orElse: () => ViessmannConfig.presets.first)
+            .name,
+      );
+      await provider.updateViessmannConfig(vCfg);
     }
 
     await provider.saveBillingSettings(
@@ -416,6 +508,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       if (provider.selectedControllerId == 'bosch_buderus_ems') ...[
                         const SizedBox(height: 8),
                         _buildBoschBuderusConfigCard(provider),
+                      ],
+                      if (provider.selectedControllerId == 'viessmann_vicare') ...[
+                        const SizedBox(height: 8),
+                        _buildViessmannConfigCard(provider),
                       ],
                       const SizedBox(height: 24),
 
@@ -1068,6 +1164,261 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     onPressed: () {
                       final host = _emsHostController.text.trim();
                       final port = int.tryParse(_emsPortController.text.trim());
+                      if (host.isNotEmpty) {
+                        provider.connectToIp(host, port: port);
+                      }
+                    },
+                    icon: const Icon(Icons.power_rounded, size: 18),
+                    label: const Text('Jetzt verbinden'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: accent,
+                      foregroundColor: Colors.white,
+                      minimumSize: const Size.fromHeight(46),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildViessmannConfigCard(ECLProvider provider) {
+    const accent = Color(0xFFFF6D00);
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF24242C),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFF3A3A44)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.heat_pump_rounded,
+                  color: accent, size: 20),
+              const SizedBox(width: 8),
+              const Text(
+                'Viessmann Vitotronic & ViCare Konfiguration',
+                style: TextStyle(
+                  fontSize: 14.5,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFFECECF0),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Verbindung über lokales Optolink (vcontrold / ESP-Optolink) oder die ViCare Cloud-API.',
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.white.withValues(alpha: 0.5),
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // ── Preset Selector ──────────────────────────────────
+          DropdownButtonFormField<String>(
+            initialValue: _viessmannPresetId,
+            decoration: _decoration(
+              label: 'Viessmann Profil / Preset',
+              icon: Icons.bookmarks_outlined,
+            ),
+            dropdownColor: const Color(0xFF2A2A32),
+            items: ViessmannConfig.presets.map((preset) {
+              return DropdownMenuItem(
+                value: preset.id,
+                child: Text(preset.name, style: const TextStyle(fontSize: 13.5)),
+              );
+            }).toList(),
+            onChanged: (id) {
+              if (id == null) return;
+              final preset =
+                  ViessmannConfig.presets.firstWhere((p) => p.id == id);
+              setState(() {
+                _viessmannPresetId = id;
+                _viessmannConnType = preset.connectionType;
+                _viessmannPortController.text = preset.defaultPort.toString();
+                _viessmannCircuit = preset.defaultCircuit;
+              });
+            },
+          ),
+          const SizedBox(height: 14),
+
+          // ── Connection Type Selector ─────────────────────────
+          DropdownButtonFormField<ViessmannConnectionType>(
+            initialValue: _viessmannConnType,
+            decoration: _decoration(
+              label: 'Verbindungsart',
+              icon: Icons.hub_outlined,
+            ),
+            dropdownColor: const Color(0xFF2A2A32),
+            items: const [
+              DropdownMenuItem(
+                value: ViessmannConnectionType.optolinkTcp,
+                child: Text('Lokales Optolink (vcontrold / TCP)',
+                    style: TextStyle(fontSize: 13)),
+              ),
+              DropdownMenuItem(
+                value: ViessmannConnectionType.vicareRest,
+                child: Text('Viessmann ViCare API (Cloud REST)',
+                    style: TextStyle(fontSize: 13)),
+              ),
+            ],
+            onChanged: (val) {
+              if (val != null) {
+                setState(() {
+                  _viessmannConnType = val;
+                  if (val == ViessmannConnectionType.optolinkTcp &&
+                      _viessmannPortController.text == '443') {
+                    _viessmannPortController.text = '3002';
+                  } else if (val == ViessmannConnectionType.vicareRest &&
+                      _viessmannPortController.text == '3002') {
+                    _viessmannPortController.text = '443';
+                  }
+                });
+              }
+            },
+          ),
+          const SizedBox(height: 14),
+
+          // ── Mode-specific inputs ─────────────────────────────
+          if (_viessmannConnType == ViessmannConnectionType.optolinkTcp) ...[
+            Row(
+              children: [
+                Expanded(
+                  flex: 3,
+                  child: TextFormField(
+                    controller: _viessmannHostController,
+                    keyboardType: TextInputType.text,
+                    decoration: _decoration(
+                      label: 'vcontrold Host / IP',
+                      icon: Icons.lan_outlined,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  flex: 2,
+                  child: TextFormField(
+                    controller: _viessmannPortController,
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    decoration: _decoration(
+                      label: 'TCP Port',
+                      icon: Icons.numbers_outlined,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Standard-Port für vcontrold und Openv ist 3002 (ESP-Optolink: 3002 oder 7362).',
+              style: TextStyle(
+                fontSize: 11,
+                color: Colors.white.withValues(alpha: 0.4),
+              ),
+            ),
+          ] else ...[
+            TextFormField(
+              controller: _viessmannTokenController,
+              obscureText: _obscureViessmannToken,
+              decoration: _decoration(
+                label: 'ViCare API Token / Personal Client Secret',
+                icon: Icons.key_rounded,
+              ).copyWith(
+                helperText: 'Erstelle einen Personal API Key im Viessmann Developer Portal.',
+                helperStyle: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.4)),
+                suffixIcon: IconButton(
+                  icon: Icon(
+                    _obscureViessmannToken ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                    color: Colors.white54,
+                    size: 20,
+                  ),
+                  onPressed: () => setState(() => _obscureViessmannToken = !_obscureViessmannToken),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _viessmannInstallIdController,
+              keyboardType: TextInputType.text,
+              decoration: _decoration(
+                label: 'Installations-ID (Optional)',
+                icon: Icons.tag_rounded,
+              ).copyWith(
+                helperText: 'Leer lassen, um die erste gefundene Anlage automatisch zu nutzen.',
+                helperStyle: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.4)),
+              ),
+            ),
+          ],
+          const SizedBox(height: 14),
+
+          // ── Heating Circuit Selector ─────────────────────────
+          DropdownButtonFormField<String>(
+            initialValue: _viessmannCircuit,
+            decoration: _decoration(
+              label: 'Heizkreis (Circuit)',
+              icon: Icons.tune_rounded,
+            ),
+            dropdownColor: const Color(0xFF2A2A32),
+            items: const [
+              DropdownMenuItem(
+                value: '0',
+                child: Text('Heizkreis 0 (A1 / HK1)', style: TextStyle(fontSize: 13)),
+              ),
+              DropdownMenuItem(
+                value: '1',
+                child: Text('Heizkreis 1 (M2 / HK2)', style: TextStyle(fontSize: 13)),
+              ),
+              DropdownMenuItem(
+                value: '2',
+                child: Text('Heizkreis 2 (M3 / HK3)', style: TextStyle(fontSize: 13)),
+              ),
+            ],
+            onChanged: (val) {
+              if (val != null) setState(() => _viessmannCircuit = val);
+            },
+          ),
+          const SizedBox(height: 16),
+
+          // ── Test & Connect Row ───────────────────────────────
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _testingViessmann ? null : _testViessmannConnection,
+                  icon: _testingViessmann
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: accent,
+                          ),
+                        )
+                      : const Icon(Icons.network_check_rounded, size: 18),
+                  label: const Text('Verbindung testen'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: accent,
+                    side: const BorderSide(color: accent),
+                    minimumSize: const Size.fromHeight(46),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              if (!provider.isConnected)
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: () {
+                      final host = _viessmannHostController.text.trim();
+                      final port = int.tryParse(_viessmannPortController.text.trim());
                       if (host.isNotEmpty) {
                         provider.connectToIp(host, port: port);
                       }
