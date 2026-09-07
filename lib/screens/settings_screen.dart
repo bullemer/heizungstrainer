@@ -2,10 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import 'package:heizungstrainer/billing/billing_provider.dart';
+import 'package:heizungstrainer/controllers/heating_controller.dart';
 import 'package:heizungstrainer/providers/ecl_provider.dart';
+import 'package:heizungstrainer/services/device_registry.dart';
 
-/// Settings for the Brunata portal integration: login credentials and the
-/// price-per-kWh tariff used to estimate heating cost.
+/// Hub for hardware controller selection, sub-metering provider configuration,
+/// tariff pricing, and offline storage settings.
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
 
@@ -30,18 +33,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _loadCurrentValues() async {
-    final provider = context.read<ECLProvider>();
-    final username = await provider.getBrunataUsername();
-    final password = await provider.getBrunataPassword();
-    final price = await provider.getPricePerKwh();
-    if (!mounted) return;
-    setState(() {
-      _usernameController.text = username ?? '';
-      _passwordController.text = password ?? '';
-      // Show with a comma-free, trimmed representation (e.g. "0.1").
-      _priceController.text = _formatPrice(price);
-      _loading = false;
-    });
+    try {
+      final provider = context.read<ECLProvider>();
+      final username = await provider.getBrunataUsername();
+      final password = await provider.getBrunataPassword();
+      final price = await provider.getPricePerKwh();
+      if (!mounted) return;
+      setState(() {
+        _usernameController.text = username ?? '';
+        _passwordController.text = password ?? '';
+        _priceController.text = _formatPrice(price);
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _priceController.text = '0.1';
+        _loading = false;
+      });
+    }
   }
 
   String _formatPrice(double price) {
@@ -69,7 +79,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     setState(() => _saving = true);
 
     final provider = context.read<ECLProvider>();
-    await provider.saveBrunataSettings(
+    await provider.saveBillingSettings(
       username: _usernameController.text.trim(),
       password: _passwordController.text,
       pricePerKwh: _parsePrice(_priceController.text)!,
@@ -95,121 +105,376 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text(
-          'Einstellungen',
+          'Einstellungen & Hardware',
           style: TextStyle(fontWeight: FontWeight.w700, fontSize: 20),
         ),
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator(color: accent))
-          : Form(
-              key: _formKey,
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
-                children: [
-                  _SectionHeader(
-                    icon: Icons.account_circle_outlined,
-                    title: 'Brunata-Zugang',
-                    subtitle:
-                        'Anmeldedaten für das Brunata-Hamburg-Portal. Sie werden '
-                        'verschlüsselt nur auf diesem Gerät gespeichert.',
-                  ),
-                  const SizedBox(height: 14),
-                  TextFormField(
-                    controller: _usernameController,
-                    keyboardType: TextInputType.text,
-                    autocorrect: false,
-                    enableSuggestions: false,
-                    decoration: _decoration(
-                      label: 'Kundennummer / Benutzername',
-                      icon: Icons.badge_outlined,
-                    ),
-                    validator: (v) => (v == null || v.trim().isEmpty)
-                        ? 'Bitte Kundennummer eingeben'
-                        : null,
-                  ),
-                  const SizedBox(height: 14),
-                  TextFormField(
-                    controller: _passwordController,
-                    obscureText: _obscurePassword,
-                    autocorrect: false,
-                    enableSuggestions: false,
-                    decoration: _decoration(
-                      label: 'Kennwort',
-                      icon: Icons.lock_outline_rounded,
-                      suffix: IconButton(
-                        icon: Icon(
-                          _obscurePassword
-                              ? Icons.visibility_outlined
-                              : Icons.visibility_off_outlined,
-                          size: 20,
-                        ),
-                        onPressed: () => setState(
-                            () => _obscurePassword = !_obscurePassword),
+          : Consumer<ECLProvider>(
+              builder: (context, provider, _) {
+                return Form(
+                  key: _formKey,
+                  child: ListView(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+                    children: [
+                      _ActiveSystemSummary(provider: provider),
+                      const SizedBox(height: 24),
+
+                      // ── SECTION 1: HEATING CONTROLLER ─────────────
+                      const _SectionHeader(
+                        icon: Icons.developer_board_rounded,
+                        title: 'Heizungsregler (Hardware)',
+                        subtitle:
+                            'Wähle das Hardware-Modell deiner Heizung oder wechsle '
+                            'in den Simulationsmodus für andere Marken.',
                       ),
-                    ),
-                    validator: (v) => (v == null || v.isEmpty)
-                        ? 'Bitte Kennwort eingeben'
-                        : null,
-                  ),
-                  const SizedBox(height: 28),
-                  _SectionHeader(
-                    icon: Icons.euro_rounded,
-                    title: 'Tarif',
-                    subtitle:
-                        'Das Portal liefert nur den Verbrauch in kWh. Die Kosten '
-                        'werden aus diesem Preis pro kWh geschätzt.',
-                  ),
-                  const SizedBox(height: 14),
-                  TextFormField(
-                    controller: _priceController,
-                    keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true),
-                    inputFormatters: [
-                      FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
+                      const SizedBox(height: 12),
+                      ...DeviceRegistry.knownControllers.map((controllerDesc) {
+                        final isSelected =
+                            provider.selectedControllerId == controllerDesc.id;
+                        return _ControllerCard(
+                          descriptor: controllerDesc,
+                          isSelected: isSelected,
+                          isConnected: provider.isConnected && isSelected,
+                          isConnecting: isSelected &&
+                              provider.connectionState ==
+                                  ECLConnectionState.connecting,
+                          onSelect: () =>
+                              provider.setSelectedController(controllerDesc.id),
+                          onStartSimulation: () => provider.startSimulation(),
+                          onDisconnect: () => provider.disconnect(),
+                        );
+                      }),
+                      const SizedBox(height: 24),
+
+                      // ── SECTION 2: BILLING PROVIDER ───────────────
+                      const _SectionHeader(
+                        icon: Icons.receipt_long_rounded,
+                        title: 'Messdienstleister & Abrechnung',
+                        subtitle:
+                            'Dienstleister für Heizkostenverteilung und Verbrauchserfassung. '
+                            'Unterstützt automatische Portalsynchronisation und Test-Simulationen.',
+                      ),
+                      const SizedBox(height: 12),
+                      ...DeviceRegistry.knownBillingProviders.map((billingDesc) {
+                        final isSelected =
+                            provider.selectedBillingId == billingDesc.id;
+                        return _BillingProviderCard(
+                          descriptor: billingDesc,
+                          isSelected: isSelected,
+                          onSelect: () => provider
+                              .setSelectedBillingProvider(billingDesc.id),
+                        );
+                      }),
+                      const SizedBox(height: 16),
+
+                      // Credentials accordion or simulated info
+                      if (provider.selectedBillingId == 'brunata_hamburg') ...[
+                        _buildBrunataCredentialsFields(),
+                      ] else ...[
+                        _buildSimulatedBillingNotice(
+                          provider.currentBillingDescriptor,
+                        ),
+                      ],
+                      const SizedBox(height: 28),
+
+                      // ── SECTION 3: TARIFF & COST ──────────────────
+                      const _SectionHeader(
+                        icon: Icons.euro_rounded,
+                        title: 'Tarif & Energiepreis',
+                        subtitle:
+                            'Das Abrechnungsportal liefert den Verbrauch in kWh. '
+                            'Die monatlichen Kosten und Einsparungen werden mit '
+                            'diesem Arbeitspreis berechnet.',
+                      ),
+                      const SizedBox(height: 14),
+                      TextFormField(
+                        controller: _priceController,
+                        keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true),
+                        inputFormatters: [
+                          FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
+                        ],
+                        decoration: _decoration(
+                          label: 'Arbeitspreis pro kWh',
+                          icon: Icons.sell_outlined,
+                          suffixText: '€/kWh',
+                        ),
+                        validator: (v) {
+                          final p = _parsePrice(v ?? '');
+                          if (p == null) return 'Bitte gültigen Preis eingeben';
+                          if (p <= 0 || p > 5) {
+                            return 'Preis muss zwischen 0 und 5 € liegen';
+                          }
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 28),
+
+                      // ── SECTION 4: OFFLINE & DATABASE ─────────────
+                      const _SectionHeader(
+                        icon: Icons.storage_rounded,
+                        title: 'Datenpuffer & Offline-Betrieb',
+                        subtitle:
+                            'Sensordaten und Abrechnungshistorie werden lokal in einer '
+                            'SQLite-Datenbank gesichert, um auch ohne Reglerverbindung verfügbar zu sein.',
+                      ),
+                      const SizedBox(height: 12),
+                      _buildDatabaseTile(provider),
+                      const SizedBox(height: 32),
+
+                      // ── ACTIONS ───────────────────────────────────
+                      FilledButton.icon(
+                        onPressed: _saving ? null : () => _save(sync: true),
+                        icon: _saving
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                    strokeWidth: 2, color: Colors.black),
+                              )
+                            : const Icon(Icons.sync_rounded),
+                        label: Text(
+                          provider.selectedBillingId == 'brunata_hamburg'
+                              ? 'Speichern & Synchronisieren'
+                              : 'Speichern & Simulation abgleichen',
+                        ),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: accent,
+                          foregroundColor: Colors.black,
+                          minimumSize: const Size.fromHeight(52),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      OutlinedButton(
+                        onPressed: _saving ? null : () => _save(sync: false),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: const Color(0xFFECECF0),
+                          minimumSize: const Size.fromHeight(50),
+                          side: const BorderSide(color: Color(0xFF3A3A44)),
+                        ),
+                        child: const Text('Nur speichern'),
+                      ),
                     ],
-                    decoration: _decoration(
-                      label: 'Preis pro kWh',
-                      icon: Icons.sell_outlined,
-                      suffixText: '€/kWh',
-                    ),
-                    validator: (v) {
-                      final p = _parsePrice(v ?? '');
-                      if (p == null) return 'Bitte gültigen Preis eingeben';
-                      if (p <= 0 || p > 5) return 'Preis muss zwischen 0 und 5 liegen';
-                      return null;
-                    },
                   ),
-                  const SizedBox(height: 32),
-                  FilledButton.icon(
-                    onPressed: _saving ? null : () => _save(sync: true),
-                    icon: _saving
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(
-                                strokeWidth: 2, color: Colors.black),
-                          )
-                        : const Icon(Icons.sync_rounded),
-                    label: const Text('Speichern & Synchronisieren'),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: accent,
-                      foregroundColor: Colors.black,
-                      minimumSize: const Size.fromHeight(52),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  OutlinedButton(
-                    onPressed: _saving ? null : () => _save(sync: false),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: const Color(0xFFECECF0),
-                      minimumSize: const Size.fromHeight(50),
-                      side: const BorderSide(color: Color(0xFF3A3A44)),
-                    ),
-                    child: const Text('Nur speichern'),
-                  ),
-                ],
+                );
+              },
+            ),
+    );
+  }
+
+  Widget _buildBrunataCredentialsFields() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF24242C),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFF3A3A44)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.lock_person_outlined,
+                  color: Color(0xFFFFA726), size: 20),
+              const SizedBox(width: 8),
+              const Text(
+                'Brunata Portal-Zugang',
+                style: TextStyle(
+                  fontSize: 14.5,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFFECECF0),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Verschlüsselt lokal gespeichert für den monatlichen Abrechnungsabruf.',
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.white.withValues(alpha: 0.5),
+            ),
+          ),
+          const SizedBox(height: 14),
+          TextFormField(
+            controller: _usernameController,
+            keyboardType: TextInputType.text,
+            autocorrect: false,
+            enableSuggestions: false,
+            decoration: _decoration(
+              label: 'Kundennummer / Benutzername',
+              icon: Icons.badge_outlined,
+            ),
+            validator: (v) {
+              final p = context.read<ECLProvider>();
+              if (p.selectedBillingId == 'brunata_hamburg') {
+                if (v == null || v.trim().isEmpty) {
+                  return 'Bitte Kundennummer eingeben';
+                }
+              }
+              return null;
+            },
+          ),
+          const SizedBox(height: 12),
+          TextFormField(
+            controller: _passwordController,
+            obscureText: _obscurePassword,
+            autocorrect: false,
+            enableSuggestions: false,
+            decoration: _decoration(
+              label: 'Kennwort',
+              icon: Icons.lock_outline_rounded,
+              suffix: IconButton(
+                icon: Icon(
+                  _obscurePassword
+                      ? Icons.visibility_outlined
+                      : Icons.visibility_off_outlined,
+                  size: 20,
+                ),
+                onPressed: () =>
+                    setState(() => _obscurePassword = !_obscurePassword),
               ),
             ),
+            validator: (v) {
+              final p = context.read<ECLProvider>();
+              if (p.selectedBillingId == 'brunata_hamburg') {
+                if (v == null || v.isEmpty) {
+                  return 'Bitte Kennwort eingeben';
+                }
+              }
+              return null;
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSimulatedBillingNotice(BillingProviderDescriptor desc) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1E2836),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFF2C4C64)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.info_outline_rounded,
+              color: Color(0xFF38BDF8), size: 22),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${desc.name} (Simulationsmodus)',
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFFECECF0),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Dieser Dienst befindet sich in Vorbereitung. Im aktuellen '
+                  'Zustand emuliert der Heizungstrainer realistische Verbrauchs- '
+                  'und Liegenschaftsdaten für den Community-Vergleich.',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    height: 1.4,
+                    color: Colors.white.withValues(alpha: 0.75),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDatabaseTile(ECLProvider provider) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF24242C),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFF3A3A44)),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1B3D2F),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.cloud_done_rounded,
+                    color: Color(0xFF4ADE80), size: 20),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Lokale SQLite-Telemetriedatenbank',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFFECECF0),
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Alle 30s gepuffert. Trendanalysen sind permanent verfügbar.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.white.withValues(alpha: 0.5),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const Divider(color: Color(0xFF3A3A44), height: 24),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text(
+              'Offline-Puffer erzwingen',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFFECECF0),
+              ),
+            ),
+            subtitle: Text(
+              'Zeigt ausschließlich gespeicherte Messwerte an und pausiert Netzwerkabfragen.',
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.white.withValues(alpha: 0.5),
+              ),
+            ),
+            value: provider.isOfflineMode,
+            activeThumbColor: const Color(0xFFFFA726),
+            onChanged: (val) {
+              if (val) {
+                provider.openOfflineMode();
+              } else {
+                provider.exitOfflineMode();
+              }
+            },
+          ),
+        ],
+      ),
     );
   }
 
@@ -237,6 +502,566 @@ class _SettingsScreenState extends State<SettingsScreen> {
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
         borderSide: const BorderSide(color: Color(0xFFFFA726)),
+      ),
+    );
+  }
+}
+
+/// Header banner displaying currently active hardware and billing configuration.
+class _ActiveSystemSummary extends StatelessWidget {
+  final ECLProvider provider;
+
+  const _ActiveSystemSummary({required this.provider});
+
+  @override
+  Widget build(BuildContext context) {
+    final controllerDesc = provider.currentControllerDescriptor;
+    final billingDesc = provider.currentBillingDescriptor;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFF2C251C), Color(0xFF1E1E26)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFFFA726).withValues(alpha: 0.35)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.hub_rounded, color: Color(0xFFFFA726), size: 20),
+              const SizedBox(width: 8),
+              const Text(
+                'Aktives Setup',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.5,
+                  color: Color(0xFFFFA726),
+                ),
+              ),
+              const Spacer(),
+              _ConnectionStatusBadge(provider: provider),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: _SummaryBox(
+                  icon: controllerDesc.icon,
+                  label: 'Heizung',
+                  value: controllerDesc.brand,
+                  subtitle: controllerDesc.model,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _SummaryBox(
+                  icon: billingDesc.icon,
+                  label: 'Abrechnung',
+                  value: billingDesc.name,
+                  subtitle: provider.isSimulatedBilling ? 'Simulation' : 'Portal',
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SummaryBox extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+  final String subtitle;
+
+  const _SummaryBox({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.subtitle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.25),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 14, color: const Color(0xFFFFA726)),
+              const SizedBox(width: 5),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 11,
+                  color: Colors.white.withValues(alpha: 0.5),
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 13.5,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFFECECF0),
+            ),
+          ),
+          Text(
+            subtitle,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 11,
+              color: Colors.white.withValues(alpha: 0.55),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ConnectionStatusBadge extends StatelessWidget {
+  final ECLProvider provider;
+
+  const _ConnectionStatusBadge({required this.provider});
+
+  @override
+  Widget build(BuildContext context) {
+    Color bg;
+    Color fg;
+    String text;
+
+    if (provider.isConnected) {
+      bg = const Color(0xFF1B3D2F);
+      fg = const Color(0xFF4ADE80);
+      text = provider.isSimulatedController ? 'Simulation' : 'Verbunden';
+    } else if (provider.isReconnecting) {
+      bg = const Color(0xFF3D2E14);
+      fg = const Color(0xFFFFB74D);
+      text = 'Reconnecting';
+    } else {
+      bg = const Color(0xFF2C2C36);
+      fg = const Color(0xFF9E9EA8);
+      text = 'Getrennt';
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          color: fg,
+        ),
+      ),
+    );
+  }
+}
+
+/// Interactive card for selecting or simulating a heating controller.
+class _ControllerCard extends StatelessWidget {
+  final ControllerDescriptor descriptor;
+  final bool isSelected;
+  final bool isConnected;
+  final bool isConnecting;
+  final VoidCallback onSelect;
+  final VoidCallback onStartSimulation;
+  final VoidCallback onDisconnect;
+
+  const _ControllerCard({
+    required this.descriptor,
+    required this.isSelected,
+    required this.isConnected,
+    required this.isConnecting,
+    required this.onSelect,
+    required this.onStartSimulation,
+    required this.onDisconnect,
+  });
+
+  String _protocolString(ConnectionProtocol protocol) {
+    switch (protocol) {
+      case ConnectionProtocol.modbusTcp:
+        return 'Modbus TCP';
+      case ConnectionProtocol.modbusRtu:
+        return 'Modbus RTU';
+      case ConnectionProtocol.restApi:
+        return 'REST API';
+      case ConnectionProtocol.mqtt:
+        return 'MQTT';
+      case ConnectionProtocol.eBus:
+        return 'eBus';
+      case ConnectionProtocol.proprietary:
+        return 'Proprietär';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    const accent = Color(0xFFFFA726);
+
+    return InkWell(
+      onTap: onSelect,
+      borderRadius: BorderRadius.circular(16),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: isSelected ? const Color(0xFF2B251D) : const Color(0xFF24242C),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: isSelected ? accent : const Color(0xFF3A3A44),
+            width: isSelected ? 1.8 : 1.0,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: isSelected
+                        ? accent.withValues(alpha: 0.18)
+                        : const Color(0xFF2E2E38),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(
+                    descriptor.icon,
+                    color: isSelected ? accent : const Color(0xFFB0B0BC),
+                    size: 24,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Text(
+                            descriptor.brand,
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: isSelected ? accent : const Color(0xFF9E9EA8),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          _Badge(
+                            text: descriptor.isSupported
+                                ? 'Hardware'
+                                : 'Simulation',
+                            color: descriptor.isSupported
+                                ? const Color(0xFF4ADE80)
+                                : const Color(0xFFFFB74D),
+                            bgColor: descriptor.isSupported
+                                ? const Color(0xFF1B3D2F)
+                                : const Color(0xFF3D2E14),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        descriptor.model,
+                        style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFFECECF0),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(
+                  isSelected
+                      ? Icons.radio_button_checked_rounded
+                      : Icons.radio_button_unchecked_rounded,
+                  color: isSelected ? accent : const Color(0xFF6B6B78),
+                  size: 22,
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              descriptor.description,
+              style: TextStyle(
+                fontSize: 12,
+                height: 1.35,
+                color: Colors.white.withValues(alpha: 0.6),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                _TagChip(label: _protocolString(descriptor.protocol)),
+                const Spacer(),
+                if (isSelected && !descriptor.isSupported) ...[
+                  if (isConnected) ...[
+                    OutlinedButton.icon(
+                      onPressed: onDisconnect,
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFFFF8A80),
+                        side: const BorderSide(color: Color(0xFF7F2C2C)),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 6),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      icon: const Icon(Icons.stop_rounded, size: 16),
+                      label: const Text('Trennen',
+                          style: TextStyle(fontSize: 12)),
+                    ),
+                  ] else ...[
+                    FilledButton.tonalIcon(
+                      onPressed: isConnecting ? null : onStartSimulation,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: accent.withValues(alpha: 0.2),
+                        foregroundColor: accent,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 6),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      icon: isConnecting
+                          ? const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.play_arrow_rounded, size: 16),
+                      label: Text(
+                        isConnecting ? 'Startet...' : 'Simulation testen',
+                        style: const TextStyle(
+                            fontSize: 12, fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ],
+                ],
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Interactive card for selecting or simulating a billing provider.
+class _BillingProviderCard extends StatelessWidget {
+  final BillingProviderDescriptor descriptor;
+  final bool isSelected;
+  final VoidCallback onSelect;
+
+  const _BillingProviderCard({
+    required this.descriptor,
+    required this.isSelected,
+    required this.onSelect,
+  });
+
+  String _authTypeString(BillingAuthType authType) {
+    switch (authType) {
+      case BillingAuthType.portalScraper:
+        return 'Web-Portal';
+      case BillingAuthType.restApi:
+        return 'REST API';
+      case BillingAuthType.oauth2:
+        return 'OAuth 2.0';
+      case BillingAuthType.fileImport:
+        return 'Datei-Import';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    const accent = Color(0xFFFFA726);
+
+    return InkWell(
+      onTap: onSelect,
+      borderRadius: BorderRadius.circular(16),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: isSelected ? const Color(0xFF2B251D) : const Color(0xFF24242C),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: isSelected ? accent : const Color(0xFF3A3A44),
+            width: isSelected ? 1.8 : 1.0,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: isSelected
+                        ? accent.withValues(alpha: 0.18)
+                        : const Color(0xFF2E2E38),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(
+                    descriptor.icon,
+                    color: isSelected ? accent : const Color(0xFFB0B0BC),
+                    size: 24,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              descriptor.organization,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w600,
+                                color: isSelected
+                                    ? accent
+                                    : const Color(0xFF9E9EA8),
+                              ),
+                            ),
+                          ),
+                          _Badge(
+                            text: descriptor.isSupported
+                                ? 'Live'
+                                : 'Simulation',
+                            color: descriptor.isSupported
+                                ? const Color(0xFF4ADE80)
+                                : const Color(0xFF38BDF8),
+                            bgColor: descriptor.isSupported
+                                ? const Color(0xFF1B3D2F)
+                                : const Color(0xFF163238),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        descriptor.name,
+                        style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFFECECF0),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(
+                  isSelected
+                      ? Icons.radio_button_checked_rounded
+                      : Icons.radio_button_unchecked_rounded,
+                  color: isSelected ? accent : const Color(0xFF6B6B78),
+                  size: 22,
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              descriptor.description,
+              style: TextStyle(
+                fontSize: 12,
+                height: 1.35,
+                color: Colors.white.withValues(alpha: 0.6),
+              ),
+            ),
+            const SizedBox(height: 10),
+            _TagChip(label: _authTypeString(descriptor.authType)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _TagChip extends StatelessWidget {
+  final String label;
+
+  const _TagChip({required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3.5),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1B1B22),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFF363642)),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w500,
+          color: Color(0xFFB0B0BE),
+        ),
+      ),
+    );
+  }
+}
+
+class _Badge extends StatelessWidget {
+  final String text;
+  final Color color;
+  final Color bgColor;
+
+  const _Badge({
+    required this.text,
+    required this.color,
+    required this.bgColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontSize: 10.5,
+          fontWeight: FontWeight.w700,
+          color: color,
+        ),
       ),
     );
   }
@@ -278,7 +1103,7 @@ class _SectionHeader extends StatelessWidget {
           style: TextStyle(
             fontSize: 12.5,
             height: 1.4,
-            color: Colors.white.withValues(alpha: 0.45),
+            color: Colors.white.withValues(alpha: 0.5),
           ),
         ),
       ],

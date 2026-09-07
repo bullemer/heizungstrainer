@@ -7,8 +7,11 @@ import 'dart:async';
 import 'dart:collection';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:permission_handler/permission_handler.dart';
 
+import 'package:heizungstrainer/billing/billing_provider.dart';
+import 'package:heizungstrainer/controllers/heating_controller.dart';
 import 'package:heizungstrainer/exceptions/modbus_exceptions.dart';
 import 'package:heizungstrainer/models/brunata_meter_data.dart';
 import 'package:heizungstrainer/models/ecl_parameter.dart';
@@ -16,6 +19,7 @@ import 'package:heizungstrainer/models/ecl_reading.dart';
 import 'package:heizungstrainer/models/telemetry_sample.dart';
 import 'package:heizungstrainer/services/brunata_local_scraper_service.dart';
 import 'package:heizungstrainer/services/database_service.dart';
+import 'package:heizungstrainer/services/device_registry.dart';
 import 'package:heizungstrainer/services/discovery_service.dart';
 import 'package:heizungstrainer/services/modbus_service.dart';
 
@@ -35,6 +39,15 @@ class ECLProvider extends ChangeNotifier {
   final DiscoveryService _discoveryService;
   final BrunataLocalScraperService _brunataScraper;
   final DatabaseService _databaseService;
+  final FlutterSecureStorage _secureStorage;
+
+  static const String _controllerStorageKey = 'selected_controller_id';
+  static const String _billingStorageKey = 'selected_billing_id';
+
+  String _selectedControllerId = 'danfoss_ecl_310';
+  String _selectedBillingId = 'brunata_hamburg';
+  late HeatingController _activeController;
+  late BillingProvider _activeBillingProvider;
 
   ECLConnectionState _connectionState = ECLConnectionState.disconnected;
   String? _controllerIp;
@@ -80,6 +93,17 @@ class ECLProvider extends ChangeNotifier {
   DateTime? get lastSuccessfulPoll => _lastSuccessfulPoll;
   DatabaseService get databaseService => _databaseService;
 
+  String get selectedControllerId => _selectedControllerId;
+  String get selectedBillingId => _selectedBillingId;
+  HeatingController get activeController => _activeController;
+  BillingProvider get activeBillingProvider => _activeBillingProvider;
+  ControllerDescriptor get currentControllerDescriptor =>
+      DeviceRegistry.getControllerDescriptor(_selectedControllerId);
+  BillingProviderDescriptor get currentBillingDescriptor =>
+      DeviceRegistry.getBillingProviderDescriptor(_selectedBillingId);
+  bool get isSimulatedController => _selectedControllerId != 'danfoss_ecl_310';
+  bool get isSimulatedBilling => _selectedBillingId != 'brunata_hamburg';
+
   BrunataSyncState get brunataSyncState => _brunataSyncState;
   BrunataMeterData? get brunataData => _brunataData;
   String? get brunataSyncError => _brunataSyncError;
@@ -111,17 +135,108 @@ class ECLProvider extends ChangeNotifier {
     DiscoveryService? discoveryService,
     BrunataLocalScraperService? brunataScraper,
     DatabaseService? databaseService,
+    FlutterSecureStorage? secureStorage,
     bool autoLoadDatabase = true,
   })  : _modbusService = modbusService ?? ModbusService(),
         _discoveryService = discoveryService ?? DiscoveryService(),
         _brunataScraper = brunataScraper ?? BrunataLocalScraperService(),
-        _databaseService = databaseService ?? DatabaseService.instance {
+        _databaseService = databaseService ?? DatabaseService.instance,
+        _secureStorage = secureStorage ?? const FlutterSecureStorage() {
+    _activeController = DeviceRegistry.createController(
+      _selectedControllerId,
+      modbusService: _modbusService,
+    );
+    _activeBillingProvider = DeviceRegistry.createBillingProvider(
+      _selectedBillingId,
+      scraperService: _brunataScraper,
+    );
     _brunataScraper.onStateChange = (state) {
       _brunataSyncState = state;
       notifyListeners();
     };
     if (autoLoadDatabase) {
       _initFromDatabase();
+    }
+    _initHardwareSettings();
+  }
+
+  Future<void> _initHardwareSettings() async {
+    try {
+      final savedCtrl = await _secureStorage.read(key: _controllerStorageKey);
+      if (savedCtrl != null && savedCtrl.isNotEmpty && savedCtrl != _selectedControllerId) {
+        _selectedControllerId = savedCtrl;
+        _activeController = DeviceRegistry.createController(
+          savedCtrl,
+          modbusService: _modbusService,
+        );
+      }
+      final savedBill = await _secureStorage.read(key: _billingStorageKey);
+      if (savedBill != null && savedBill.isNotEmpty && savedBill != _selectedBillingId) {
+        _selectedBillingId = savedBill;
+        _activeBillingProvider = DeviceRegistry.createBillingProvider(
+          savedBill,
+          scraperService: _brunataScraper,
+        );
+      }
+      notifyListeners();
+    } catch (e) {
+      debugPrint('[Provider] Error loading hardware settings from storage: $e');
+    }
+  }
+
+  /// Sets the active heating controller hardware or simulation.
+  Future<void> setSelectedController(String id) async {
+    if (_selectedControllerId == id) return;
+    if (isConnected) {
+      disconnect();
+    }
+    _selectedControllerId = id;
+    _activeController = DeviceRegistry.createController(
+      id,
+      modbusService: _modbusService,
+    );
+    try {
+      await _secureStorage.write(key: _controllerStorageKey, value: id);
+    } catch (e) {
+      debugPrint('[Provider] Could not persist selected controller: $e');
+    }
+    notifyListeners();
+  }
+
+  /// Sets the active billing and sub-metering provider.
+  Future<void> setSelectedBillingProvider(String id) async {
+    if (_selectedBillingId == id) return;
+    _selectedBillingId = id;
+    _activeBillingProvider = DeviceRegistry.createBillingProvider(
+      id,
+      scraperService: _brunataScraper,
+    );
+    try {
+      await _secureStorage.write(key: _billingStorageKey, value: id);
+    } catch (e) {
+      debugPrint('[Provider] Could not persist selected billing provider: $e');
+    }
+    notifyListeners();
+  }
+
+  /// Starts simulation mode for previewing non-Danfoss controllers.
+  Future<void> startSimulation() async {
+    _connectionState = ECLConnectionState.connecting;
+    _controllerIp = 'Simulation (${currentControllerDescriptor.brand})';
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      await _activeController.connect(host: '127.0.0.1');
+      _connectionState = ECLConnectionState.connected;
+      _isReconnecting = false;
+      _consecutivePollErrors = 0;
+      notifyListeners();
+
+      await refreshReadings();
+      _startPolling();
+    } catch (e) {
+      _setError('Fehler beim Starten der Simulation: $e');
     }
   }
 
@@ -170,6 +285,11 @@ class ECLProvider extends ChangeNotifier {
   // ──────────────────────────────────────────────────────────────────
 
   Future<void> connectToController() async {
+    if (isSimulatedController) {
+      await startSimulation();
+      return;
+    }
+
     _connectionState = ECLConnectionState.discovering;
     _errorMessage = null;
     _discoveryProgress = 0.0;
@@ -239,7 +359,11 @@ class ECLProvider extends ChangeNotifier {
 
   void disconnect() {
     _stopPolling();
-    _modbusService.disconnect();
+    if (isSimulatedController) {
+      _activeController.disconnect();
+    } else {
+      _modbusService.disconnect();
+    }
     _connectionState = ECLConnectionState.disconnected;
     _controllerIp = null;
     _errorMessage = null;
@@ -257,6 +381,70 @@ class ECLProvider extends ChangeNotifier {
 
   Future<void> refreshReadings() async {
     if (!isConnected) return;
+
+    if (isSimulatedController) {
+      try {
+        final telemetry = await _activeController.readTelemetry();
+        _readings[ECLRegisters.outdoorTemp.id] = ECLReading(
+          parameter: ECLRegisters.outdoorTemp,
+          rawValue: ECLRegisters.outdoorTemp
+              .displayToRaw(telemetry.outdoorTemp ?? 7.5),
+          timestamp: telemetry.timestamp,
+        );
+        _readings[ECLRegisters.flowTemp.id] = ECLReading(
+          parameter: ECLRegisters.flowTemp,
+          rawValue: ECLRegisters.flowTemp
+              .displayToRaw(telemetry.flowTemp ?? 46.0),
+          timestamp: telemetry.timestamp,
+        );
+        _readings[ECLRegisters.returnTemp.id] = ECLReading(
+          parameter: ECLRegisters.returnTemp,
+          rawValue: ECLRegisters.returnTemp
+              .displayToRaw(telemetry.returnTemp ?? 36.0),
+          timestamp: telemetry.timestamp,
+        );
+        _readings[ECLRegisters.hotWaterTemp.id] = ECLReading(
+          parameter: ECLRegisters.hotWaterTemp,
+          rawValue: ECLRegisters.hotWaterTemp
+              .displayToRaw(telemetry.hotWaterTemp ?? 52.0),
+          timestamp: telemetry.timestamp,
+        );
+        _readings[ECLRegisters.heatingCurveShift.id] = ECLReading(
+          parameter: ECLRegisters.heatingCurveShift,
+          rawValue: ECLRegisters.heatingCurveShift
+              .displayToRaw(telemetry.heatingCurveShift ?? 0.0),
+          timestamp: telemetry.timestamp,
+        );
+        _readings[ECLRegisters.roomTargetTemp.id] = ECLReading(
+          parameter: ECLRegisters.roomTargetTemp,
+          rawValue: ECLRegisters.roomTargetTemp
+              .displayToRaw(telemetry.roomTarget ?? 20.0),
+          timestamp: telemetry.timestamp,
+        );
+        _consecutivePollErrors = 0;
+        _isReconnecting = false;
+        _lastSuccessfulPoll = telemetry.timestamp;
+
+        for (final entry in _readings.entries) {
+          if (!entry.value.isSensorDisconnected) {
+            final queue = _history.putIfAbsent(
+              entry.key,
+              () => Queue<double>(),
+            );
+            queue.addLast(entry.value.displayValue);
+            while (queue.length > _maxHistoryLength) {
+              queue.removeFirst();
+            }
+          }
+        }
+
+        await _persistReadings(_readings);
+        notifyListeners();
+      } catch (e) {
+        debugPrint('[Provider] Simulation reading error: $e');
+      }
+      return;
+    }
 
     try {
       final newReadings = await _modbusService.readAllParameters();
@@ -373,6 +561,23 @@ class ECLProvider extends ChangeNotifier {
       );
     }
 
+    if (isSimulatedController) {
+      if (parameter.id == ECLRegisters.heatingCurveShift.id) {
+        await _activeController.setHeatingCurveShift(value);
+      } else if (parameter.id == ECLRegisters.roomTargetTemp.id) {
+        await _activeController.setRoomTarget(value);
+      }
+      final reading = ECLReading(
+        parameter: parameter,
+        rawValue: parameter.displayToRaw(value),
+        timestamp: DateTime.now(),
+      );
+      _readings[parameter.id] = reading;
+      await _databaseService.cacheControllerReadings(_readings);
+      notifyListeners();
+      return reading;
+    }
+
     final reading = await _modbusService.writeAndVerify(parameter, value);
     _readings[parameter.id] = reading;
     _databaseService.cacheControllerReadings(_readings);
@@ -413,63 +618,75 @@ class ECLProvider extends ChangeNotifier {
   }
 
   // ──────────────────────────────────────────────────────────────────
-  // Brunata Portal Sync
+  // Billing Provider Sync & Settings
   // ──────────────────────────────────────────────────────────────────
 
-  /// Triggers a headless browser sync with the Brunata billing portal.
-  Future<void> syncBrunataData() async {
+  /// Universal synchronization method for any configured billing provider.
+  Future<void> syncBillingData() async {
     if (isBrunataSyncing) return;
 
     _brunataSyncError = null;
     _brunataSyncState = BrunataSyncState.initializing;
     notifyListeners();
 
-    final result = await _brunataScraper.syncFromPortal();
+    try {
+      final result = await _activeBillingProvider.syncData();
 
-    if (result.success && result.data != null) {
-      _brunataData = result.data;
-      _brunataSyncState = BrunataSyncState.complete;
-      _brunataSyncError = null;
-      await _databaseService.cacheBrunataData(result.data!);
-    } else {
-      _brunataSyncError = result.errorMessage;
+      if (result.success && result.data != null) {
+        _brunataData = result.data;
+        _brunataSyncState = BrunataSyncState.complete;
+        _brunataSyncError = null;
+        await _databaseService.cacheBrunataData(result.data!);
+      } else {
+        _brunataSyncError = result.errorMessage ??
+            'Abrechnungs-Synchronisation fehlgeschlagen';
+        _brunataSyncState = BrunataSyncState.error;
+        _brunataData ??= BrunataMeterData.demo();
+      }
+    } catch (e) {
+      _brunataSyncError = e.toString();
       _brunataSyncState = BrunataSyncState.error;
-      // Fall back to demo data if no prior data exists
       _brunataData ??= BrunataMeterData.demo();
     }
     notifyListeners();
   }
 
-  // ──────────────────────────────────────────────────────────────────
-  // Brunata Settings (credentials + tariff)
-  // ──────────────────────────────────────────────────────────────────
+  /// Triggers sync with the active billing provider (Brunata or simulation).
+  Future<void> syncBrunataData() => syncBillingData();
 
-  /// Whether Brunata login credentials are stored.
-  Future<bool> hasBrunataCredentials() => _brunataScraper.hasCredentials();
+  /// Whether credentials for the active billing provider are stored.
+  Future<bool> hasBrunataCredentials() => _activeBillingProvider.hasCredentials();
 
-  /// Currently stored Brunata username (or null).
+  /// Currently stored username (or null).
   Future<String?> getBrunataUsername() => _brunataScraper.getUsername();
 
-  /// Currently stored Brunata password (or null).
+  /// Currently stored password (or null).
   Future<String?> getBrunataPassword() => _brunataScraper.getPassword();
 
   /// Configured price per kWh used to estimate heating cost.
-  Future<double> getPricePerKwh() => _brunataScraper.getPricePerKwh();
+  Future<double> getPricePerKwh() => _activeBillingProvider.getPricePerKwh();
 
-  /// Persists the Brunata credentials and tariff, then optionally re-syncs.
-  Future<void> saveBrunataSettings({
+  /// Persists settings for the active billing provider.
+  Future<void> saveBillingSettings({
     required String username,
     required String password,
     required double pricePerKwh,
     bool syncAfterSave = false,
   }) async {
-    await _brunataScraper.saveCredentials(
+    await _activeBillingProvider.saveCredentials(
       username: username,
       password: password,
     );
-    await _brunataScraper.savePricePerKwh(pricePerKwh);
-    // Recompute the cost of already-loaded data against the new tariff so the
-    // UI reflects the change without requiring a full re-sync.
+    await _activeBillingProvider.setPricePerKwh(pricePerKwh);
+
+    if (_selectedBillingId == 'brunata_hamburg') {
+      await _brunataScraper.saveCredentials(
+        username: username,
+        password: password,
+      );
+      await _brunataScraper.savePricePerKwh(pricePerKwh);
+    }
+
     final existing = _brunataData;
     if (existing != null) {
       _brunataData = existing.copyWithPrice(pricePerKwh);
@@ -477,9 +694,23 @@ class ECLProvider extends ChangeNotifier {
     }
     notifyListeners();
     if (syncAfterSave) {
-      await syncBrunataData();
+      await syncBillingData();
     }
   }
+
+  /// Legacy alias for saveBillingSettings.
+  Future<void> saveBrunataSettings({
+    required String username,
+    required String password,
+    required double pricePerKwh,
+    bool syncAfterSave = false,
+  }) =>
+      saveBillingSettings(
+        username: username,
+        password: password,
+        pricePerKwh: pricePerKwh,
+        syncAfterSave: syncAfterSave,
+      );
 
   @override
   void dispose() {

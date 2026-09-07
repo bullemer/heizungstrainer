@@ -89,6 +89,10 @@ class HomeScreen extends StatelessWidget {
                   _OfflineModeBanner(provider: provider),
                   const SizedBox(height: 12),
                 ],
+                if (provider.isSimulatedController) ...[
+                  _SimulatedControllerBanner(provider: provider),
+                  const SizedBox(height: 12),
+                ],
                 // ── Smart Status Banner ─────────────────────
                 _SmartStatusBanner(provider: provider),
                 const SizedBox(height: 18),
@@ -258,6 +262,56 @@ class _OfflineModeBanner extends StatelessWidget {
                 fontSize: 12,
               ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SimulatedControllerBanner extends StatelessWidget {
+  final ECLProvider provider;
+  const _SimulatedControllerBanner({required this.provider});
+
+  @override
+  Widget build(BuildContext context) {
+    final desc = provider.currentControllerDescriptor;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFA726).withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: const Color(0xFFFFA726).withValues(alpha: 0.35),
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(desc.icon, color: const Color(0xFFFFA726), size: 18),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Simulation: ${desc.brand} ${desc.model}',
+              style: const TextStyle(
+                color: Color(0xFFFFA726),
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const SettingsScreen()),
+              );
+            },
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              minimumSize: const Size(50, 28),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              foregroundColor: const Color(0xFFFFA726),
+            ),
+            child: const Text('Wechseln', style: TextStyle(fontSize: 11)),
           ),
         ],
       ),
