@@ -6,10 +6,16 @@ import 'package:heizungstrainer/billing/billing_provider.dart';
 import 'package:heizungstrainer/controllers/generic_modbus_controller.dart';
 import 'package:heizungstrainer/controllers/bosch_buderus_ems_controller.dart';
 import 'package:heizungstrainer/controllers/viessmann_controller.dart';
+import 'package:heizungstrainer/controllers/vaillant_ebusd_controller.dart';
+import 'package:heizungstrainer/controllers/weishaupt_wem_controller.dart';
+import 'package:heizungstrainer/controllers/nibe_modbus_controller.dart';
 import 'package:heizungstrainer/controllers/heating_controller.dart';
 import 'package:heizungstrainer/models/generic_modbus_config.dart';
 import 'package:heizungstrainer/models/bosch_buderus_ems_config.dart';
 import 'package:heizungstrainer/models/viessmann_config.dart';
+import 'package:heizungstrainer/models/vaillant_ebusd_config.dart';
+import 'package:heizungstrainer/models/weishaupt_wem_config.dart';
+import 'package:heizungstrainer/models/nibe_modbus_config.dart';
 import 'package:heizungstrainer/providers/ecl_provider.dart';
 import 'package:heizungstrainer/services/device_registry.dart';
 import 'package:heizungstrainer/services/energy_price_service.dart';
@@ -61,6 +67,43 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String _viessmannPresetId = 'optolink_vcontrold';
   bool _obscureViessmannToken = true;
   bool _testingViessmann = false;
+
+  final _vaillantHostController = TextEditingController();
+  final _vaillantPortController = TextEditingController();
+  final _vaillantCircuitController = TextEditingController();
+  final _vaillantTokenController = TextEditingController();
+  String _vaillantPresetId = 'ebusd_http_json';
+  bool _vaillantUseHttps = false;
+  bool _obscureVaillantToken = true;
+  bool _testingVaillant = false;
+
+  final _weishauptHostController = TextEditingController();
+  final _weishauptPortController = TextEditingController();
+  final _weishauptUnitIdController = TextEditingController();
+  final _weishauptOutdoorRegController = TextEditingController();
+  final _weishauptFlowRegController = TextEditingController();
+  final _weishauptReturnRegController = TextEditingController();
+  final _weishauptHwRegController = TextEditingController();
+  final _weishauptRoomRegController = TextEditingController();
+  final _weishauptShiftRegController = TextEditingController();
+  String _weishauptPresetId = 'wem_wwp_split';
+  double _weishauptMultiplier = 0.1;
+  bool _weishauptIsHolding = true;
+  bool _testingWeishaupt = false;
+
+  final _nibeHostController = TextEditingController();
+  final _nibePortController = TextEditingController();
+  final _nibeUnitIdController = TextEditingController();
+  final _nibeOutdoorRegController = TextEditingController();
+  final _nibeFlowRegController = TextEditingController();
+  final _nibeReturnRegController = TextEditingController();
+  final _nibeHwRegController = TextEditingController();
+  final _nibeRoomRegController = TextEditingController();
+  final _nibeShiftRegController = TextEditingController();
+  String _nibePresetId = 'nibe_s_series';
+  double _nibeMultiplier = 0.1;
+  bool _nibeIsHolding = true;
+  bool _testingNibe = false;
 
   bool _obscurePassword = true;
   bool _loading = true;
@@ -117,6 +160,46 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _viessmannCircuit = vCfg.circuit;
       _viessmannPresetId = vCfg.presetId;
 
+      final vaillantCfg = provider.vaillantConfig;
+      _vaillantHostController.text = vaillantCfg.host;
+      _vaillantPortController.text = vaillantCfg.port.toString();
+      _vaillantCircuitController.text = vaillantCfg.circuit;
+      _vaillantTokenController.text = vaillantCfg.apiToken;
+      _vaillantPresetId = vaillantCfg.presetId;
+      _vaillantUseHttps = vaillantCfg.useHttps;
+
+      final weishauptCfg = provider.weishauptConfig;
+      _weishauptHostController.text = weishauptCfg.host;
+      _weishauptPortController.text = weishauptCfg.port.toString();
+      _weishauptUnitIdController.text = weishauptCfg.unitId.toString();
+      _weishauptOutdoorRegController.text = weishauptCfg.outdoorRegister.toString();
+      _weishauptFlowRegController.text = weishauptCfg.flowRegister.toString();
+      _weishauptReturnRegController.text = weishauptCfg.returnRegister.toString();
+      _weishauptHwRegController.text = weishauptCfg.hotWaterRegister.toString();
+      _weishauptRoomRegController.text =
+          weishauptCfg.roomTargetRegister?.toString() ?? '';
+      _weishauptShiftRegController.text =
+          weishauptCfg.heatingCurveShiftRegister?.toString() ?? '';
+      _weishauptPresetId = weishauptCfg.presetId;
+      _weishauptMultiplier = weishauptCfg.multiplier;
+      _weishauptIsHolding = weishauptCfg.isHoldingRegister;
+
+      final nibeCfg = provider.nibeConfig;
+      _nibeHostController.text = nibeCfg.host;
+      _nibePortController.text = nibeCfg.port.toString();
+      _nibeUnitIdController.text = nibeCfg.unitId.toString();
+      _nibeOutdoorRegController.text = nibeCfg.outdoorRegister.toString();
+      _nibeFlowRegController.text = nibeCfg.flowRegister.toString();
+      _nibeReturnRegController.text = nibeCfg.returnRegister.toString();
+      _nibeHwRegController.text = nibeCfg.hotWaterRegister.toString();
+      _nibeRoomRegController.text =
+          nibeCfg.roomTargetRegister?.toString() ?? '';
+      _nibeShiftRegController.text =
+          nibeCfg.heatingCurveShiftRegister?.toString() ?? '';
+      _nibePresetId = nibeCfg.presetId;
+      _nibeMultiplier = nibeCfg.multiplier;
+      _nibeIsHolding = nibeCfg.isHoldingRegister;
+
       if (!mounted) return;
       setState(() {
         _usernameController.text = username ?? '';
@@ -169,6 +252,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _viessmannPortController.dispose();
     _viessmannTokenController.dispose();
     _viessmannInstallIdController.dispose();
+    _vaillantHostController.dispose();
+    _vaillantPortController.dispose();
+    _vaillantCircuitController.dispose();
+    _vaillantTokenController.dispose();
+    _weishauptHostController.dispose();
+    _weishauptPortController.dispose();
+    _weishauptUnitIdController.dispose();
+    _weishauptOutdoorRegController.dispose();
+    _weishauptFlowRegController.dispose();
+    _weishauptReturnRegController.dispose();
+    _weishauptHwRegController.dispose();
+    _weishauptRoomRegController.dispose();
+    _weishauptShiftRegController.dispose();
+    _nibeHostController.dispose();
+    _nibePortController.dispose();
+    _nibeUnitIdController.dispose();
+    _nibeOutdoorRegController.dispose();
+    _nibeFlowRegController.dispose();
+    _nibeReturnRegController.dispose();
+    _nibeHwRegController.dispose();
+    _nibeRoomRegController.dispose();
+    _nibeShiftRegController.dispose();
     super.dispose();
   }
 
@@ -357,6 +462,152 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  Future<void> _testVaillantConnection() async {
+    setState(() => _testingVaillant = true);
+    final vaillantCfg = VaillantEbusdConfig(
+      host: _vaillantHostController.text.trim().isEmpty
+          ? '192.168.1.140'
+          : _vaillantHostController.text.trim(),
+      port: int.tryParse(_vaillantPortController.text.trim()) ?? 8889,
+      circuit: _vaillantCircuitController.text.trim().isEmpty
+          ? 'bai'
+          : _vaillantCircuitController.text.trim(),
+      apiToken: _vaillantTokenController.text.trim(),
+      useHttps: _vaillantUseHttps,
+      presetId: _vaillantPresetId,
+    );
+
+    final res = await VaillantEbusdController.testConnection(vaillantCfg);
+    if (!mounted) return;
+    setState(() => _testingVaillant = false);
+
+    if (res['success'] == true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'eBUSd Test erfolgreich!\n'
+            'Vorlauf: ${res['flowTemp'] != null ? "${res['flowTemp']} °C" : "-"} | '
+            'Rücklauf: ${res['returnTemp'] != null ? "${res['returnTemp']} °C" : "-"} | '
+            'Außen: ${res['outdoorTemp'] != null ? "${res['outdoorTemp']} °C" : "-"} | '
+            'WW: ${res['hotWaterTemp'] != null ? "${res['hotWaterTemp']} °C" : "-"}',
+          ),
+          backgroundColor: const Color(0xFF1B3D2F),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('eBUSd Verbindung fehlgeschlagen: ${res['message']}'),
+          backgroundColor: const Color(0xFF5C1D1D),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 5),
+        ),
+      );
+    }
+  }
+
+  Future<void> _testWeishauptConnection() async {
+    setState(() => _testingWeishaupt = true);
+    final weishauptCfg = WeishauptWemConfig(
+      host: _weishauptHostController.text.trim().isEmpty
+          ? '192.168.1.150'
+          : _weishauptHostController.text.trim(),
+      port: int.tryParse(_weishauptPortController.text.trim()) ?? 502,
+      unitId: int.tryParse(_weishauptUnitIdController.text.trim()) ?? 1,
+      outdoorRegister: int.tryParse(_weishauptOutdoorRegController.text.trim()) ?? 3101,
+      flowRegister: int.tryParse(_weishauptFlowRegController.text.trim()) ?? 3102,
+      returnRegister: int.tryParse(_weishauptReturnRegController.text.trim()) ?? 3103,
+      hotWaterRegister: int.tryParse(_weishauptHwRegController.text.trim()) ?? 3104,
+      roomTargetRegister: int.tryParse(_weishauptRoomRegController.text.trim()),
+      heatingCurveShiftRegister: int.tryParse(_weishauptShiftRegController.text.trim()),
+      multiplier: _weishauptMultiplier,
+      isHoldingRegister: _weishauptIsHolding,
+      presetId: _weishauptPresetId,
+    );
+
+    final res = await WeishauptWemController.testConnection(weishauptCfg);
+    if (!mounted) return;
+    setState(() => _testingWeishaupt = false);
+
+    if (res['success'] == true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Weishaupt WEM Verbindungstest erfolgreich!\n'
+            'Vorlauf: ${res['flow'] ?? "-"} °C | '
+            'Rücklauf: ${res['return'] ?? "-"} °C | '
+            'Außen: ${res['outdoor'] ?? "-"} °C | '
+            'WW: ${res['hotWater'] ?? "-"} °C',
+          ),
+          backgroundColor: const Color(0xFF1B3D2F),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Weishaupt Verbindung fehlgeschlagen: ${res['error']}'),
+          backgroundColor: const Color(0xFF5C1D1D),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 5),
+        ),
+      );
+    }
+  }
+
+  Future<void> _testNibeConnection() async {
+    setState(() => _testingNibe = true);
+    final nibeCfg = NibeModbusConfig(
+      host: _nibeHostController.text.trim().isEmpty
+          ? '192.168.1.160'
+          : _nibeHostController.text.trim(),
+      port: int.tryParse(_nibePortController.text.trim()) ?? 502,
+      unitId: int.tryParse(_nibeUnitIdController.text.trim()) ?? 1,
+      outdoorRegister: int.tryParse(_nibeOutdoorRegController.text.trim()) ?? 1,
+      flowRegister: int.tryParse(_nibeFlowRegController.text.trim()) ?? 5,
+      returnRegister: int.tryParse(_nibeReturnRegController.text.trim()) ?? 7,
+      hotWaterRegister: int.tryParse(_nibeHwRegController.text.trim()) ?? 8,
+      roomTargetRegister: int.tryParse(_nibeRoomRegController.text.trim()),
+      heatingCurveShiftRegister: int.tryParse(_nibeShiftRegController.text.trim()),
+      multiplier: _nibeMultiplier,
+      isHoldingRegister: _nibeIsHolding,
+      presetId: _nibePresetId,
+    );
+
+    final res = await NibeModbusController.testConnection(nibeCfg);
+    if (!mounted) return;
+    setState(() => _testingNibe = false);
+
+    if (res['success'] == true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'NIBE Verbindungstest erfolgreich!\n'
+            'Vorlauf: ${res['flow'] ?? "-"} °C | '
+            'Rücklauf: ${res['return'] ?? "-"} °C | '
+            'Außen: ${res['outdoor'] ?? "-"} °C | '
+            'WW: ${res['hotWater'] ?? "-"} °C',
+          ),
+          backgroundColor: const Color(0xFF1B3D2F),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('NIBE Verbindung fehlgeschlagen: ${res['error']}'),
+          backgroundColor: const Color(0xFF5C1D1D),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 5),
+        ),
+      );
+    }
+  }
+
   Future<void> _save({required bool sync}) async {
     if (!_formKey.currentState!.validate()) return;
     FocusScope.of(context).unfocus();
@@ -430,6 +681,86 @@ class _SettingsScreenState extends State<SettingsScreen> {
             .name,
       );
       await provider.updateViessmannConfig(vCfg);
+    }
+
+    if (provider.selectedControllerId == 'vaillant_ebusd') {
+      final vaillantCfg = VaillantEbusdConfig(
+        host: _vaillantHostController.text.trim().isEmpty
+            ? '192.168.1.140'
+            : _vaillantHostController.text.trim(),
+        port: int.tryParse(_vaillantPortController.text.trim()) ?? 8889,
+        circuit: _vaillantCircuitController.text.trim().isEmpty
+            ? 'bai'
+            : _vaillantCircuitController.text.trim(),
+        apiToken: _vaillantTokenController.text.trim(),
+        useHttps: _vaillantUseHttps,
+        presetId: _vaillantPresetId,
+        presetName: VaillantEbusdConfig.presets
+            .firstWhere((p) => p.id == _vaillantPresetId,
+                orElse: () => VaillantEbusdConfig.presets.first)
+            .name,
+      );
+      await provider.updateVaillantConfig(vaillantCfg);
+    }
+
+    if (provider.selectedControllerId == 'weishaupt_wem') {
+      final weishauptCfg = WeishauptWemConfig(
+        host: _weishauptHostController.text.trim().isEmpty
+            ? '192.168.1.150'
+            : _weishauptHostController.text.trim(),
+        port: int.tryParse(_weishauptPortController.text.trim()) ?? 502,
+        unitId: int.tryParse(_weishauptUnitIdController.text.trim()) ?? 1,
+        outdoorRegister:
+            int.tryParse(_weishauptOutdoorRegController.text.trim()) ?? 3101,
+        flowRegister:
+            int.tryParse(_weishauptFlowRegController.text.trim()) ?? 3102,
+        returnRegister:
+            int.tryParse(_weishauptReturnRegController.text.trim()) ?? 3103,
+        hotWaterRegister:
+            int.tryParse(_weishauptHwRegController.text.trim()) ?? 3104,
+        roomTargetRegister:
+            int.tryParse(_weishauptRoomRegController.text.trim()),
+        heatingCurveShiftRegister:
+            int.tryParse(_weishauptShiftRegController.text.trim()),
+        multiplier: _weishauptMultiplier,
+        isHoldingRegister: _weishauptIsHolding,
+        presetId: _weishauptPresetId,
+        presetName: WeishauptWemConfig.presets
+            .firstWhere((p) => p.id == _weishauptPresetId,
+                orElse: () => WeishauptWemConfig.presets.first)
+            .name,
+      );
+      await provider.updateWeishauptConfig(weishauptCfg);
+    }
+
+    if (provider.selectedControllerId == 'nibe_modbus') {
+      final nibeCfg = NibeModbusConfig(
+        host: _nibeHostController.text.trim().isEmpty
+            ? '192.168.1.160'
+            : _nibeHostController.text.trim(),
+        port: int.tryParse(_nibePortController.text.trim()) ?? 502,
+        unitId: int.tryParse(_nibeUnitIdController.text.trim()) ?? 1,
+        outdoorRegister:
+            int.tryParse(_nibeOutdoorRegController.text.trim()) ?? 1,
+        flowRegister:
+            int.tryParse(_nibeFlowRegController.text.trim()) ?? 5,
+        returnRegister:
+            int.tryParse(_nibeReturnRegController.text.trim()) ?? 7,
+        hotWaterRegister:
+            int.tryParse(_nibeHwRegController.text.trim()) ?? 8,
+        roomTargetRegister:
+            int.tryParse(_nibeRoomRegController.text.trim()),
+        heatingCurveShiftRegister:
+            int.tryParse(_nibeShiftRegController.text.trim()),
+        multiplier: _nibeMultiplier,
+        isHoldingRegister: _nibeIsHolding,
+        presetId: _nibePresetId,
+        presetName: NibeModbusConfig.presets
+            .firstWhere((p) => p.id == _nibePresetId,
+                orElse: () => NibeModbusConfig.presets.first)
+            .name,
+      );
+      await provider.updateNibeConfig(nibeCfg);
     }
 
     await provider.saveBillingSettings(
@@ -512,6 +843,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       if (provider.selectedControllerId == 'viessmann_vicare') ...[
                         const SizedBox(height: 8),
                         _buildViessmannConfigCard(provider),
+                      ],
+                      if (provider.selectedControllerId == 'vaillant_ebusd') ...[
+                        const SizedBox(height: 8),
+                        _buildVaillantEbusdConfigCard(provider),
+                      ],
+                      if (provider.selectedControllerId == 'weishaupt_wem') ...[
+                        const SizedBox(height: 8),
+                        _buildWeishauptWemConfigCard(provider),
+                      ],
+                      if (provider.selectedControllerId == 'nibe_modbus') ...[
+                        const SizedBox(height: 8),
+                        _buildNibeModbusConfigCard(provider),
                       ],
                       const SizedBox(height: 24),
 
@@ -1428,6 +1771,889 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     style: FilledButton.styleFrom(
                       backgroundColor: accent,
                       foregroundColor: Colors.white,
+                      minimumSize: const Size.fromHeight(46),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildVaillantEbusdConfigCard(ECLProvider provider) {
+    const accent = Color(0xFF00897B);
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF24242C),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFF3A3A44)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.solar_power_rounded,
+                  color: accent, size: 20),
+              const SizedBox(width: 8),
+              const Text(
+                'Vaillant eBUSd Gateway Konfiguration',
+                style: TextStyle(
+                  fontSize: 14.5,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFFECECF0),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Verbindung zum lokalen eBUSd HTTP REST JSON Daemon (z.B. auf Raspberry Pi oder ESP32 eBUS-Adapter).',
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.white.withValues(alpha: 0.5),
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // ── Preset Selector ──────────────────────────────────
+          DropdownButtonFormField<String>(
+            initialValue: _vaillantPresetId,
+            decoration: _decoration(
+              label: 'Gateway-Profil / Preset',
+              icon: Icons.bookmarks_outlined,
+            ),
+            dropdownColor: const Color(0xFF2A2A32),
+            items: VaillantEbusdConfig.presets.map((preset) {
+              return DropdownMenuItem(
+                value: preset.id,
+                child: Text(preset.name, style: const TextStyle(fontSize: 13.5)),
+              );
+            }).toList(),
+            onChanged: (id) {
+              if (id == null) return;
+              final preset =
+                  VaillantEbusdConfig.presets.firstWhere((p) => p.id == id);
+              setState(() {
+                _vaillantPresetId = id;
+                _vaillantPortController.text = preset.defaultPort.toString();
+                _vaillantCircuitController.text = preset.defaultCircuit;
+                _vaillantUseHttps = preset.defaultUseHttps;
+              });
+            },
+          ),
+          const SizedBox(height: 14),
+
+          // ── Host & Port ──────────────────────────────────────
+          Row(
+            children: [
+              Expanded(
+                flex: 3,
+                child: TextFormField(
+                  controller: _vaillantHostController,
+                  keyboardType: TextInputType.text,
+                  decoration: _decoration(
+                    label: 'eBUSd Host / IP',
+                    icon: Icons.lan_outlined,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                flex: 2,
+                child: TextFormField(
+                  controller: _vaillantPortController,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  decoration: _decoration(
+                    label: 'Port',
+                    icon: Icons.numbers_outlined,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+
+          // ── Circuit & HTTPS ──────────────────────────────────
+          Row(
+            children: [
+              Expanded(
+                flex: 3,
+                child: TextFormField(
+                  controller: _vaillantCircuitController,
+                  keyboardType: TextInputType.text,
+                  decoration: _decoration(
+                    label: 'Heizkreis / Modul',
+                    icon: Icons.tune_rounded,
+                  ).copyWith(
+                    helperText: 'Standard: bai (Kessel) oder 700 / 720 (Regler)',
+                    helperStyle: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.4)),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                flex: 2,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF2A2A32),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0xFF3A3A44)),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        'HTTPS',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFFECECF0),
+                        ),
+                      ),
+                      Switch(
+                        value: _vaillantUseHttps,
+                        activeThumbColor: accent,
+                        onChanged: (v) => setState(() => _vaillantUseHttps = v),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+
+          // ── API Token ────────────────────────────────────────
+          TextFormField(
+            controller: _vaillantTokenController,
+            obscureText: _obscureVaillantToken,
+            decoration: _decoration(
+              label: 'API Token / Auth Header (Optional)',
+              icon: Icons.key_rounded,
+            ).copyWith(
+              helperText: 'Optional: Nur notwendig bei vorgeschaltetem Auth-Proxy.',
+              helperStyle: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.4)),
+              suffixIcon: IconButton(
+                icon: Icon(
+                  _obscureVaillantToken ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                  color: Colors.white54,
+                  size: 20,
+                ),
+                onPressed: () => setState(() => _obscureVaillantToken = !_obscureVaillantToken),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // ── Test & Connect Row ───────────────────────────────
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _testingVaillant ? null : _testVaillantConnection,
+                  icon: _testingVaillant
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: accent,
+                          ),
+                        )
+                      : const Icon(Icons.network_check_rounded, size: 18),
+                  label: const Text('Verbindung testen'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: accent,
+                    side: const BorderSide(color: accent),
+                    minimumSize: const Size.fromHeight(46),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              if (!provider.isConnected)
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: () {
+                      final host = _vaillantHostController.text.trim();
+                      final port = int.tryParse(_vaillantPortController.text.trim());
+                      if (host.isNotEmpty) {
+                        provider.connectToIp(host, port: port);
+                      }
+                    },
+                    icon: const Icon(Icons.power_rounded, size: 18),
+                    label: const Text('Jetzt verbinden'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: accent,
+                      foregroundColor: Colors.white,
+                      minimumSize: const Size.fromHeight(46),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildWeishauptWemConfigCard(ECLProvider provider) {
+    const accent = Color(0xFF00ACC1);
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF24242C),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFF3A3A44)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.hvac_rounded,
+                  color: accent, size: 20),
+              const SizedBox(width: 8),
+              const Text(
+                'Weishaupt WEM Gateway Konfiguration',
+                style: TextStyle(
+                  fontSize: 14.5,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFFECECF0),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Modbus-TCP-Anbindung für Weishaupt WWP LS / LB Split-Wärmepumpen, BiBlock und WTC-GW.',
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.white.withValues(alpha: 0.5),
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // ── Preset Selector ──────────────────────────────────
+          DropdownButtonFormField<String>(
+            initialValue: _weishauptPresetId,
+            decoration: _decoration(
+              label: 'Weishaupt Modell / Preset',
+              icon: Icons.bookmarks_outlined,
+            ),
+            dropdownColor: const Color(0xFF2A2A32),
+            items: WeishauptWemConfig.presets.map((preset) {
+              return DropdownMenuItem(
+                value: preset.id,
+                child: Text(preset.name, style: const TextStyle(fontSize: 13.5)),
+              );
+            }).toList(),
+            onChanged: (id) {
+              if (id == null) return;
+              final preset =
+                  WeishauptWemConfig.presets.firstWhere((p) => p.id == id);
+              setState(() {
+                _weishauptPresetId = id;
+                _weishauptPortController.text = preset.defaultPort.toString();
+                _weishauptUnitIdController.text = preset.defaultUnitId.toString();
+                _weishauptOutdoorRegController.text = preset.outdoorRegister.toString();
+                _weishauptFlowRegController.text = preset.flowRegister.toString();
+                _weishauptReturnRegController.text = preset.returnRegister.toString();
+                _weishauptHwRegController.text = preset.hotWaterRegister.toString();
+                _weishauptRoomRegController.text =
+                    preset.roomTargetRegister?.toString() ?? '';
+                _weishauptShiftRegController.text =
+                    preset.heatingCurveShiftRegister?.toString() ?? '';
+                _weishauptMultiplier = preset.multiplier;
+                _weishauptIsHolding = preset.isHoldingRegister;
+              });
+            },
+          ),
+          const SizedBox(height: 14),
+
+          // ── Host, Port & Unit ID ─────────────────────────────
+          Row(
+            children: [
+              Expanded(
+                flex: 3,
+                child: TextFormField(
+                  controller: _weishauptHostController,
+                  keyboardType: TextInputType.text,
+                  decoration: _decoration(
+                    label: 'Host / IP-Adresse',
+                    icon: Icons.lan_outlined,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                flex: 2,
+                child: TextFormField(
+                  controller: _weishauptPortController,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  decoration: _decoration(
+                    label: 'Port',
+                    icon: Icons.numbers_rounded,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                flex: 2,
+                child: TextFormField(
+                  controller: _weishauptUnitIdController,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  decoration: _decoration(
+                    label: 'Unit ID',
+                    icon: Icons.tag_rounded,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+
+          // ── Register Addresses Grid ──────────────────────────
+          const Text(
+            'Weishaupt Modbus Register-Adressen',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFFECECF0),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: TextFormField(
+                  controller: _weishauptOutdoorRegController,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  decoration: _decoration(
+                    label: 'Außentemperatur',
+                    icon: Icons.thermostat_outlined,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: TextFormField(
+                  controller: _weishauptFlowRegController,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  decoration: _decoration(
+                    label: 'Vorlauftemperatur',
+                    icon: Icons.waves_rounded,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: TextFormField(
+                  controller: _weishauptReturnRegController,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  decoration: _decoration(
+                    label: 'Rücklauftemperatur',
+                    icon: Icons.rotate_left_rounded,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: TextFormField(
+                  controller: _weishauptHwRegController,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  decoration: _decoration(
+                    label: 'Warmwasserspeicher',
+                    icon: Icons.water_drop_outlined,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: TextFormField(
+                  controller: _weishauptRoomRegController,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  decoration: _decoration(
+                    label: 'Raum-Soll (optional)',
+                    icon: Icons.home_outlined,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: TextFormField(
+                  controller: _weishauptShiftRegController,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  decoration: _decoration(
+                    label: 'Verschiebung (opt.)',
+                    icon: Icons.tune_outlined,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+
+          // ── Multiplier & Type ────────────────────────────────
+          Row(
+            children: [
+              Expanded(
+                flex: 3,
+                child: DropdownButtonFormField<double>(
+                  initialValue: _weishauptMultiplier,
+                  decoration: _decoration(
+                    label: 'Skalierungsfaktor',
+                    icon: Icons.scale_outlined,
+                  ),
+                  dropdownColor: const Color(0xFF2A2A32),
+                  items: const [
+                    DropdownMenuItem(
+                      value: 0.1,
+                      child: Text('× 0.1 (°C, z.B. 215 = 21.5°C)',
+                          style: TextStyle(fontSize: 12)),
+                    ),
+                    DropdownMenuItem(
+                      value: 0.01,
+                      child: Text('× 0.01 (z.B. 2150 = 21.5°C)',
+                          style: TextStyle(fontSize: 12)),
+                    ),
+                    DropdownMenuItem(
+                      value: 1.0,
+                      child: Text('× 1.0 (z.B. 21 = 21°C)',
+                          style: TextStyle(fontSize: 12)),
+                    ),
+                  ],
+                  onChanged: (val) {
+                    if (val != null) setState(() => _weishauptMultiplier = val);
+                  },
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                flex: 2,
+                child: DropdownButtonFormField<bool>(
+                  initialValue: _weishauptIsHolding,
+                  decoration: _decoration(
+                    label: 'Registertyp',
+                    icon: Icons.memory_outlined,
+                  ),
+                  dropdownColor: const Color(0xFF2A2A32),
+                  items: const [
+                    DropdownMenuItem(
+                      value: true,
+                      child: Text('Holding (FC 03)',
+                          style: TextStyle(fontSize: 12)),
+                    ),
+                    DropdownMenuItem(
+                      value: false,
+                      child: Text('Input (FC 04)',
+                          style: TextStyle(fontSize: 12)),
+                    ),
+                  ],
+                  onChanged: (val) {
+                    if (val != null) setState(() => _weishauptIsHolding = val);
+                  },
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+
+          // ── Test & Connect Row ───────────────────────────────
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _testingWeishaupt ? null : _testWeishauptConnection,
+                  icon: _testingWeishaupt
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: accent,
+                          ),
+                        )
+                      : const Icon(Icons.network_check_rounded, size: 18),
+                  label: const Text('Verbindung testen'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: accent,
+                    side: const BorderSide(color: accent),
+                    minimumSize: const Size.fromHeight(46),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              if (!provider.isConnected)
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: () {
+                      final host = _weishauptHostController.text.trim();
+                      final port =
+                          int.tryParse(_weishauptPortController.text.trim());
+                      if (host.isNotEmpty) {
+                        provider.connectToIp(host, port: port);
+                      }
+                    },
+                    icon: const Icon(Icons.power_rounded, size: 18),
+                    label: const Text('Jetzt verbinden'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: accent,
+                      foregroundColor: Colors.black,
+                      minimumSize: const Size.fromHeight(46),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNibeModbusConfigCard(ECLProvider provider) {
+    const accent = Color(0xFF42A5F5);
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF24242C),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFF3A3A44)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.air_rounded,
+                  color: accent, size: 20),
+              const SizedBox(width: 8),
+              const Text(
+                'NIBE Wärmepumpe Konfiguration',
+                style: TextStyle(
+                  fontSize: 14.5,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFFECECF0),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Modbus-TCP-Anbindung für NIBE S-Serie (S1155/S1255/S2125) und F-Serie (Modbus 40).',
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.white.withValues(alpha: 0.5),
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // ── Preset Selector ──────────────────────────────────
+          DropdownButtonFormField<String>(
+            initialValue: _nibePresetId,
+            decoration: _decoration(
+              label: 'NIBE Modell / Preset',
+              icon: Icons.bookmarks_outlined,
+            ),
+            dropdownColor: const Color(0xFF2A2A32),
+            items: NibeModbusConfig.presets.map((preset) {
+              return DropdownMenuItem(
+                value: preset.id,
+                child: Text(preset.name, style: const TextStyle(fontSize: 13.5)),
+              );
+            }).toList(),
+            onChanged: (id) {
+              if (id == null) return;
+              final preset =
+                  NibeModbusConfig.presets.firstWhere((p) => p.id == id);
+              setState(() {
+                _nibePresetId = id;
+                _nibePortController.text = preset.defaultPort.toString();
+                _nibeUnitIdController.text = preset.defaultUnitId.toString();
+                _nibeOutdoorRegController.text = preset.outdoorRegister.toString();
+                _nibeFlowRegController.text = preset.flowRegister.toString();
+                _nibeReturnRegController.text = preset.returnRegister.toString();
+                _nibeHwRegController.text = preset.hotWaterRegister.toString();
+                _nibeRoomRegController.text =
+                    preset.roomTargetRegister?.toString() ?? '';
+                _nibeShiftRegController.text =
+                    preset.heatingCurveShiftRegister?.toString() ?? '';
+                _nibeMultiplier = preset.multiplier;
+                _nibeIsHolding = preset.isHoldingRegister;
+              });
+            },
+          ),
+          const SizedBox(height: 14),
+
+          // ── Host, Port & Unit ID ─────────────────────────────
+          Row(
+            children: [
+              Expanded(
+                flex: 3,
+                child: TextFormField(
+                  controller: _nibeHostController,
+                  keyboardType: TextInputType.text,
+                  decoration: _decoration(
+                    label: 'Host / IP-Adresse',
+                    icon: Icons.lan_outlined,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                flex: 2,
+                child: TextFormField(
+                  controller: _nibePortController,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  decoration: _decoration(
+                    label: 'Port',
+                    icon: Icons.numbers_rounded,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                flex: 2,
+                child: TextFormField(
+                  controller: _nibeUnitIdController,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  decoration: _decoration(
+                    label: 'Unit ID',
+                    icon: Icons.tag_rounded,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+
+          // ── Register Addresses Grid ──────────────────────────
+          const Text(
+            'NIBE Modbus Register-Adressen',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFFECECF0),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: TextFormField(
+                  controller: _nibeOutdoorRegController,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  decoration: _decoration(
+                    label: 'BT1 Außentemperatur',
+                    icon: Icons.thermostat_outlined,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: TextFormField(
+                  controller: _nibeFlowRegController,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  decoration: _decoration(
+                    label: 'BT2 Vorlauftemperatur',
+                    icon: Icons.waves_rounded,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: TextFormField(
+                  controller: _nibeReturnRegController,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  decoration: _decoration(
+                    label: 'BT3 Rücklauftemperatur',
+                    icon: Icons.rotate_left_rounded,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: TextFormField(
+                  controller: _nibeHwRegController,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  decoration: _decoration(
+                    label: 'BT6 Warmwasserspeicher',
+                    icon: Icons.water_drop_outlined,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: TextFormField(
+                  controller: _nibeRoomRegController,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  decoration: _decoration(
+                    label: 'BT50 Raum-Soll (opt.)',
+                    icon: Icons.home_outlined,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: TextFormField(
+                  controller: _nibeShiftRegController,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  decoration: _decoration(
+                    label: 'Kurvenverschiebung (opt.)',
+                    icon: Icons.tune_outlined,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+
+          // ── Multiplier & Type ────────────────────────────────
+          Row(
+            children: [
+              Expanded(
+                flex: 3,
+                child: DropdownButtonFormField<double>(
+                  initialValue: _nibeMultiplier,
+                  decoration: _decoration(
+                    label: 'Skalierungsfaktor',
+                    icon: Icons.scale_outlined,
+                  ),
+                  dropdownColor: const Color(0xFF2A2A32),
+                  items: const [
+                    DropdownMenuItem(
+                      value: 0.1,
+                      child: Text('× 0.1 (°C, z.B. 215 = 21.5°C)',
+                          style: TextStyle(fontSize: 12)),
+                    ),
+                    DropdownMenuItem(
+                      value: 0.01,
+                      child: Text('× 0.01 (z.B. 2150 = 21.5°C)',
+                          style: TextStyle(fontSize: 12)),
+                    ),
+                    DropdownMenuItem(
+                      value: 1.0,
+                      child: Text('× 1.0 (z.B. 21 = 21°C)',
+                          style: TextStyle(fontSize: 12)),
+                    ),
+                  ],
+                  onChanged: (val) {
+                    if (val != null) setState(() => _nibeMultiplier = val);
+                  },
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                flex: 2,
+                child: DropdownButtonFormField<bool>(
+                  initialValue: _nibeIsHolding,
+                  decoration: _decoration(
+                    label: 'Registertyp',
+                    icon: Icons.memory_outlined,
+                  ),
+                  dropdownColor: const Color(0xFF2A2A32),
+                  items: const [
+                    DropdownMenuItem(
+                      value: true,
+                      child: Text('Holding (FC 03)',
+                          style: TextStyle(fontSize: 12)),
+                    ),
+                    DropdownMenuItem(
+                      value: false,
+                      child: Text('Input (FC 04)',
+                          style: TextStyle(fontSize: 12)),
+                    ),
+                  ],
+                  onChanged: (val) {
+                    if (val != null) setState(() => _nibeIsHolding = val);
+                  },
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+
+          // ── Test & Connect Row ───────────────────────────────
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _testingNibe ? null : _testNibeConnection,
+                  icon: _testingNibe
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: accent,
+                          ),
+                        )
+                      : const Icon(Icons.network_check_rounded, size: 18),
+                  label: const Text('Verbindung testen'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: accent,
+                    side: const BorderSide(color: accent),
+                    minimumSize: const Size.fromHeight(46),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              if (!provider.isConnected)
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: () {
+                      final host = _nibeHostController.text.trim();
+                      final port =
+                          int.tryParse(_nibePortController.text.trim());
+                      if (host.isNotEmpty) {
+                        provider.connectToIp(host, port: port);
+                      }
+                    },
+                    icon: const Icon(Icons.power_rounded, size: 18),
+                    label: const Text('Jetzt verbinden'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: accent,
+                      foregroundColor: Colors.black,
                       minimumSize: const Size.fromHeight(46),
                     ),
                   ),

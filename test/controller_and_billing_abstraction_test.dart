@@ -7,6 +7,9 @@ import 'package:heizungstrainer/billing/mock_billing_provider.dart';
 import 'package:heizungstrainer/controllers/danfoss_ecl_310_controller.dart';
 import 'package:heizungstrainer/controllers/bosch_buderus_ems_controller.dart';
 import 'package:heizungstrainer/controllers/viessmann_controller.dart';
+import 'package:heizungstrainer/controllers/vaillant_ebusd_controller.dart';
+import 'package:heizungstrainer/controllers/weishaupt_wem_controller.dart';
+import 'package:heizungstrainer/controllers/nibe_modbus_controller.dart';
 import 'package:heizungstrainer/controllers/heating_controller.dart';
 import 'package:heizungstrainer/controllers/mock_heating_controller.dart';
 import 'package:heizungstrainer/models/brunata_meter_data.dart';
@@ -112,6 +115,15 @@ void main() {
 
       final bosch = controllers.firstWhere((c) => c.id == 'bosch_buderus_ems');
       expect(bosch.isSupported, isTrue);
+
+      final vaillant = controllers.firstWhere((c) => c.id == 'vaillant_ebusd');
+      expect(vaillant.isSupported, isTrue);
+
+      final weishaupt = controllers.firstWhere((c) => c.id == 'weishaupt_wem');
+      expect(weishaupt.isSupported, isTrue);
+
+      final nibe = controllers.firstWhere((c) => c.id == 'nibe_modbus');
+      expect(nibe.isSupported, isTrue);
     });
 
     test('contains known billing providers with support flags', () {
@@ -147,6 +159,18 @@ void main() {
       final bosch = DeviceRegistry.createController('bosch_buderus_ems');
       expect(bosch, isA<BoschBuderusEmsController>());
       expect(bosch.brandName, 'Bosch / Buderus');
+
+      final vaillant = DeviceRegistry.createController('vaillant_ebusd');
+      expect(vaillant, isA<VaillantEbusdController>());
+      expect(vaillant.brandName, 'Vaillant');
+
+      final weishaupt = DeviceRegistry.createController('weishaupt_wem');
+      expect(weishaupt, isA<WeishauptWemController>());
+      expect(weishaupt.brandName, 'Weishaupt');
+
+      final nibe = DeviceRegistry.createController('nibe_modbus');
+      expect(nibe, isA<NibeModbusController>());
+      expect(nibe.brandName, 'NIBE');
     });
 
     test('creates specific billing provider by ID', () {

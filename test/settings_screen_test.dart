@@ -27,7 +27,7 @@ void main() {
 
     testWidgets('renders all controllers, billing providers, and active setup summary',
         (WidgetTester tester) async {
-      tester.view.physicalSize = const Size(1080, 3200);
+      tester.view.physicalSize = const Size(1080, 5000);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.resetPhysicalSize);
 
@@ -54,6 +54,9 @@ void main() {
       expect(find.text('Viessmann'), findsOneWidget);
       expect(find.text('Vitotronic & ViCare'), findsOneWidget);
       expect(find.text('Bosch / Buderus'), findsOneWidget);
+      expect(find.text('Vaillant'), findsOneWidget);
+      expect(find.text('Weishaupt'), findsOneWidget);
+      expect(find.text('NIBE'), findsOneWidget);
       expect(find.text('Generisch'), findsOneWidget);
 
       // Known Billing Providers
@@ -89,6 +92,63 @@ void main() {
       expect(find.text('Viessmann Vitotronic & ViCare Konfiguration'), findsOneWidget);
     });
 
+    testWidgets('selecting Vaillant controller updates state and shows eBUSd config card',
+        (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(1080, 2400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+
+      final provider = ECLProvider(autoLoadDatabase: false);
+
+      await tester.pumpWidget(buildSettingsScreen(provider));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('eBUS / eBUSd Gateway'));
+      await tester.pumpAndSettle();
+
+      expect(provider.selectedControllerId, 'vaillant_ebusd');
+      expect(provider.isSimulatedController, isFalse);
+      expect(find.text('Vaillant eBUSd Gateway Konfiguration'), findsOneWidget);
+    });
+
+    testWidgets('selecting Weishaupt controller updates state and shows WEM config card',
+        (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(1080, 2400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+
+      final provider = ECLProvider(autoLoadDatabase: false);
+
+      await tester.pumpWidget(buildSettingsScreen(provider));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('WEM Gateway (Modbus TCP)'));
+      await tester.pumpAndSettle();
+
+      expect(provider.selectedControllerId, 'weishaupt_wem');
+      expect(provider.isSimulatedController, isFalse);
+      expect(find.text('Weishaupt WEM Gateway Konfiguration'), findsOneWidget);
+    });
+
+    testWidgets('selecting NIBE controller updates state and shows Modbus config card',
+        (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(1080, 2400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+
+      final provider = ECLProvider(autoLoadDatabase: false);
+
+      await tester.pumpWidget(buildSettingsScreen(provider));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('S-Serie & F-Serie (Modbus TCP)'));
+      await tester.pumpAndSettle();
+
+      expect(provider.selectedControllerId, 'nibe_modbus');
+      expect(provider.isSimulatedController, isFalse);
+      expect(find.text('NIBE Wärmepumpe Konfiguration'), findsOneWidget);
+    });
+
     testWidgets('selecting Techem billing provider updates state and displays simulation note',
         (WidgetTester tester) async {
       tester.view.physicalSize = const Size(1080, 2400);
@@ -118,7 +178,7 @@ void main() {
 
     testWidgets('displays realistic energy carrier chips, allows switching and user overwrite',
         (WidgetTester tester) async {
-      tester.view.physicalSize = const Size(1080, 3200);
+      tester.view.physicalSize = const Size(1080, 5000);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.resetPhysicalSize);
 
@@ -155,7 +215,7 @@ void main() {
 
     testWidgets('tapping Marktpreis abrufen triggers dynamic price probe and updates field',
         (WidgetTester tester) async {
-      tester.view.physicalSize = const Size(1080, 3200);
+      tester.view.physicalSize = const Size(1080, 5000);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.resetPhysicalSize);
 

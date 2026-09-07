@@ -15,6 +15,9 @@ import 'package:heizungstrainer/controllers/heating_controller.dart';
 import 'package:heizungstrainer/controllers/generic_modbus_controller.dart';
 import 'package:heizungstrainer/controllers/bosch_buderus_ems_controller.dart';
 import 'package:heizungstrainer/controllers/viessmann_controller.dart';
+import 'package:heizungstrainer/controllers/vaillant_ebusd_controller.dart';
+import 'package:heizungstrainer/controllers/weishaupt_wem_controller.dart';
+import 'package:heizungstrainer/controllers/nibe_modbus_controller.dart';
 import 'package:heizungstrainer/controllers/mock_heating_controller.dart';
 import 'package:heizungstrainer/exceptions/modbus_exceptions.dart';
 import 'package:heizungstrainer/models/brunata_meter_data.dart';
@@ -23,6 +26,9 @@ import 'package:heizungstrainer/models/ecl_reading.dart';
 import 'package:heizungstrainer/models/generic_modbus_config.dart';
 import 'package:heizungstrainer/models/bosch_buderus_ems_config.dart';
 import 'package:heizungstrainer/models/viessmann_config.dart';
+import 'package:heizungstrainer/models/vaillant_ebusd_config.dart';
+import 'package:heizungstrainer/models/weishaupt_wem_config.dart';
+import 'package:heizungstrainer/models/nibe_modbus_config.dart';
 import 'package:heizungstrainer/models/telemetry_sample.dart';
 import 'package:heizungstrainer/services/brunata_local_scraper_service.dart';
 import 'package:heizungstrainer/services/database_service.dart';
@@ -105,6 +111,9 @@ class ECLProvider extends ChangeNotifier {
   GenericModbusConfig _genericModbusConfig = const GenericModbusConfig();
   BoschBuderusEmsConfig _boschBuderusConfig = const BoschBuderusEmsConfig();
   ViessmannConfig _viessmannConfig = const ViessmannConfig();
+  VaillantEbusdConfig _vaillantConfig = const VaillantEbusdConfig();
+  WeishauptWemConfig _weishauptConfig = const WeishauptWemConfig();
+  NibeModbusConfig _nibeConfig = const NibeModbusConfig();
 
   String get selectedControllerId => _selectedControllerId;
   String get selectedBillingId => _selectedBillingId;
@@ -114,6 +123,9 @@ class ECLProvider extends ChangeNotifier {
   GenericModbusConfig get genericModbusConfig => _genericModbusConfig;
   BoschBuderusEmsConfig get boschBuderusConfig => _boschBuderusConfig;
   ViessmannConfig get viessmannConfig => _viessmannConfig;
+  VaillantEbusdConfig get vaillantConfig => _vaillantConfig;
+  WeishauptWemConfig get weishauptConfig => _weishauptConfig;
+  NibeModbusConfig get nibeConfig => _nibeConfig;
   ControllerDescriptor get currentControllerDescriptor =>
       DeviceRegistry.getControllerDescriptor(_selectedControllerId);
   BillingProviderDescriptor get currentBillingDescriptor =>
@@ -122,13 +134,22 @@ class ECLProvider extends ChangeNotifier {
       _selectedControllerId != 'danfoss_ecl_310' &&
       _selectedControllerId != 'generic_modbus' &&
       _selectedControllerId != 'bosch_buderus_ems' &&
-      _selectedControllerId != 'viessmann_vicare';
+      _selectedControllerId != 'viessmann_vicare' &&
+      _selectedControllerId != 'vaillant_ebusd' &&
+      _selectedControllerId != 'weishaupt_wem' &&
+      _selectedControllerId != 'nibe_modbus';
   bool get isGenericModbusController =>
       _selectedControllerId == 'generic_modbus';
   bool get isBoschBuderusEmsController =>
       _selectedControllerId == 'bosch_buderus_ems';
   bool get isViessmannController =>
       _selectedControllerId == 'viessmann_vicare';
+  bool get isVaillantController =>
+      _selectedControllerId == 'vaillant_ebusd';
+  bool get isWeishauptController =>
+      _selectedControllerId == 'weishaupt_wem';
+  bool get isNibeController =>
+      _selectedControllerId == 'nibe_modbus';
   bool get isSimulatedBilling => _selectedBillingId != 'brunata_hamburg';
 
   BrunataSyncState get brunataSyncState => _brunataSyncState;
@@ -197,6 +218,9 @@ class ECLProvider extends ChangeNotifier {
       _genericModbusConfig = await GenericModbusConfig.load(_secureStorage);
       _boschBuderusConfig = await BoschBuderusEmsConfig.load(_secureStorage);
       _viessmannConfig = await ViessmannConfig.load(_secureStorage);
+      _vaillantConfig = await VaillantEbusdConfig.load(_secureStorage);
+      _weishauptConfig = await WeishauptWemConfig.load(_secureStorage);
+      _nibeConfig = await NibeModbusConfig.load(_secureStorage);
       final savedCtrl = await _secureStorage.read(key: _controllerStorageKey);
       if (savedCtrl != null && savedCtrl.isNotEmpty && savedCtrl != _selectedControllerId) {
         _selectedControllerId = savedCtrl;
@@ -209,6 +233,9 @@ class ECLProvider extends ChangeNotifier {
           genericModbusConfig: _genericModbusConfig,
           boschBuderusConfig: _boschBuderusConfig,
           viessmannConfig: _viessmannConfig,
+          vaillantConfig: _vaillantConfig,
+          weishauptConfig: _weishauptConfig,
+          nibeConfig: _nibeConfig,
         );
       }
       final savedBill = await _secureStorage.read(key: _billingStorageKey);
@@ -238,6 +265,9 @@ class ECLProvider extends ChangeNotifier {
       genericModbusConfig: _genericModbusConfig,
       boschBuderusConfig: _boschBuderusConfig,
       viessmannConfig: _viessmannConfig,
+      vaillantConfig: _vaillantConfig,
+      weishauptConfig: _weishauptConfig,
+      nibeConfig: _nibeConfig,
     );
     try {
       await _secureStorage.write(key: _controllerStorageKey, value: id);
@@ -261,6 +291,9 @@ class ECLProvider extends ChangeNotifier {
           genericModbusConfig: config,
           boschBuderusConfig: _boschBuderusConfig,
           viessmannConfig: _viessmannConfig,
+          vaillantConfig: _vaillantConfig,
+          weishauptConfig: _weishauptConfig,
+          nibeConfig: _nibeConfig,
         );
       }
     }
@@ -281,6 +314,9 @@ class ECLProvider extends ChangeNotifier {
           genericModbusConfig: _genericModbusConfig,
           boschBuderusConfig: config,
           viessmannConfig: _viessmannConfig,
+          vaillantConfig: _vaillantConfig,
+          weishauptConfig: _weishauptConfig,
+          nibeConfig: _nibeConfig,
         );
       }
     }
@@ -301,6 +337,78 @@ class ECLProvider extends ChangeNotifier {
           genericModbusConfig: _genericModbusConfig,
           boschBuderusConfig: _boschBuderusConfig,
           viessmannConfig: config,
+          vaillantConfig: _vaillantConfig,
+          weishauptConfig: _weishauptConfig,
+          nibeConfig: _nibeConfig,
+        );
+      }
+    }
+    notifyListeners();
+  }
+
+  /// Updates and persists the Vaillant eBUSd configuration.
+  Future<void> updateVaillantConfig(VaillantEbusdConfig config) async {
+    _vaillantConfig = config;
+    await config.save(_secureStorage);
+    if (_selectedControllerId == 'vaillant_ebusd') {
+      if (_activeController is VaillantEbusdController) {
+        (_activeController as VaillantEbusdController).updateConfig(config);
+      } else {
+        _activeController = DeviceRegistry.createController(
+          'vaillant_ebusd',
+          modbusService: _modbusService,
+          genericModbusConfig: _genericModbusConfig,
+          boschBuderusConfig: _boschBuderusConfig,
+          viessmannConfig: _viessmannConfig,
+          vaillantConfig: config,
+          weishauptConfig: _weishauptConfig,
+          nibeConfig: _nibeConfig,
+        );
+      }
+    }
+    notifyListeners();
+  }
+
+  /// Updates and persists the Weishaupt WEM configuration.
+  Future<void> updateWeishauptConfig(WeishauptWemConfig config) async {
+    _weishauptConfig = config;
+    await config.save(_secureStorage);
+    if (_selectedControllerId == 'weishaupt_wem') {
+      if (_activeController is WeishauptWemController) {
+        (_activeController as WeishauptWemController).updateConfig(config);
+      } else {
+        _activeController = DeviceRegistry.createController(
+          'weishaupt_wem',
+          modbusService: _modbusService,
+          genericModbusConfig: _genericModbusConfig,
+          boschBuderusConfig: _boschBuderusConfig,
+          viessmannConfig: _viessmannConfig,
+          vaillantConfig: _vaillantConfig,
+          weishauptConfig: config,
+          nibeConfig: _nibeConfig,
+        );
+      }
+    }
+    notifyListeners();
+  }
+
+  /// Updates and persists the NIBE Modbus configuration.
+  Future<void> updateNibeConfig(NibeModbusConfig config) async {
+    _nibeConfig = config;
+    await config.save(_secureStorage);
+    if (_selectedControllerId == 'nibe_modbus') {
+      if (_activeController is NibeModbusController) {
+        (_activeController as NibeModbusController).updateConfig(config);
+      } else {
+        _activeController = DeviceRegistry.createController(
+          'nibe_modbus',
+          modbusService: _modbusService,
+          genericModbusConfig: _genericModbusConfig,
+          boschBuderusConfig: _boschBuderusConfig,
+          viessmannConfig: _viessmannConfig,
+          vaillantConfig: _vaillantConfig,
+          weishauptConfig: _weishauptConfig,
+          nibeConfig: config,
         );
       }
     }
@@ -426,6 +534,21 @@ class ECLProvider extends ChangeNotifier {
       return;
     }
 
+    if (_selectedControllerId == 'vaillant_ebusd') {
+      await connectToIp(_vaillantConfig.host, port: _vaillantConfig.port);
+      return;
+    }
+
+    if (_selectedControllerId == 'weishaupt_wem') {
+      await connectToIp(_weishauptConfig.host, port: _weishauptConfig.port);
+      return;
+    }
+
+    if (_selectedControllerId == 'nibe_modbus') {
+      await connectToIp(_nibeConfig.host, port: _nibeConfig.port);
+      return;
+    }
+
     _connectionState = ECLConnectionState.discovering;
     _errorMessage = null;
     _discoveryProgress = 0.0;
@@ -511,6 +634,9 @@ class ECLProvider extends ChangeNotifier {
         genericModbusConfig: _genericModbusConfig,
         boschBuderusConfig: _boschBuderusConfig,
         viessmannConfig: _viessmannConfig,
+        vaillantConfig: _vaillantConfig,
+        weishauptConfig: _weishauptConfig,
+        nibeConfig: _nibeConfig,
       );
     }
     _connectionState = ECLConnectionState.disconnected;

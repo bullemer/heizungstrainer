@@ -6,11 +6,17 @@ import 'package:heizungstrainer/controllers/danfoss_ecl_310_controller.dart';
 import 'package:heizungstrainer/controllers/generic_modbus_controller.dart';
 import 'package:heizungstrainer/controllers/bosch_buderus_ems_controller.dart';
 import 'package:heizungstrainer/controllers/viessmann_controller.dart';
+import 'package:heizungstrainer/controllers/vaillant_ebusd_controller.dart';
+import 'package:heizungstrainer/controllers/weishaupt_wem_controller.dart';
+import 'package:heizungstrainer/controllers/nibe_modbus_controller.dart';
 import 'package:heizungstrainer/controllers/heating_controller.dart';
 import 'package:heizungstrainer/controllers/mock_heating_controller.dart';
 import 'package:heizungstrainer/models/generic_modbus_config.dart';
 import 'package:heizungstrainer/models/bosch_buderus_ems_config.dart';
 import 'package:heizungstrainer/models/viessmann_config.dart';
+import 'package:heizungstrainer/models/vaillant_ebusd_config.dart';
+import 'package:heizungstrainer/models/weishaupt_wem_config.dart';
+import 'package:heizungstrainer/models/nibe_modbus_config.dart';
 import 'package:heizungstrainer/services/brunata_local_scraper_service.dart';
 import 'package:heizungstrainer/services/modbus_service.dart';
 
@@ -86,6 +92,33 @@ class DeviceRegistry {
       description: 'Vollwertiger EMS-ESP REST-API Betrieb (BBQKees, Buderus Logamatic, Bosch Condens).',
       isSupported: true,
       icon: Icons.fireplace_rounded,
+    ),
+    ControllerDescriptor(
+      id: 'vaillant_ebusd',
+      brand: 'Vaillant',
+      model: 'eBUS / eBUSd Gateway',
+      protocol: ConnectionProtocol.restApi,
+      description: 'Vollwertiger Betrieb über eBUSd HTTP JSON API (sensoCOMFORT, multiMATIC, calorMATIC).',
+      isSupported: true,
+      icon: Icons.solar_power_rounded,
+    ),
+    ControllerDescriptor(
+      id: 'weishaupt_wem',
+      brand: 'Weishaupt',
+      model: 'WEM Gateway (Modbus TCP)',
+      protocol: ConnectionProtocol.modbusTcp,
+      description: 'Direkte Modbus-TCP-Anbindung für WWP LS Split-Wärmepumpen, BiBlock und WTC-GW.',
+      isSupported: true,
+      icon: Icons.hvac_rounded,
+    ),
+    ControllerDescriptor(
+      id: 'nibe_modbus',
+      brand: 'NIBE',
+      model: 'S-Serie & F-Serie (Modbus TCP)',
+      protocol: ConnectionProtocol.modbusTcp,
+      description: 'Natives Modbus TCP für NIBE S-Serie (S1155/S1255/S2125) und F-Serie via Modbus 40.',
+      isSupported: true,
+      icon: Icons.air_rounded,
     ),
     ControllerDescriptor(
       id: 'generic_modbus',
@@ -166,14 +199,17 @@ class DeviceRegistry {
 
   /// Creates a controller instance for the given ID.
   ///
-  /// Returns a real adapter for supported hardware (Danfoss, Generic Modbus, Bosch/Buderus, Viessmann)
-  /// or a simulated mock adapter for brand previews.
+  /// Returns a real adapter for supported hardware (Danfoss, Generic Modbus, Bosch/Buderus,
+  /// Viessmann, Vaillant, Weishaupt, NIBE) or a simulated mock adapter for brand previews.
   static HeatingController createController(
     String id, {
     ModbusService? modbusService,
     GenericModbusConfig? genericModbusConfig,
     BoschBuderusEmsConfig? boschBuderusConfig,
     ViessmannConfig? viessmannConfig,
+    VaillantEbusdConfig? vaillantConfig,
+    WeishauptWemConfig? weishauptConfig,
+    NibeModbusConfig? nibeConfig,
   }) {
     if (id == 'danfoss_ecl_310') {
       return DanfossEcl310Controller(modbusService: modbusService);
@@ -186,6 +222,15 @@ class DeviceRegistry {
     }
     if (id == 'viessmann_vicare') {
       return ViessmannController(config: viessmannConfig);
+    }
+    if (id == 'vaillant_ebusd') {
+      return VaillantEbusdController(config: vaillantConfig);
+    }
+    if (id == 'weishaupt_wem') {
+      return WeishauptWemController(config: weishauptConfig);
+    }
+    if (id == 'nibe_modbus') {
+      return NibeModbusController(config: nibeConfig);
     }
     final desc = getControllerDescriptor(id);
     return MockHeatingController(
