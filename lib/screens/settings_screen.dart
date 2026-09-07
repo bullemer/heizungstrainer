@@ -4,8 +4,10 @@ import 'package:provider/provider.dart';
 
 import 'package:heizungstrainer/billing/billing_provider.dart';
 import 'package:heizungstrainer/controllers/generic_modbus_controller.dart';
+import 'package:heizungstrainer/controllers/bosch_buderus_ems_controller.dart';
 import 'package:heizungstrainer/controllers/heating_controller.dart';
 import 'package:heizungstrainer/models/generic_modbus_config.dart';
+import 'package:heizungstrainer/models/bosch_buderus_ems_config.dart';
 import 'package:heizungstrainer/providers/ecl_provider.dart';
 import 'package:heizungstrainer/services/device_registry.dart';
 import 'package:heizungstrainer/services/energy_price_service.dart';
@@ -38,6 +40,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
   double _modbusMultiplier = 0.1;
   bool _modbusIsHolding = true;
   bool _testingModbus = false;
+
+  final _emsHostController = TextEditingController();
+  final _emsPortController = TextEditingController();
+  final _emsTokenController = TextEditingController();
+  String _emsCircuit = 'hc1';
+  bool _emsUseHttps = false;
+  String _emsPresetId = 'standard';
+  bool _obscureEmsToken = true;
+  bool _testingEms = false;
 
   bool _obscurePassword = true;
   bool _loading = true;
@@ -76,6 +87,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _modbusPresetId = modbusCfg.presetId;
       _modbusMultiplier = modbusCfg.multiplier;
       _modbusIsHolding = modbusCfg.isHoldingRegister;
+
+      final emsCfg = provider.boschBuderusConfig;
+      _emsHostController.text = emsCfg.host;
+      _emsPortController.text = emsCfg.port.toString();
+      _emsTokenController.text = emsCfg.apiToken;
+      _emsCircuit = emsCfg.circuit;
+      _emsUseHttps = emsCfg.useHttps;
+      _emsPresetId = emsCfg.presetId;
 
       if (!mounted) return;
       setState(() {
@@ -122,6 +141,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _modbusHwRegController.dispose();
     _modbusRoomRegController.dispose();
     _modbusShiftRegController.dispose();
+    _emsHostController.dispose();
+    _emsPortController.dispose();
+    _emsTokenController.dispose();
     super.dispose();
   }
 
@@ -219,6 +241,50 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  Future<void> _testBoschBuderusConnection() async {
+    setState(() => _testingEms = true);
+    final emsCfg = BoschBuderusEmsConfig(
+      host: _emsHostController.text.trim().isEmpty
+          ? '192.168.1.120'
+          : _emsHostController.text.trim(),
+      port: int.tryParse(_emsPortController.text.trim()) ?? 80,
+      apiToken: _emsTokenController.text.trim(),
+      circuit: _emsCircuit,
+      useHttps: _emsUseHttps,
+      presetId: _emsPresetId,
+    );
+
+    final res = await BoschBuderusEmsController.testConnection(emsCfg);
+    if (!mounted) return;
+    setState(() => _testingEms = false);
+
+    if (res['success'] == true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'EMS-ESP Test erfolgreich! (Version: ${res['version'] ?? "v3"})\n'
+            'Vorlauf: ${res['flowTemp'] != null ? "${res['flowTemp']} °C" : "-"} | '
+            'Rücklauf: ${res['returnTemp'] != null ? "${res['returnTemp']} °C" : "-"} | '
+            'Außen: ${res['outdoorTemp'] != null ? "${res['outdoorTemp']} °C" : "-"} | '
+            'WW: ${res['hotWaterTemp'] != null ? "${res['hotWaterTemp']} °C" : "-"}',
+          ),
+          backgroundColor: const Color(0xFF1B3D2F),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('EMS-ESP Verbindung fehlgeschlagen: ${res['message']}'),
+          backgroundColor: const Color(0xFF5C1D1D),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 5),
+        ),
+      );
+    }
+  }
+
   Future<void> _save({required bool sync}) async {
     if (!_formKey.currentState!.validate()) return;
     FocusScope.of(context).unfocus();
@@ -254,6 +320,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
             .name,
       );
       await provider.updateGenericModbusConfig(modbusCfg);
+    }
+
+    if (provider.selectedControllerId == 'bosch_buderus_ems') {
+      final emsCfg = BoschBuderusEmsConfig(
+        host: _emsHostController.text.trim().isEmpty
+            ? '192.168.1.120'
+            : _emsHostController.text.trim(),
+        port: int.tryParse(_emsPortController.text.trim()) ?? 80,
+        apiToken: _emsTokenController.text.trim(),
+        circuit: _emsCircuit,
+        useHttps: _emsUseHttps,
+        presetId: _emsPresetId,
+        presetName: BoschBuderusEmsConfig.presets
+            .firstWhere((p) => p.id == _emsPresetId,
+                orElse: () => BoschBuderusEmsConfig.presets.first)
+            .name,
+      );
+      await provider.updateBoschBuderusConfig(emsCfg);
     }
 
     await provider.saveBillingSettings(
@@ -328,6 +412,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       if (provider.selectedControllerId == 'generic_modbus') ...[
                         const SizedBox(height: 8),
                         _buildGenericModbusConfigCard(provider),
+                      ],
+                      if (provider.selectedControllerId == 'bosch_buderus_ems') ...[
+                        const SizedBox(height: 8),
+                        _buildBoschBuderusConfigCard(provider),
                       ],
                       const SizedBox(height: 24),
 
@@ -750,6 +838,245 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     style: FilledButton.styleFrom(
                       backgroundColor: accent,
                       foregroundColor: Colors.black,
+                      minimumSize: const Size.fromHeight(46),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBoschBuderusConfigCard(ECLProvider provider) {
+    const accent = Color(0xFFEF5350);
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF24242C),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFF3A3A44)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.fireplace_rounded,
+                  color: accent, size: 20),
+              const SizedBox(width: 8),
+              const Text(
+                'Bosch / Buderus EMS-ESP Konfiguration',
+                style: TextStyle(
+                  fontSize: 14.5,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFFECECF0),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Verbindung zum lokalen EMS-Bus REST-Gateway (z.B. BBQKees Gateway, Buderus Logamatic oder Bosch Condens).',
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.white.withValues(alpha: 0.5),
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // ── Preset Selector ──────────────────────────────────
+          DropdownButtonFormField<String>(
+            initialValue: _emsPresetId,
+            decoration: _decoration(
+              label: 'Gateway-Profil / Preset',
+              icon: Icons.bookmarks_outlined,
+            ),
+            dropdownColor: const Color(0xFF2A2A32),
+            items: BoschBuderusEmsConfig.presets.map((preset) {
+              return DropdownMenuItem(
+                value: preset.id,
+                child: Text(preset.name, style: const TextStyle(fontSize: 13.5)),
+              );
+            }).toList(),
+            onChanged: (id) {
+              if (id == null) return;
+              final preset =
+                  BoschBuderusEmsConfig.presets.firstWhere((p) => p.id == id);
+              setState(() {
+                _emsPresetId = id;
+                _emsPortController.text = preset.defaultPort.toString();
+                _emsCircuit = preset.defaultCircuit;
+                _emsUseHttps = preset.defaultUseHttps;
+              });
+            },
+          ),
+          const SizedBox(height: 14),
+
+          // ── Host & Port ──────────────────────────────────────
+          Row(
+            children: [
+              Expanded(
+                flex: 3,
+                child: TextFormField(
+                  controller: _emsHostController,
+                  keyboardType: TextInputType.text,
+                  decoration: _decoration(
+                    label: 'Host / IP-Adresse',
+                    icon: Icons.lan_outlined,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                flex: 2,
+                child: TextFormField(
+                  controller: _emsPortController,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  decoration: _decoration(
+                    label: 'Port',
+                    icon: Icons.numbers_outlined,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+
+          // ── Circuit & HTTPS ──────────────────────────────────
+          Row(
+            children: [
+              Expanded(
+                flex: 3,
+                child: DropdownButtonFormField<String>(
+                  initialValue: _emsCircuit,
+                  decoration: _decoration(
+                    label: 'Heizkreis (Circuit)',
+                    icon: Icons.tune_rounded,
+                  ),
+                  dropdownColor: const Color(0xFF2A2A32),
+                  items: const [
+                    DropdownMenuItem(
+                      value: 'hc1',
+                      child: Text('Heizkreis 1 (hc1)', style: TextStyle(fontSize: 13)),
+                    ),
+                    DropdownMenuItem(
+                      value: 'hc2',
+                      child: Text('Heizkreis 2 (hc2)', style: TextStyle(fontSize: 13)),
+                    ),
+                    DropdownMenuItem(
+                      value: 'hc3',
+                      child: Text('Heizkreis 3 (hc3)', style: TextStyle(fontSize: 13)),
+                    ),
+                    DropdownMenuItem(
+                      value: 'hc4',
+                      child: Text('Heizkreis 4 (hc4)', style: TextStyle(fontSize: 13)),
+                    ),
+                  ],
+                  onChanged: (val) {
+                    if (val != null) setState(() => _emsCircuit = val);
+                  },
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                flex: 2,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF2A2A32),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0xFF3A3A44)),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        'HTTPS',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFFECECF0),
+                        ),
+                      ),
+                      Switch(
+                        value: _emsUseHttps,
+                        activeThumbColor: accent,
+                        onChanged: (v) => setState(() => _emsUseHttps = v),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+
+          // ── API Token ────────────────────────────────────────
+          TextFormField(
+            controller: _emsTokenController,
+            obscureText: _obscureEmsToken,
+            decoration: _decoration(
+              label: 'API Token / Bearer Token (Optional)',
+              icon: Icons.key_rounded,
+            ).copyWith(
+              helperText: 'Optional: Nur notwendig, wenn im EMS-ESP Token-Authentifizierung aktiviert ist.',
+              helperStyle: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.4)),
+              suffixIcon: IconButton(
+                icon: Icon(
+                  _obscureEmsToken ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                  color: Colors.white54,
+                  size: 20,
+                ),
+                onPressed: () => setState(() => _obscureEmsToken = !_obscureEmsToken),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // ── Test & Connect Row ───────────────────────────────
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _testingEms ? null : _testBoschBuderusConnection,
+                  icon: _testingEms
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: accent,
+                          ),
+                        )
+                      : const Icon(Icons.network_check_rounded, size: 18),
+                  label: const Text('Verbindung testen'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: accent,
+                    side: const BorderSide(color: accent),
+                    minimumSize: const Size.fromHeight(46),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              if (!provider.isConnected)
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: () {
+                      final host = _emsHostController.text.trim();
+                      final port = int.tryParse(_emsPortController.text.trim());
+                      if (host.isNotEmpty) {
+                        provider.connectToIp(host, port: port);
+                      }
+                    },
+                    icon: const Icon(Icons.power_rounded, size: 18),
+                    label: const Text('Jetzt verbinden'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: accent,
+                      foregroundColor: Colors.white,
                       minimumSize: const Size.fromHeight(46),
                     ),
                   ),

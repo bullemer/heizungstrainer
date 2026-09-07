@@ -4,9 +4,11 @@ import 'package:heizungstrainer/billing/brunata_hamburg_billing_provider.dart';
 import 'package:heizungstrainer/billing/mock_billing_provider.dart';
 import 'package:heizungstrainer/controllers/danfoss_ecl_310_controller.dart';
 import 'package:heizungstrainer/controllers/generic_modbus_controller.dart';
+import 'package:heizungstrainer/controllers/bosch_buderus_ems_controller.dart';
 import 'package:heizungstrainer/controllers/heating_controller.dart';
 import 'package:heizungstrainer/controllers/mock_heating_controller.dart';
 import 'package:heizungstrainer/models/generic_modbus_config.dart';
+import 'package:heizungstrainer/models/bosch_buderus_ems_config.dart';
 import 'package:heizungstrainer/services/brunata_local_scraper_service.dart';
 import 'package:heizungstrainer/services/modbus_service.dart';
 
@@ -79,8 +81,8 @@ class DeviceRegistry {
       brand: 'Bosch / Buderus',
       model: 'EMS-ESP / KM200',
       protocol: ConnectionProtocol.restApi,
-      description: 'Lokale REST- und MQTT-Schnittstelle über das EMS-Bus-Gateway.',
-      isSupported: false,
+      description: 'Vollwertiger EMS-ESP REST-API Betrieb (BBQKees, Buderus Logamatic, Bosch Condens).',
+      isSupported: true,
       icon: Icons.fireplace_rounded,
     ),
     ControllerDescriptor(
@@ -162,18 +164,22 @@ class DeviceRegistry {
 
   /// Creates a controller instance for the given ID.
   ///
-  /// Returns a real adapter for supported hardware (Danfoss) or a
-  /// simulated mock adapter for brand previews.
+  /// Returns a real adapter for supported hardware (Danfoss, Generic Modbus, Bosch/Buderus)
+  /// or a simulated mock adapter for brand previews.
   static HeatingController createController(
     String id, {
     ModbusService? modbusService,
     GenericModbusConfig? genericModbusConfig,
+    BoschBuderusEmsConfig? boschBuderusConfig,
   }) {
     if (id == 'danfoss_ecl_310') {
       return DanfossEcl310Controller(modbusService: modbusService);
     }
     if (id == 'generic_modbus') {
       return GenericModbusController(config: genericModbusConfig);
+    }
+    if (id == 'bosch_buderus_ems') {
+      return BoschBuderusEmsController(config: boschBuderusConfig);
     }
     final desc = getControllerDescriptor(id);
     return MockHeatingController(

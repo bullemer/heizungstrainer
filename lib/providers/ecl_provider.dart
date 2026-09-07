@@ -13,11 +13,13 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:heizungstrainer/billing/billing_provider.dart';
 import 'package:heizungstrainer/controllers/heating_controller.dart';
 import 'package:heizungstrainer/controllers/generic_modbus_controller.dart';
+import 'package:heizungstrainer/controllers/bosch_buderus_ems_controller.dart';
 import 'package:heizungstrainer/exceptions/modbus_exceptions.dart';
 import 'package:heizungstrainer/models/brunata_meter_data.dart';
 import 'package:heizungstrainer/models/ecl_parameter.dart';
 import 'package:heizungstrainer/models/ecl_reading.dart';
 import 'package:heizungstrainer/models/generic_modbus_config.dart';
+import 'package:heizungstrainer/models/bosch_buderus_ems_config.dart';
 import 'package:heizungstrainer/models/telemetry_sample.dart';
 import 'package:heizungstrainer/services/brunata_local_scraper_service.dart';
 import 'package:heizungstrainer/services/database_service.dart';
@@ -98,6 +100,7 @@ class ECLProvider extends ChangeNotifier {
   DatabaseService get databaseService => _databaseService;
 
   GenericModbusConfig _genericModbusConfig = const GenericModbusConfig();
+  BoschBuderusEmsConfig _boschBuderusConfig = const BoschBuderusEmsConfig();
 
   String get selectedControllerId => _selectedControllerId;
   String get selectedBillingId => _selectedBillingId;
@@ -105,15 +108,19 @@ class ECLProvider extends ChangeNotifier {
   BillingProvider get activeBillingProvider => _activeBillingProvider;
   EnergyPriceService get energyPriceService => _energyPriceService;
   GenericModbusConfig get genericModbusConfig => _genericModbusConfig;
+  BoschBuderusEmsConfig get boschBuderusConfig => _boschBuderusConfig;
   ControllerDescriptor get currentControllerDescriptor =>
       DeviceRegistry.getControllerDescriptor(_selectedControllerId);
   BillingProviderDescriptor get currentBillingDescriptor =>
       DeviceRegistry.getBillingProviderDescriptor(_selectedBillingId);
   bool get isSimulatedController =>
       _selectedControllerId != 'danfoss_ecl_310' &&
-      _selectedControllerId != 'generic_modbus';
+      _selectedControllerId != 'generic_modbus' &&
+      _selectedControllerId != 'bosch_buderus_ems';
   bool get isGenericModbusController =>
       _selectedControllerId == 'generic_modbus';
+  bool get isBoschBuderusEmsController =>
+      _selectedControllerId == 'bosch_buderus_ems';
   bool get isSimulatedBilling => _selectedBillingId != 'brunata_hamburg';
 
   BrunataSyncState get brunataSyncState => _brunataSyncState;
@@ -180,6 +187,7 @@ class ECLProvider extends ChangeNotifier {
   Future<void> _initHardwareSettings() async {
     try {
       _genericModbusConfig = await GenericModbusConfig.load(_secureStorage);
+      _boschBuderusConfig = await BoschBuderusEmsConfig.load(_secureStorage);
       final savedCtrl = await _secureStorage.read(key: _controllerStorageKey);
       if (savedCtrl != null && savedCtrl.isNotEmpty && savedCtrl != _selectedControllerId) {
         _selectedControllerId = savedCtrl;
@@ -188,6 +196,7 @@ class ECLProvider extends ChangeNotifier {
         _selectedControllerId,
         modbusService: _modbusService,
         genericModbusConfig: _genericModbusConfig,
+        boschBuderusConfig: _boschBuderusConfig,
       );
       final savedBill = await _secureStorage.read(key: _billingStorageKey);
       if (savedBill != null && savedBill.isNotEmpty && savedBill != _selectedBillingId) {
@@ -214,6 +223,7 @@ class ECLProvider extends ChangeNotifier {
       id,
       modbusService: _modbusService,
       genericModbusConfig: _genericModbusConfig,
+      boschBuderusConfig: _boschBuderusConfig,
     );
     try {
       await _secureStorage.write(key: _controllerStorageKey, value: id);
@@ -235,6 +245,26 @@ class ECLProvider extends ChangeNotifier {
           'generic_modbus',
           modbusService: _modbusService,
           genericModbusConfig: config,
+          boschBuderusConfig: _boschBuderusConfig,
+        );
+      }
+    }
+    notifyListeners();
+  }
+
+  /// Updates and persists the Bosch / Buderus EMS-ESP configuration.
+  Future<void> updateBoschBuderusConfig(BoschBuderusEmsConfig config) async {
+    _boschBuderusConfig = config;
+    await config.save(_secureStorage);
+    if (_selectedControllerId == 'bosch_buderus_ems') {
+      if (_activeController is BoschBuderusEmsController) {
+        (_activeController as BoschBuderusEmsController).updateConfig(config);
+      } else {
+        _activeController = DeviceRegistry.createController(
+          'bosch_buderus_ems',
+          modbusService: _modbusService,
+          genericModbusConfig: _genericModbusConfig,
+          boschBuderusConfig: config,
         );
       }
     }
@@ -338,6 +368,11 @@ class ECLProvider extends ChangeNotifier {
 
     if (_selectedControllerId == 'generic_modbus') {
       await connectToIp(_genericModbusConfig.host, port: _genericModbusConfig.port);
+      return;
+    }
+
+    if (_selectedControllerId == 'bosch_buderus_ems') {
+      await connectToIp(_boschBuderusConfig.host, port: _boschBuderusConfig.port);
       return;
     }
 

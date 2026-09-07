@@ -5,6 +5,7 @@ import 'package:heizungstrainer/billing/billing_provider.dart';
 import 'package:heizungstrainer/billing/brunata_hamburg_billing_provider.dart';
 import 'package:heizungstrainer/billing/mock_billing_provider.dart';
 import 'package:heizungstrainer/controllers/danfoss_ecl_310_controller.dart';
+import 'package:heizungstrainer/controllers/bosch_buderus_ems_controller.dart';
 import 'package:heizungstrainer/controllers/heating_controller.dart';
 import 'package:heizungstrainer/controllers/mock_heating_controller.dart';
 import 'package:heizungstrainer/models/brunata_meter_data.dart';
@@ -109,7 +110,7 @@ void main() {
       expect(viessmann.isSupported, isFalse);
 
       final bosch = controllers.firstWhere((c) => c.id == 'bosch_buderus_ems');
-      expect(bosch.isSupported, isFalse);
+      expect(bosch.isSupported, isTrue);
     });
 
     test('contains known billing providers with support flags', () {
@@ -143,7 +144,7 @@ void main() {
       expect(viessmann.brandName, 'Viessmann');
 
       final bosch = DeviceRegistry.createController('bosch_buderus_ems');
-      expect(bosch, isA<MockHeatingController>());
+      expect(bosch, isA<BoschBuderusEmsController>());
       expect(bosch.brandName, 'Bosch / Buderus');
     });
 
