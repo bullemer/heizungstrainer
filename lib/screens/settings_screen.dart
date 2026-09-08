@@ -924,9 +924,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text(
-          'Einstellungen & Hardware',
-          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 20),
+        title: const Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Einstellungen & Hardware',
+              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18),
+            ),
+            Text(
+              'Version 1.1.0 (Build 2)',
+              style: TextStyle(
+                fontSize: 11,
+                color: Color(0xFFFFA726),
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
         ),
       ),
       body: _loading
@@ -1099,6 +1112,31 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           side: const BorderSide(color: Color(0xFF3A3A44)),
                         ),
                         child: const Text('Nur speichern'),
+                      ),
+                      const SizedBox(height: 28),
+                      // ── APP VERSION & BUILD INFO FOOTER ────────────
+                      Center(
+                        child: Column(
+                          children: [
+                            const Text(
+                              'Heizungstrainer v1.1.0 (Build 2)',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF8E8E9A),
+                                letterSpacing: 0.3,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              '100% Local-First · Zero-Cloud · WireGuard® Ready',
+                              style: TextStyle(
+                                fontSize: 10.5,
+                                color: Colors.white.withValues(alpha: 0.35),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ],
                   ),

@@ -44,9 +44,11 @@ void main() {
 
       // Section Headers
       expect(find.text('Heizungsregler (Hardware)'), findsOneWidget);
+      expect(find.text('Sicherer Fernzugriff (FRITZ!Box WireGuard®)'), findsOneWidget);
       expect(find.text('Messdienstleister & Abrechnung'), findsOneWidget);
       expect(find.text('Tarif & Energiepreis'), findsOneWidget);
       expect(find.text('Datenpuffer & Offline-Betrieb'), findsOneWidget);
+      expect(find.text('Version 1.1.0 (Build 2)'), findsOneWidget);
 
       // Known Controllers
       expect(find.text('Danfoss'), findsWidgets);
