@@ -33,7 +33,14 @@ void main() {
     expect(find.byType(HomeScreen), findsOneWidget);
     expect(find.byType(IndexedStack), findsOneWidget);
 
-    // Switch to tab 1 ('Vergleich')
+    // Switch to tab 1 ('Urlaub')
+    await tester.tap(find.text('Urlaub'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(HomeScreen, skipOffstage: false), findsOneWidget);
+    expect(find.textContaining('Urlaub & Abwesenheit'), findsOneWidget);
+
+    // Switch to tab 2 ('Vergleich')
     await tester.tap(find.text('Vergleich'));
     await tester.pumpAndSettle();
 
@@ -41,7 +48,7 @@ void main() {
     expect(find.byType(HomeScreen, skipOffstage: false), findsOneWidget);
     expect(find.text('Community Vergleich'), findsOneWidget);
 
-    // Switch to tab 2 ('Sicherungen')
+    // Switch to tab 3 ('Sicherungen')
     await tester.tap(find.text('Sicherungen'));
     await tester.pumpAndSettle();
 

@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:heizungstrainer/providers/ecl_provider.dart';
 import 'package:heizungstrainer/screens/connection_screen.dart';
 import 'package:heizungstrainer/screens/home_screen.dart';
+import 'package:heizungstrainer/screens/holiday_screen.dart';
 import 'package:heizungstrainer/screens/community_screen.dart';
 import 'package:heizungstrainer/screens/backup_screen.dart';
 import 'package:heizungstrainer/screens/log_screen.dart';
@@ -127,7 +128,7 @@ class HeizungstrainerApp extends StatelessWidget {
   }
 }
 
-/// Main shell with bottom navigation bar containing 3 tabs.
+/// Main shell with bottom navigation bar.
 class MainShell extends StatefulWidget {
   const MainShell({super.key});
 
@@ -140,6 +141,7 @@ class _MainShellState extends State<MainShell> {
 
   static const _screens = <Widget>[
     HomeScreen(),
+    HolidayScreen(),
     CommunityScreen(),
     BackupScreen(),
     LogScreen(),
@@ -177,6 +179,11 @@ class _MainShellState extends State<MainShell> {
             icon: Icon(Icons.home_outlined),
             selectedIcon: Icon(Icons.home_rounded),
             label: 'Mein Zuhause',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.beach_access_outlined),
+            selectedIcon: Icon(Icons.beach_access_rounded),
+            label: 'Urlaub',
           ),
           NavigationDestination(
             icon: Icon(Icons.bar_chart_outlined),
