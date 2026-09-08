@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
+import 'package:heizungstrainer/models/activity_log_entry.dart';
 import 'package:heizungstrainer/models/brunata_meter_data.dart';
 import 'package:heizungstrainer/models/ecl_parameter.dart';
 import 'package:heizungstrainer/models/ecl_reading.dart';
@@ -19,6 +20,7 @@ class DatabaseService {
   final DatabaseFactory? _factory;
   final String? _customPath;
   Database? _db;
+  bool _tablesCreated = false;
 
   DatabaseService({
     DatabaseFactory? databaseFactory,
@@ -35,10 +37,17 @@ class DatabaseService {
 
   Future<Database> get database async {
     if (_db != null && _db!.isOpen) {
-      await _createTables(_db!);
+      if (!_tablesCreated) {
+        await _createTables(_db!);
+        _tablesCreated = true;
+      }
       return _db!;
     }
     _db = await _initDatabase();
+    if (!_tablesCreated) {
+      await _createTables(_db!);
+      _tablesCreated = true;
+    }
     return _db!;
   }
 
@@ -53,15 +62,20 @@ class DatabaseService {
       dbPath = p.join(databasesPath, 'heizungstrainer.db');
     }
 
-    return await factory.openDatabase(
+    final db = await factory.openDatabase(
       dbPath,
       options: OpenDatabaseOptions(
         version: 1,
         onCreate: (db, version) async {
           await _createTables(db);
         },
+        onOpen: (db) async {
+          await _createTables(db);
+        },
       ),
     );
+    await _createTables(db);
+    return db;
   }
 
   DatabaseFactory _getDatabaseFactory() {
@@ -111,6 +125,39 @@ class DatabaseService {
         json_data TEXT NOT NULL,
         updated_at INTEGER NOT NULL
       );
+    ''');
+
+    // 4. In-app activity and error diagnostic logs
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS activity_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        timestamp INTEGER NOT NULL,
+        level TEXT NOT NULL,
+        category TEXT NOT NULL,
+        controller_id TEXT,
+        action TEXT NOT NULL,
+        message TEXT NOT NULL,
+        details TEXT,
+        error_code TEXT,
+        user_acknowledged INTEGER NOT NULL DEFAULT 0
+      );
+    ''');
+
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_activity_timestamp 
+      ON activity_logs (timestamp);
+    ''');
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_activity_level 
+      ON activity_logs (level);
+    ''');
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_activity_category 
+      ON activity_logs (category);
+    ''');
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_activity_error_code 
+      ON activity_logs (error_code);
     ''');
   }
 
@@ -245,16 +292,167 @@ class DatabaseService {
     }
   }
 
+  // ──────────────────────────────────────────────────────────────────────────
+  // Activity and Diagnostic Logging
+  // ──────────────────────────────────────────────────────────────────────────
+
+  /// Inserts a new activity log record into SQLite.
+  Future<int> insertActivityLog(ActivityLogEntry entry) async {
+    final db = await database;
+    return await db.insert('activity_logs', entry.toMap());
+  }
+
+  /// Retrieves activity logs with optional category, level, error code, or query filtering.
+  Future<List<ActivityLogEntry>> getActivityLogs({
+    ActivityLogCategory? category,
+    ActivityLogLevel? level,
+    String? errorCode,
+    bool? errorsOnly,
+    String? searchQuery,
+    int limit = 100,
+    int offset = 0,
+  }) async {
+    final db = await database;
+    final whereClauses = <String>[];
+    final whereArgs = <dynamic>[];
+
+    if (category != null) {
+      whereClauses.add('category = ?');
+      whereArgs.add(category.toDbString());
+    }
+
+    if (level != null) {
+      whereClauses.add('level = ?');
+      whereArgs.add(level.toDbString());
+    } else if (errorsOnly == true) {
+      whereClauses.add("(level = 'error' OR level = 'warning')");
+    }
+
+    if (errorCode != null && errorCode.isNotEmpty) {
+      whereClauses.add('error_code = ?');
+      whereArgs.add(errorCode);
+    }
+
+    if (searchQuery != null && searchQuery.trim().isNotEmpty) {
+      final term = '%${searchQuery.trim()}%';
+      whereClauses.add(
+        '(message LIKE ? OR action LIKE ? OR error_code LIKE ? OR controller_id LIKE ?)',
+      );
+      whereArgs.addAll([term, term, term, term]);
+    }
+
+    final whereString =
+        whereClauses.isNotEmpty ? whereClauses.join(' AND ') : null;
+
+    final rows = await db.query(
+      'activity_logs',
+      where: whereString,
+      whereArgs: whereArgs.isNotEmpty ? whereArgs : null,
+      orderBy: 'timestamp DESC, id DESC',
+      limit: limit,
+      offset: offset,
+    );
+
+    return rows.map((r) => ActivityLogEntry.fromMap(r)).toList();
+  }
+
+  /// Helper to extract first integer value from count queries.
+  int _firstIntValue(List<Map<String, Object?>> rows) {
+    if (rows.isEmpty || rows.first.values.isEmpty) return 0;
+    final val = rows.first.values.first;
+    return val is int ? val : 0;
+  }
+
+  /// Calculates quick stats for the log overview banner.
+  Future<Map<String, int>> getActivityLogStats() async {
+    final db = await database;
+
+    final totalResult = _firstIntValue(
+      await db.rawQuery('SELECT COUNT(*) FROM activity_logs'),
+    );
+
+    final errorResult = _firstIntValue(
+      await db.rawQuery(
+        "SELECT COUNT(*) FROM activity_logs WHERE level = 'error'",
+      ),
+    );
+
+    final warningResult = _firstIntValue(
+      await db.rawQuery(
+        "SELECT COUNT(*) FROM activity_logs WHERE level = 'warning'",
+      ),
+    );
+
+    final writesResult = _firstIntValue(
+      await db.rawQuery(
+        "SELECT COUNT(*) FROM activity_logs WHERE category = 'controllerWrite'",
+      ),
+    );
+
+    final readsResult = _firstIntValue(
+      await db.rawQuery(
+        "SELECT COUNT(*) FROM activity_logs WHERE category = 'controllerRead'",
+      ),
+    );
+
+    return {
+      'total': totalResult,
+      'errors': errorResult,
+      'warnings': warningResult,
+      'writes': writesResult,
+      'reads': readsResult,
+    };
+  }
+
+  /// Marks specified log entries (or all unacknowledged) as acknowledged by the user.
+  Future<int> markLogsAcknowledged({List<int>? ids}) async {
+    final db = await database;
+    if (ids != null && ids.isNotEmpty) {
+      final placeholders = List.filled(ids.length, '?').join(',');
+      return await db.rawUpdate(
+        'UPDATE activity_logs SET user_acknowledged = 1 WHERE id IN ($placeholders)',
+        ids,
+      );
+    }
+    return await db.update(
+      'activity_logs',
+      {'user_acknowledged': 1},
+      where: 'user_acknowledged = 0',
+    );
+  }
+
+  /// Deletes all activity logs.
+  Future<int> clearActivityLogs() async {
+    final db = await database;
+    return await db.delete('activity_logs');
+  }
+
+  /// Deletes logs older than [retainDuration] to keep disk usage light.
+  Future<int> pruneOldActivityLogs({
+    Duration retainDuration = const Duration(days: 30),
+  }) async {
+    final db = await database;
+    final cutoff =
+        DateTime.now().subtract(retainDuration).millisecondsSinceEpoch;
+    return await db.delete(
+      'activity_logs',
+      where: 'timestamp < ?',
+      whereArgs: [cutoff],
+    );
+  }
+
   /// Clears all tables in the database.
   Future<void> clearAll() async {
     final db = await database;
     await db.delete('sensor_telemetry');
     await db.delete('controller_cache');
     await db.delete('brunata_cache');
+    await db.delete('activity_logs');
   }
 
   /// Closes the database connection.
   Future<void> close() async {
+    _tablesCreated = false;
     if (_db != null && _db!.isOpen) {
       await _db!.close();
       _db = null;

@@ -7,6 +7,7 @@ import 'package:heizungstrainer/screens/connection_screen.dart';
 import 'package:heizungstrainer/screens/home_screen.dart';
 import 'package:heizungstrainer/screens/community_screen.dart';
 import 'package:heizungstrainer/screens/backup_screen.dart';
+import 'package:heizungstrainer/screens/log_screen.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -140,6 +141,7 @@ class _MainShellState extends State<MainShell> {
     HomeScreen(),
     CommunityScreen(),
     BackupScreen(),
+    LogScreen(),
   ];
 
   @override
@@ -170,6 +172,11 @@ class _MainShellState extends State<MainShell> {
             icon: Icon(Icons.cloud_outlined),
             selectedIcon: Icon(Icons.cloud_done_rounded),
             label: 'Sicherungen',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.receipt_long_outlined),
+            selectedIcon: Icon(Icons.receipt_long_rounded),
+            label: 'Logs',
           ),
         ],
       ),

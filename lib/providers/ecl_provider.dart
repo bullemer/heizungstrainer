@@ -27,9 +27,11 @@ import 'package:heizungstrainer/models/generic_modbus_config.dart';
 import 'package:heizungstrainer/models/bosch_buderus_ems_config.dart';
 import 'package:heizungstrainer/models/viessmann_config.dart';
 import 'package:heizungstrainer/models/vaillant_ebusd_config.dart';
+import 'package:heizungstrainer/models/activity_log_entry.dart';
 import 'package:heizungstrainer/models/weishaupt_wem_config.dart';
 import 'package:heizungstrainer/models/nibe_modbus_config.dart';
 import 'package:heizungstrainer/models/telemetry_sample.dart';
+import 'package:heizungstrainer/services/activity_log_service.dart';
 import 'package:heizungstrainer/services/brunata_local_scraper_service.dart';
 import 'package:heizungstrainer/services/database_service.dart';
 import 'package:heizungstrainer/services/device_registry.dart';
@@ -53,6 +55,7 @@ class ECLProvider extends ChangeNotifier {
   final DiscoveryService _discoveryService;
   final BrunataLocalScraperService _brunataScraper;
   final DatabaseService _databaseService;
+  final ActivityLogService _logService;
   final EnergyPriceService _energyPriceService;
   final FlutterSecureStorage _secureStorage;
 
@@ -107,6 +110,7 @@ class ECLProvider extends ChangeNotifier {
   bool get hasCachedReadings => _readings.isNotEmpty;
   DateTime? get lastSuccessfulPoll => _lastSuccessfulPoll;
   DatabaseService get databaseService => _databaseService;
+  ActivityLogService get logService => _logService;
 
   GenericModbusConfig _genericModbusConfig = const GenericModbusConfig();
   BoschBuderusEmsConfig _boschBuderusConfig = const BoschBuderusEmsConfig();
@@ -189,6 +193,7 @@ class ECLProvider extends ChangeNotifier {
     DiscoveryService? discoveryService,
     BrunataLocalScraperService? brunataScraper,
     DatabaseService? databaseService,
+    ActivityLogService? logService,
     EnergyPriceService? energyPriceService,
     FlutterSecureStorage? secureStorage,
     bool autoLoadDatabase = true,
@@ -196,6 +201,10 @@ class ECLProvider extends ChangeNotifier {
         _discoveryService = discoveryService ?? DiscoveryService(),
         _brunataScraper = brunataScraper ?? BrunataLocalScraperService(),
         _databaseService = databaseService ?? DatabaseService.instance,
+        _logService = logService ??
+            (autoLoadDatabase
+                ? ActivityLogService.instance
+                : ActivityLogService(enablePersistence: false)),
         _secureStorage = secureStorage ?? const FlutterSecureStorage(),
         _energyPriceService = energyPriceService ??
             EnergyPriceService(
@@ -216,6 +225,7 @@ class ECLProvider extends ChangeNotifier {
     };
     if (autoLoadDatabase) {
       _initFromDatabase();
+      _logService.init();
     }
     _initHardwareSettings();
   }
@@ -283,6 +293,13 @@ class ECLProvider extends ChangeNotifier {
     } catch (e) {
       debugPrint('[Provider] Could not persist selected controller: $e');
     }
+    final desc = currentControllerDescriptor;
+    await _logService.logConnection(
+      controllerId: id,
+      action: 'CONTROLLER_SELECTED',
+      message: 'Reglermodell ausgewählt: ${desc.brand} (${desc.model})',
+      details: {'controllerId': id, 'brand': desc.brand, 'model': desc.model, 'protocol': desc.protocol.name},
+    );
     notifyListeners();
   }
 
@@ -440,6 +457,13 @@ class ECLProvider extends ChangeNotifier {
     } catch (e) {
       debugPrint('[Provider] Could not persist selected billing provider: $e');
     }
+    final billDesc = currentBillingDescriptor;
+    await _logService.logBilling(
+      billingId: id,
+      action: 'BILLING_PROVIDER_SELECTED',
+      message: 'Abrechnungsdienst gewählt: ${billDesc.name} (${billDesc.organization})',
+      details: {'providerId': id, 'name': billDesc.name},
+    );
     notifyListeners();
   }
 
@@ -449,6 +473,12 @@ class ECLProvider extends ChangeNotifier {
     _controllerIp = 'Simulation (${currentControllerDescriptor.brand})';
     _errorMessage = null;
     notifyListeners();
+
+    await _logService.logConnection(
+      controllerId: _selectedControllerId,
+      action: 'START_SIMULATION',
+      message: 'Starte Simulationsmodus für ${currentControllerDescriptor.brand}...',
+    );
 
     try {
       if (_activeController is! MockHeatingController) {
@@ -466,9 +496,24 @@ class ECLProvider extends ChangeNotifier {
       _consecutivePollErrors = 0;
       notifyListeners();
 
+      _logService.logConnection(
+        controllerId: _selectedControllerId,
+        action: 'SIMULATION_CONNECTED',
+        message: 'Simulationslauf aktiv für ${currentControllerDescriptor.brand} (${currentControllerDescriptor.model})',
+        success: true,
+      );
+
       await refreshReadings();
       _startPolling();
     } catch (e) {
+      _logService.logConnection(
+        controllerId: _selectedControllerId,
+        action: 'SIMULATION_START_FAILED',
+        message: 'Fehler beim Starten der Simulation: $e',
+        success: false,
+        errorCode: 'SIMULATION_START_ERROR',
+        details: {'error': e.toString()},
+      );
       _setError('Fehler beim Starten der Simulation: $e');
     }
   }
@@ -566,9 +611,22 @@ class ECLProvider extends ChangeNotifier {
     _discoveryProgress = 0.0;
     notifyListeners();
 
+    _logService.logConnection(
+      controllerId: _selectedControllerId,
+      action: 'DISCOVERY_START',
+      message: 'Starte automatische Reglersuche im lokalen Netzwerk...',
+    );
+
     try {
       final hasPermission = await _ensureLocationPermission();
       if (!hasPermission) {
+        _logService.logConnection(
+          controllerId: _selectedControllerId,
+          action: 'PERMISSION_DENIED',
+          message: 'Standortberechtigung für Netzwerk-Scan verweigert.',
+          success: false,
+          errorCode: 'PERMISSION_DENIED',
+        );
         _setError('Standortberechtigung wird benötigt, um die WiFi-IP-Adresse '
             'zu ermitteln. Bitte erteilen Sie die Berechtigung in den Einstellungen.');
         return;
@@ -581,6 +639,13 @@ class ECLProvider extends ChangeNotifier {
         },
       );
 
+      _logService.logConnection(
+        controllerId: _selectedControllerId,
+        action: 'CONTROLLER_DISCOVERED',
+        message: 'Regler unter IP $ip im Netzwerk gefunden.',
+        details: {'ip': ip},
+      );
+
       _connectionState = ECLConnectionState.connecting;
       _controllerIp = ip;
       notifyListeners();
@@ -591,15 +656,61 @@ class ECLProvider extends ChangeNotifier {
       _isReconnecting = false;
       notifyListeners();
 
+      _logService.logConnection(
+        controllerId: _selectedControllerId,
+        action: 'CONNECTED',
+        message: 'Erfolgreich über Modbus TCP mit Regler $ip verbunden.',
+        success: true,
+        details: {'ip': ip},
+      );
+
       await refreshReadings();
       _startPolling();
     } on ControllerNotFoundException catch (e) {
+      _logService.logConnection(
+        controllerId: _selectedControllerId,
+        action: 'CONTROLLER_NOT_FOUND',
+        message: 'Kein LAN-Zugriff oder Regler im Subnetz nicht gefunden: ${e.message}',
+        success: false,
+        errorCode: 'LAN_UNREACHABLE',
+        details: {'failureDomain': 'lan_access'},
+      );
       _setError(e.message);
     } on ModbusCommunicationException catch (e) {
+      _logService.logConnection(
+        controllerId: _selectedControllerId,
+        action: 'MODBUS_CONNECT_FAILED',
+        message: e.message,
+        success: false,
+        errorCode: 'CONTROLLER_SYNC_ERROR',
+        details: {'failureDomain': 'controller_sync'},
+      );
       _setError(e.message);
     } catch (e) {
       debugPrint('[Provider] Unexpected error: $e');
-      _setError('Unerwarteter Fehler: $e');
+      final errLower = e.toString().toLowerCase();
+      final isLanIssue = errLower.contains('network is unreachable') ||
+          errLower.contains('no route to host') ||
+          errLower.contains('connection refused') ||
+          errLower.contains('socketexception') ||
+          errLower.contains('timed out') ||
+          errLower.contains('os error: 101') ||
+          errLower.contains('os error: 111') ||
+          errLower.contains('os error: 113');
+      final errorCode = isLanIssue ? 'LAN_UNREACHABLE' : 'UNEXPECTED_CONNECTION_ERROR';
+      final failureMsg = isLanIssue
+          ? 'Kein LAN-Zugriff: Regler im lokalen Netzwerk nicht erreichbar. Bitte Heim-WLAN und Subnetz prüfen.'
+          : 'Unerwarteter Verbindungsfehler: $e';
+
+      _logService.logConnection(
+        controllerId: _selectedControllerId,
+        action: isLanIssue ? 'LAN_UNREACHABLE' : 'CONNECT_ERROR',
+        message: failureMsg,
+        success: false,
+        errorCode: errorCode,
+        details: {'error': e.toString(), 'failureDomain': isLanIssue ? 'lan_access' : 'general'},
+      );
+      _setError(failureMsg);
     }
   }
 
@@ -610,6 +721,13 @@ class ECLProvider extends ChangeNotifier {
     _consecutivePollErrors = 0;
     _isReconnecting = false;
     notifyListeners();
+
+    _logService.logConnection(
+      controllerId: _selectedControllerId,
+      action: 'CONNECT_IP_START',
+      message: 'Verbinde manuell mit $ip${port != null ? ":$port" : ""}...',
+      details: {'ip': ip, 'port': port},
+    );
 
     try {
       if (_selectedControllerId == 'danfoss_ecl_310') {
@@ -622,13 +740,57 @@ class ECLProvider extends ChangeNotifier {
       _consecutivePollErrors = 0;
       _isReconnecting = false;
       notifyListeners();
+
+      _logService.logConnection(
+        controllerId: _selectedControllerId,
+        action: 'CONNECTED',
+        message: 'Erfolgreich verbunden mit $ip${port != null ? ":$port" : ""}',
+        success: true,
+        details: {'ip': ip, 'port': port},
+      );
+
       await refreshReadings();
       _startPolling();
     } on ModbusCommunicationException catch (e) {
+      _logService.logConnection(
+        controllerId: _selectedControllerId,
+        action: 'CONNECT_FAILED',
+        message: 'Verbindung fehlgeschlagen: ${e.message}',
+        success: false,
+        errorCode: 'CONTROLLER_SYNC_ERROR',
+        details: {'ip': ip, 'port': port, 'failureDomain': 'controller_sync'},
+      );
       _setError(e.message);
     } catch (e) {
       debugPrint('[Provider] Connection error: $e');
-      _setError('Verbindungsfehler: $e');
+      final errLower = e.toString().toLowerCase();
+      final isLanIssue = errLower.contains('network is unreachable') ||
+          errLower.contains('no route to host') ||
+          errLower.contains('connection refused') ||
+          errLower.contains('socketexception') ||
+          errLower.contains('timed out') ||
+          errLower.contains('os error: 101') ||
+          errLower.contains('os error: 111') ||
+          errLower.contains('os error: 113');
+      final errorCode = isLanIssue ? 'LAN_UNREACHABLE' : 'CONNECTION_ERROR';
+      final failureMsg = isLanIssue
+          ? 'Kein LAN-Zugriff: Regler unter $ip ist im lokalen Netzwerk nicht erreichbar. Bitte Heim-WLAN und Subnetz prüfen.'
+          : 'Verbindungsfehler: $e';
+
+      _logService.logConnection(
+        controllerId: _selectedControllerId,
+        action: isLanIssue ? 'LAN_UNREACHABLE' : 'CONNECT_FAILED',
+        message: failureMsg,
+        success: false,
+        errorCode: errorCode,
+        details: {
+          'ip': ip,
+          'port': port,
+          'error': e.toString(),
+          'failureDomain': isLanIssue ? 'lan_access' : 'general',
+        },
+      );
+      _setError(failureMsg);
     }
   }
 
@@ -639,6 +801,12 @@ class ECLProvider extends ChangeNotifier {
     } else {
       _activeController.disconnect();
     }
+    _logService.logConnection(
+      controllerId: _selectedControllerId,
+      action: 'DISCONNECTED',
+      message: 'Verbindung zu Regler ($_selectedControllerId) getrennt.',
+      success: true,
+    );
     if (_activeController is MockHeatingController) {
       _activeController = DeviceRegistry.createController(
         _selectedControllerId,
@@ -712,6 +880,34 @@ class ECLProvider extends ChangeNotifier {
         _isReconnecting = false;
         _lastSuccessfulPoll = telemetry.timestamp;
 
+        // Monitor sensor disconnection error code 19200
+        for (final entry in _readings.entries) {
+          if (entry.value.isSensorDisconnected) {
+            await _logService.logRead(
+              controllerId: _selectedControllerId,
+              action: 'SENSOR_FAULT_DETECTED',
+              message: 'Sensorfehler 19200 (Unterbrechung/defekt): ${entry.key}',
+              errorCode: 'SENSOR_FAULT_19200',
+              level: ActivityLogLevel.warning,
+              details: {'parameterId': entry.key, 'rawValue': entry.value.rawValue},
+            );
+          }
+        }
+
+        await _logService.logRead(
+          controllerId: _selectedControllerId,
+          action: 'READ_TELEMETRY_SUCCESS',
+          message: 'Telemetrie aktualisiert: VL ${telemetry.flowTemp?.toStringAsFixed(1) ?? "-"}°C, RL ${telemetry.returnTemp?.toStringAsFixed(1) ?? "-"}°C, AT ${telemetry.outdoorTemp?.toStringAsFixed(1) ?? "-"}°C',
+          details: {
+            'flowTemp': telemetry.flowTemp,
+            'returnTemp': telemetry.returnTemp,
+            'outdoorTemp': telemetry.outdoorTemp,
+            'hotWaterTemp': telemetry.hotWaterTemp,
+            'heatingCurveShift': telemetry.heatingCurveShift,
+            'roomTarget': telemetry.roomTarget,
+          },
+        );
+
         for (final entry in _readings.entries) {
           if (!entry.value.isSensorDisconnected) {
             final queue = _history.putIfAbsent(
@@ -729,6 +925,19 @@ class ECLProvider extends ChangeNotifier {
         notifyListeners();
       } catch (e) {
         debugPrint('[Provider] Controller reading error: $e');
+        final errLower = e.toString().toLowerCase();
+        final isTimeout = errLower.contains('timeout') || errLower.contains('timed out');
+        final syncErrorCode = isTimeout ? 'CONTROLLER_SYNC_TIMEOUT' : 'CONTROLLER_SYNC_ERROR';
+
+        await _logService.logError(
+          action: 'READ_TELEMETRY_FAILED',
+          message: 'Fehler beim Synchronisieren des Reglers: $e',
+          controllerId: _selectedControllerId,
+          category: ActivityLogCategory.controllerRead,
+          errorCode: syncErrorCode,
+          exception: e,
+          details: {'failureDomain': 'controller_sync', 'error': e.toString()},
+        );
         if (!isSimulatedController) {
           _consecutivePollErrors++;
           if (_consecutivePollErrors < _maxConsecutivePollErrors) {
@@ -753,6 +962,29 @@ class ECLProvider extends ChangeNotifier {
       }
       _lastSuccessfulPoll = DateTime.now();
 
+      // Monitor sensor disconnection error code 19200
+      for (final entry in newReadings.entries) {
+        if (entry.value.isSensorDisconnected) {
+          await _logService.logRead(
+            controllerId: _selectedControllerId,
+            action: 'SENSOR_FAULT_DETECTED',
+            message: 'Sensorfehler 19200: Fühler ${entry.value.parameter.name} getrennt/defekt.',
+            errorCode: 'SENSOR_FAULT_19200',
+            level: ActivityLogLevel.warning,
+            details: {'parameterId': entry.key, 'rawValue': entry.value.rawValue},
+          );
+        }
+      }
+
+      await _logService.logRead(
+        controllerId: _selectedControllerId,
+        action: 'READ_MODBUS_SUCCESS',
+        message: '${newReadings.length} Register-Messwerte über Modbus TCP aktualisiert.',
+        details: {
+          'registerCount': newReadings.length,
+        },
+      );
+
       // Record history for each valid reading (ignore disconnected sensors)
       for (final entry in newReadings.entries) {
         if (!entry.value.isSensorDisconnected) {
@@ -775,6 +1007,16 @@ class ECLProvider extends ChangeNotifier {
       _consecutivePollErrors++;
       debugPrint(
         '[Provider] Polling error ($_consecutivePollErrors/$_maxConsecutivePollErrors): $e',
+      );
+
+      await _logService.logError(
+        action: 'MODBUS_POLL_ERROR',
+        message: 'Modbus-Abfragefehler: ${e.message}',
+        controllerId: _selectedControllerId,
+        category: ActivityLogCategory.controllerRead,
+        errorCode: 'CONTROLLER_SYNC_ERROR',
+        exception: e,
+        details: {'failureDomain': 'controller_sync', 'error': e.message},
       );
 
       if (_consecutivePollErrors < _maxConsecutivePollErrors) {
@@ -854,35 +1096,110 @@ class ECLProvider extends ChangeNotifier {
     double value,
   ) async {
     if (!isConnected) {
+      await _logService.logError(
+        action: 'WRITE_REJECTED_NO_CONNECTION',
+        message: 'Schreibbefehl abgelehnt: Keine Verbindung zum Regler.',
+        controllerId: _selectedControllerId,
+        category: ActivityLogCategory.controllerWrite,
+        errorCode: 'NO_CONNECTION',
+      );
       throw const ModbusCommunicationException(
         message: 'Keine Verbindung zum Regler.',
       );
     }
 
-    if (_selectedControllerId != 'danfoss_ecl_310' ||
-        _activeController is MockHeatingController ||
-        _controllerIp?.contains('Simulation') == true) {
-      if (parameter.id == ECLRegisters.heatingCurveShift.id) {
-        await _activeController.setHeatingCurveShift(value);
-      } else if (parameter.id == ECLRegisters.roomTargetTemp.id) {
-        await _activeController.setRoomTarget(value);
-      }
-      final reading = ECLReading(
-        parameter: parameter,
-        rawValue: parameter.displayToRaw(value),
-        timestamp: DateTime.now(),
+    // Safety Gate: Enforce parameter physical boundaries before issuing any command
+    final validationError = parameter.validateDisplayValue(value);
+    if (validationError != null) {
+      await _logService.logSecurityGate(
+        controllerId: _selectedControllerId,
+        message: 'Sicherheitsverriegelung ausgelöst: $validationError',
+        details: {
+          'parameterId': parameter.id,
+          'parameterName': parameter.name,
+          'targetValue': value,
+          'minValue': parameter.minValue,
+          'maxValue': parameter.maxValue,
+          'isWritable': parameter.isWritable,
+        },
+        errorCode: 'WRITE_OUT_OF_BOUNDS',
       );
+      throw ModbusCommunicationException(message: validationError);
+    }
+    final rawTarget = parameter.displayToRaw(value);
+
+    try {
+      if (_selectedControllerId != 'danfoss_ecl_310' ||
+          _activeController is MockHeatingController ||
+          _controllerIp?.contains('Simulation') == true) {
+        if (parameter.id == ECLRegisters.heatingCurveShift.id) {
+          await _activeController.setHeatingCurveShift(value);
+        } else if (parameter.id == ECLRegisters.roomTargetTemp.id) {
+          await _activeController.setRoomTarget(value);
+        }
+        final reading = ECLReading(
+          parameter: parameter,
+          rawValue: rawTarget,
+          timestamp: DateTime.now(),
+        );
+        _readings[parameter.id] = reading;
+        await _databaseService.cacheControllerReadings(_readings);
+
+        await _logService.logWrite(
+          controllerId: _selectedControllerId,
+          action: 'WRITE_PARAMETER_SUCCESS',
+          message: '${parameter.name} erfolgreich auf $value ${parameter.unit} gesetzt.',
+          details: {
+            'parameterId': parameter.id,
+            'parameterName': parameter.name,
+            'value': value,
+            'unit': parameter.unit,
+            'controller': _selectedControllerId,
+          },
+          success: true,
+        );
+
+        notifyListeners();
+        return reading;
+      }
+
+      final reading = await _modbusService.writeAndVerify(parameter, value);
       _readings[parameter.id] = reading;
       await _databaseService.cacheControllerReadings(_readings);
+
+      await _logService.logWrite(
+        controllerId: _selectedControllerId,
+        action: 'WRITE_PARAMETER_VERIFIED',
+        message: '${parameter.name} erfolgreich über Modbus auf $value ${parameter.unit} geschrieben und verifiziert.',
+        details: {
+          'parameterId': parameter.id,
+          'parameterName': parameter.name,
+          'modbusAddress': parameter.modbusAddress,
+          'value': value,
+          'unit': parameter.unit,
+          'rawWritten': reading.rawValue,
+        },
+        success: true,
+      );
+
       notifyListeners();
       return reading;
+    } catch (e) {
+      await _logService.logWrite(
+        controllerId: _selectedControllerId,
+        action: 'WRITE_PARAMETER_FAILED',
+        message: 'Fehler beim Schreiben von ${parameter.name} ($value ${parameter.unit}): $e',
+        details: {
+          'parameterId': parameter.id,
+          'parameterName': parameter.name,
+          'targetValue': value,
+          'error': e.toString(),
+        },
+        success: false,
+        errorCode: 'WRITE_FAILED',
+      );
+      rethrow;
     }
-
-    final reading = await _modbusService.writeAndVerify(parameter, value);
-    _readings[parameter.id] = reading;
-    _databaseService.cacheControllerReadings(_readings);
-    notifyListeners();
-    return reading;
   }
 
   // ──────────────────────────────────────────────────────────────────
@@ -929,6 +1246,13 @@ class ECLProvider extends ChangeNotifier {
     _brunataSyncState = BrunataSyncState.initializing;
     notifyListeners();
 
+    _logService.logBilling(
+      billingId: _selectedBillingId,
+      action: 'SYNC_START',
+      message: 'Abrechnungs-Synchronisation gestartet für ${_activeBillingProvider.displayName}...',
+      details: {'providerId': _selectedBillingId},
+    );
+
     try {
       final result = await _activeBillingProvider.syncData();
 
@@ -937,16 +1261,61 @@ class ECLProvider extends ChangeNotifier {
         _brunataSyncState = BrunataSyncState.complete;
         _brunataSyncError = null;
         await _databaseService.cacheBrunataData(result.data!);
+
+        _logService.logBilling(
+          billingId: _selectedBillingId,
+          action: 'SYNC_SUCCESS',
+          message: 'Abrechnungsdaten erfolgreich synchronisiert: ${result.data!.consumedKwh.toStringAsFixed(0)} kWh erfasst.',
+          success: true,
+          details: {
+            'consumedKwh': result.data!.consumedKwh,
+            'currentPeriodCost': result.data!.currentBillingPeriodCost,
+            'chartsCount': result.data!.charts.length,
+          },
+        );
       } else {
         _brunataSyncError = result.errorMessage ??
             'Abrechnungs-Synchronisation fehlgeschlagen';
         _brunataSyncState = BrunataSyncState.error;
         _brunataData ??= BrunataMeterData.demo();
+
+        final errLower = _brunataSyncError!.toLowerCase();
+        final isAuth = errLower.contains('passwort') ||
+            errLower.contains('anmeldung') ||
+            errLower.contains('401') ||
+            errLower.contains('unauthorized') ||
+            errLower.contains('zugangsdaten') ||
+            errLower.contains('authentifizierung');
+        final billingCode = isAuth ? 'BILLING_AUTH_FAILED' : 'BILLING_SYNC_ERROR';
+
+        _logService.logBilling(
+          billingId: _selectedBillingId,
+          action: 'SYNC_FAILED',
+          message: _brunataSyncError!,
+          success: false,
+          errorCode: billingCode,
+          details: {
+            'error': _brunataSyncError,
+            'failureDomain': 'billing_sync',
+          },
+        );
       }
     } catch (e) {
       _brunataSyncError = e.toString();
       _brunataSyncState = BrunataSyncState.error;
       _brunataData ??= BrunataMeterData.demo();
+
+      _logService.logBilling(
+        billingId: _selectedBillingId,
+        action: 'SYNC_EXCEPTION',
+        message: 'Abrechnungsfehler: $e',
+        success: false,
+        errorCode: 'BILLING_EXCEPTION',
+        details: {
+          'exception': e.toString(),
+          'failureDomain': 'billing_sync',
+        },
+      );
     }
     notifyListeners();
   }
