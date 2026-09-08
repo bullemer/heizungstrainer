@@ -992,11 +992,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         const SizedBox(height: 8),
                         _buildNibeModbusConfigCard(provider),
                       ],
-                      const SizedBox(height: 14),
+                      const SizedBox(height: 24),
+
+                      // ── SECTION 2: REMOTE ACCESS / WIREGUARD ──────
+                      const _SectionHeader(
+                        icon: Icons.vpn_lock_rounded,
+                        title: 'Sicherer Fernzugriff (FRITZ!Box WireGuard®)',
+                        subtitle:
+                            'Steuere deine Heizung von unterwegs ohne unsichere Portfreigaben '
+                            'und ohne fremde Cloud-Server.',
+                      ),
+                      const SizedBox(height: 12),
                       const _WireGuardRemoteAccessCard(),
                       const SizedBox(height: 24),
 
-                      // ── SECTION 2: BILLING PROVIDER ───────────────
+                      // ── SECTION 3: BILLING PROVIDER ───────────────
                       const _SectionHeader(
                         icon: Icons.receipt_long_rounded,
                         title: 'Messdienstleister & Abrechnung',
@@ -1031,7 +1041,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       }),
                       const SizedBox(height: 16),
 
-                      // ── SECTION 3: TARIFF & COST ──────────────────
+                      // ── SECTION 4: TARIFF & COST ──────────────────
                       const _SectionHeader(
                         icon: Icons.euro_rounded,
                         title: 'Tarif & Energiepreis',
@@ -1044,7 +1054,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       _buildTariffCard(provider),
                       const SizedBox(height: 28),
 
-                      // ── SECTION 4: OFFLINE & DATABASE ─────────────
+                      // ── SECTION 5: OFFLINE & DATABASE ─────────────
                       const _SectionHeader(
                         icon: Icons.storage_rounded,
                         title: 'Datenpuffer & Offline-Betrieb',
@@ -3876,6 +3886,41 @@ class _ActiveSystemSummary extends StatelessWidget {
                 ),
               ),
             ],
+          ),
+          const SizedBox(height: 10),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: const Color(0xFF00BCD4).withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: const Color(0xFF00BCD4).withValues(alpha: 0.25),
+              ),
+            ),
+            child: const Row(
+              children: [
+                Icon(Icons.vpn_lock_rounded, color: Color(0xFF00BCD4), size: 15),
+                SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    'Fernzugriff: FRITZ!Box WireGuard® (Zero-Cloud)',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF00BCD4),
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                Text(
+                  'Anleitung unten ↓',
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: Color(0xFFB0BEC5),
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
