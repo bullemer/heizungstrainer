@@ -217,7 +217,7 @@ class BrunataLocalScraperService {
 
     try {
       final username =
-          await _secureStorage.read(key: BrunataStorageKeys.username);
+          (await _secureStorage.read(key: BrunataStorageKeys.username))?.trim();
       final password =
           await _secureStorage.read(key: BrunataStorageKeys.password);
 
@@ -301,37 +301,75 @@ class BrunataLocalScraperService {
       final authClock = Stopwatch()..start();
       bool authenticated = false;
       bool injected = false;
+      int postInjectCycles = 0;
+
       while (!overBudget() && authClock.elapsed < _loginTimeout) {
         final snap = await _snapshot(controller);
         debugPrint('[Brunata] auth snapshot: $snap');
 
-        if (snap.loginError && snap.hasPasswordField) {
+        // Browser still launching from blank page — wait for actual page
+        if (snap.url == 'about:blank' || snap.url.isEmpty) {
+          await Future.delayed(const Duration(milliseconds: 800));
+          continue;
+        }
+
+        // Explicit login error (e.g. invalid credentials)
+        if (snap.loginError && (snap.hasPasswordField || snap.isLoginPage)) {
           return const BrunataSyncResult.failure(
             'Anmeldung fehlgeschlagen. Bitte überprüfe deine '
             'Brunata-Zugangsdaten.',
           );
         }
 
-        if (snap.hasPasswordField) {
-          // On the login form — inject credentials and submit (once).
-          if (!injected) {
+        // Authenticated indicator: header micro-frontend mounted or genuine non-login data page
+        if (snap.hasHeaderApp ||
+            (snap.onDataUrl && !snap.isLoginPage && snap.bodyLength > 300)) {
+          debugPrint(
+              '[Brunata] Authenticated session confirmed: hasHeader=${snap.hasHeaderApp}, url=${snap.url}');
+          authenticated = true;
+          break;
+        }
+
+        // If credentials have been submitted:
+        if (injected) {
+          postInjectCycles++;
+          // Navigated away from login page to an authenticated app route
+          if (!snap.isLoginPage &&
+              !snap.hasAuthApp &&
+              snap.passwordFields == 0 &&
+              snap.bodyLength > 300) {
+            debugPrint(
+                '[Brunata] Post-login navigation detected: url=${snap.url}');
+            authenticated = true;
+            break;
+          }
+          // If stuck on login page for > 8s after injection with password field still there and no error, allow retry
+          if (postInjectCycles > 6 && snap.hasPasswordField) {
+            debugPrint('[Brunata] Retrying login injection...');
+            injected = false;
+          }
+        }
+
+        // On login form and not yet submitted:
+        if (!injected && (snap.hasPasswordField || snap.isLoginPage)) {
+          if (snap.hasPasswordField) {
             final res = await controller.evaluateJavascript(
               source: _loginScript(username, password),
             );
             debugPrint('[Brunata] login injection result: $res');
             injected = true;
+            postInjectCycles = 0;
             _setState(BrunataSyncState.navigating);
           }
-        } else if (snap.onDataUrl) {
-          // Authenticated and already on a UVI page.
-          authenticated = true;
-          break;
-        } else if (snap.isErrorPage || snap.url == 'about:blank') {
-          // Transient/error landing (e.g. PostMessage 404) — go to data page.
+        } else if (snap.isErrorPage) {
+          // Transient/error landing (e.g. PostMessage 404) — reload login page
+          debugPrint(
+              '[Brunata] Transient error landing, reloading login: ${snap.url}');
           await controller.loadUrl(
-            urlRequest: URLRequest(url: WebUri(dataUrl)),
+            urlRequest: URLRequest(url: WebUri(defaultPortalUrl)),
           );
         }
+
         await Future.delayed(const Duration(milliseconds: 1200));
       }
 
@@ -482,18 +520,46 @@ class BrunataLocalScraperService {
   ''';
 
   /// Reads a lightweight snapshot of the current page state.
+  /// Reads a lightweight snapshot of the current page state.
   Future<_PageSnapshot> _snapshot(InAppWebViewController controller) async {
     const source = '''
       (function() {
         try {
+          var authApp = document.getElementById('single-spa-application:@brunata/authentication');
+          var headerApp = document.getElementById('single-spa-application:@brunata/header');
           var pwd = document.querySelectorAll('input[type=password]').length;
           var inputs = document.querySelectorAll('input').length;
           var body = document.body ? (document.body.innerText || '') : '';
           var lower = body.toLowerCase();
+          var path = location.pathname.toLowerCase();
+          var isLogin = path.indexOf('login') >= 0 || !!authApp || pwd > 0;
           var err = /ungült|ungueltig|falsche|falscher|nicht korrekt|incorrect|invalid|fehlgeschlagen/.test(lower);
-          return JSON.stringify({pwd: pwd, inputs: inputs, url: location.href, err: err, len: body.length});
+          var onData = !isLogin && (path.indexOf('/uvi') >= 0 || !!headerApp || !!document.querySelector('iframe'));
+          return JSON.stringify({
+            pwd: pwd,
+            inputs: inputs,
+            url: location.href,
+            path: path,
+            err: err,
+            len: body.length,
+            isLogin: isLogin,
+            hasAuthApp: !!authApp,
+            hasHeaderApp: !!headerApp,
+            onData: onData
+          });
         } catch(e) {
-          return JSON.stringify({pwd: 0, inputs: 0, url: location.href, err: false, len: 0});
+          return JSON.stringify({
+            pwd: 0,
+            inputs: 0,
+            url: location.href,
+            path: '',
+            err: false,
+            len: 0,
+            isLogin: false,
+            hasAuthApp: false,
+            hasHeaderApp: false,
+            onData: false
+          });
         }
       })();
     ''';
@@ -506,26 +572,41 @@ class BrunataLocalScraperService {
   String _loginScript(String username, String password) => '''
     (function() {
       try {
+        // Dismiss cookie banner if present
+        try {
+          var btns = document.querySelectorAll('button');
+          for (var b = 0; b < btns.length; b++) {
+            if ((btns[b].textContent || '').trim().toLowerCase() === 'ausblenden') {
+              btns[b].click();
+              break;
+            }
+          }
+        } catch(e) {}
+
         var inputs = document.querySelectorAll('input');
-        var userField = null;
-        var passField = null;
+        var userField = document.getElementById('username') ||
+                        document.querySelector('input[name="username"]');
+        var passField = document.getElementById('password') ||
+                        document.querySelector('input[name="password"]');
 
-        for (var i = 0; i < inputs.length; i++) {
-          var inp = inputs[i];
-          var type = (inp.type || '').toLowerCase();
-          var name = (inp.name || '').toLowerCase();
-          var id = (inp.id || '').toLowerCase();
-          var placeholder = (inp.placeholder || '').toLowerCase();
+        if (!userField || !passField) {
+          for (var i = 0; i < inputs.length; i++) {
+            var inp = inputs[i];
+            var type = (inp.type || '').toLowerCase();
+            var name = (inp.name || '').toLowerCase();
+            var id = (inp.id || '').toLowerCase();
+            var placeholder = (inp.placeholder || '').toLowerCase();
 
-          if (type === 'password') {
-            passField = inp;
-          } else if (type === 'text' || type === 'email' ||
-                     name.indexOf('user') >= 0 || name.indexOf('login') >= 0 ||
-                     name.indexOf('kunden') >= 0 || name.indexOf('nummer') >= 0 ||
-                     id.indexOf('user') >= 0 || id.indexOf('login') >= 0 ||
-                     placeholder.indexOf('kunden') >= 0 || placeholder.indexOf('nummer') >= 0 ||
-                     placeholder.indexOf('benutzer') >= 0) {
-            if (!userField) userField = inp;
+            if (type === 'password') {
+              passField = inp;
+            } else if (type === 'text' || type === 'email' ||
+                       name.indexOf('user') >= 0 || name.indexOf('login') >= 0 ||
+                       name.indexOf('kunden') >= 0 || name.indexOf('nummer') >= 0 ||
+                       id.indexOf('user') >= 0 || id.indexOf('login') >= 0 ||
+                       placeholder.indexOf('kunden') >= 0 || placeholder.indexOf('nummer') >= 0 ||
+                       placeholder.indexOf('benutzer') >= 0) {
+              if (!userField) userField = inp;
+            }
           }
         }
 
@@ -559,6 +640,7 @@ class BrunataLocalScraperService {
 
         var submitBtn = document.querySelector('button[type="submit"]') ||
                         document.querySelector('input[type="submit"]') ||
+                        document.querySelector('button.p-button-primary') ||
                         document.querySelector('button.login-btn') ||
                         document.querySelector('button.btn-primary') ||
                         document.querySelector('form button');
@@ -575,13 +657,13 @@ class BrunataLocalScraperService {
         }
 
         if (submitBtn) {
-          setTimeout(function() { submitBtn.click(); }, 400);
+          setTimeout(function() { submitBtn.click(); }, 300);
           return JSON.stringify({status: 'ok', message: 'submit clicked'});
         }
 
         var form = document.querySelector('form');
         if (form) {
-          setTimeout(function() { form.requestSubmit ? form.requestSubmit() : form.submit(); }, 400);
+          setTimeout(function() { form.requestSubmit ? form.requestSubmit() : form.submit(); }, 300);
           return JSON.stringify({status: 'ok', message: 'form submitted'});
         }
         return JSON.stringify({status: 'error', message: 'Kein Submit-Element gefunden'});
@@ -997,25 +1079,33 @@ class _PageSnapshot {
   final int passwordFields;
   final int inputs;
   final String url;
+  final String path;
   final bool loginError;
   final int bodyLength;
+  final bool isLoginPage;
+  final bool hasAuthApp;
+  final bool hasHeaderApp;
+  final bool onData;
 
   const _PageSnapshot({
     required this.passwordFields,
     required this.inputs,
     required this.url,
+    required this.path,
     required this.loginError,
     required this.bodyLength,
+    required this.isLoginPage,
+    required this.hasAuthApp,
+    required this.hasHeaderApp,
+    required this.onData,
   });
 
   bool get hasPasswordField => passwordFields > 0;
 
-  /// On a UVI consumption page (authenticated landing area).
-  bool get onDataUrl => url.toLowerCase().contains('/uvi/');
+  bool get onDataUrl => onData;
 
-  /// A transient error / postMessage landing page the portal sometimes shows
-  /// (e.g. when hitting `/Login` while already authenticated).
   bool get isErrorPage {
+    if (url.isEmpty || url == 'about:blank') return false;
     final u = url.toLowerCase();
     return u.contains('postmessage') ||
         u.contains('type=error') ||
@@ -1031,20 +1121,31 @@ class _PageSnapshot {
       return int.tryParse(m?.group(1) ?? '') ?? 0;
     }
 
+    bool boolField(String key) {
+      return RegExp('"$key":\\s*true').hasMatch(raw);
+    }
+
     final urlMatch = RegExp(r'"url":"((?:[^"\\]|\\.)*)"').firstMatch(raw);
     final url = (urlMatch?.group(1) ?? '').replaceAll(r'\/', '/');
-    final err = RegExp(r'"err":\s*true').hasMatch(raw);
+
+    final pathMatch = RegExp(r'"path":"((?:[^"\\]|\\.)*)"').firstMatch(raw);
+    final path = (pathMatch?.group(1) ?? '').replaceAll(r'\/', '/');
 
     return _PageSnapshot(
       passwordFields: intField('pwd'),
       inputs: intField('inputs'),
       url: url,
-      loginError: err,
+      path: path,
+      loginError: boolField('err'),
       bodyLength: intField('len'),
+      isLoginPage: boolField('isLogin'),
+      hasAuthApp: boolField('hasAuthApp'),
+      hasHeaderApp: boolField('hasHeaderApp'),
+      onData: boolField('onData'),
     );
   }
 
   @override
   String toString() =>
-      'pwd=$passwordFields inputs=$inputs err=$loginError len=$bodyLength url=$url';
+      'pwd=$passwordFields inputs=$inputs isLogin=$isLoginPage hasAuth=$hasAuthApp hasHeader=$hasHeaderApp err=$loginError onData=$onData len=$bodyLength url=$url';
 }
