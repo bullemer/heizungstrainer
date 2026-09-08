@@ -1019,12 +1019,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               _portalUrlController.text = url;
                             });
                           },
+                          credentialsForm: isSelected
+                              ? _buildBillingCredentialsFields(provider)
+                              : null,
                         );
                       }),
                       const SizedBox(height: 16),
-
-                      _buildBillingCredentialsFields(provider),
-                      const SizedBox(height: 28),
 
                       // ── SECTION 3: TARIFF & COST ──────────────────
                       const _SectionHeader(
@@ -3188,11 +3188,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(height: 14),
         ],
         Container(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
-            color: const Color(0xFF24242C),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: const Color(0xFF3A3A44)),
+            color: const Color(0xFF1E1A14),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFF4A3D2A)),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -4180,11 +4180,13 @@ class _BillingProviderCard extends StatelessWidget {
   final BillingProviderDescriptor descriptor;
   final bool isSelected;
   final VoidCallback onSelect;
+  final Widget? credentialsForm;
 
   const _BillingProviderCard({
     required this.descriptor,
     required this.isSelected,
     required this.onSelect,
+    this.credentialsForm,
   });
 
   String _authTypeString(BillingAuthType authType) {
@@ -4204,110 +4206,116 @@ class _BillingProviderCard extends StatelessWidget {
   Widget build(BuildContext context) {
     const accent = Color(0xFFFFA726);
 
-    return InkWell(
-      onTap: onSelect,
-      borderRadius: BorderRadius.circular(16),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        margin: const EdgeInsets.only(bottom: 12),
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: isSelected ? const Color(0xFF2B251D) : const Color(0xFF24242C),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: isSelected ? accent : const Color(0xFF3A3A44),
-            width: isSelected ? 1.8 : 1.0,
-          ),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: isSelected
-                        ? accent.withValues(alpha: 0.18)
-                        : const Color(0xFF2E2E38),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Icon(
-                    descriptor.icon,
-                    color: isSelected ? accent : const Color(0xFFB0B0BC),
-                    size: 24,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              descriptor.organization,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: 11.5,
-                                fontWeight: FontWeight.w600,
-                                color: isSelected
-                                    ? accent
-                                    : const Color(0xFF9E9EA8),
-                              ),
-                            ),
-                          ),
-                          _Badge(
-                            text: descriptor.isSupported
-                                ? 'Live'
-                                : 'Simulation',
-                            color: descriptor.isSupported
-                                ? const Color(0xFF4ADE80)
-                                : const Color(0xFF38BDF8),
-                            bgColor: descriptor.isSupported
-                                ? const Color(0xFF1B3D2F)
-                                : const Color(0xFF163238),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        descriptor.name,
-                        style: const TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                          color: Color(0xFFECECF0),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Icon(
-                  isSelected
-                      ? Icons.radio_button_checked_rounded
-                      : Icons.radio_button_unchecked_rounded,
-                  color: isSelected ? accent : const Color(0xFF6B6B78),
-                  size: 22,
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Text(
-              descriptor.description,
-              style: TextStyle(
-                fontSize: 12,
-                height: 1.35,
-                color: Colors.white.withValues(alpha: 0.6),
-              ),
-            ),
-            const SizedBox(height: 10),
-            _TagChip(label: _authTypeString(descriptor.authType)),
-          ],
+    final cardContent = AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: isSelected ? const Color(0xFF2B251D) : const Color(0xFF24242C),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: isSelected ? accent : const Color(0xFF3A3A44),
+          width: isSelected ? 1.8 : 1.0,
         ),
       ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: isSelected
+                      ? accent.withValues(alpha: 0.18)
+                      : const Color(0xFF2E2E38),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(
+                  descriptor.icon,
+                  color: isSelected ? accent : const Color(0xFFB0B0BC),
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            descriptor.organization,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w600,
+                              color: isSelected
+                                  ? accent
+                                  : const Color(0xFF9E9EA8),
+                            ),
+                          ),
+                        ),
+                        if (!descriptor.isSupported)
+                          const _Badge(
+                            text: 'Simulation',
+                            color: Color(0xFF38BDF8),
+                            bgColor: Color(0xFF163238),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      descriptor.name,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFFECECF0),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                isSelected
+                    ? Icons.radio_button_checked_rounded
+                    : Icons.radio_button_unchecked_rounded,
+                color: isSelected ? accent : const Color(0xFF6B6B78),
+                size: 22,
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            descriptor.description,
+            style: TextStyle(
+              fontSize: 12,
+              height: 1.35,
+              color: Colors.white.withValues(alpha: 0.6),
+            ),
+          ),
+          const SizedBox(height: 10),
+          _TagChip(label: _authTypeString(descriptor.authType)),
+          if (isSelected && credentialsForm != null) ...[
+            const SizedBox(height: 14),
+            const Divider(color: Color(0xFF4A3D2A), height: 1),
+            const SizedBox(height: 14),
+            credentialsForm!,
+          ],
+        ],
+      ),
     );
+
+    if (!isSelected) {
+      return InkWell(
+        onTap: onSelect,
+        borderRadius: BorderRadius.circular(16),
+        child: cardContent,
+      );
+    }
+    return cardContent;
   }
 }
 

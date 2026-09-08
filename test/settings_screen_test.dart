@@ -179,6 +179,39 @@ void main() {
       expect(find.textContaining('Simulationsmodus'), findsWidgets);
     });
 
+    testWidgets('billing provider selection is combined with credentials fields and Live badge is removed',
+        (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(1080, 5000);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+
+      final provider = ECLProvider(autoLoadDatabase: false);
+
+      await tester.pumpWidget(buildSettingsScreen(provider));
+      await tester.pumpAndSettle();
+
+      // Ensure 'Live' badge is removed and NOT present
+      expect(find.text('Live'), findsNothing);
+
+      // Initially Brunata is selected: its credentials form is rendered inline
+      expect(find.text('Brunata Portal-Zugang'), findsOneWidget);
+      expect(find.text('Kundennummer / Benutzername'), findsOneWidget);
+      expect(find.text('Kennwort / Passwort'), findsOneWidget);
+      expect(find.text('Portal-URL / Endpunkt (optional)'), findsOneWidget);
+      expect(find.text('Brunata Hamburg Daten abrufen'), findsOneWidget);
+
+      // Tap KALO provider
+      await tester.tap(find.text('KALO (Kalorimeta)'));
+      await tester.pumpAndSettle();
+
+      expect(provider.selectedBillingId, 'kalo');
+      // Brunata credentials collapsed, KALO credentials expanded inline
+      expect(find.text('Brunata Portal-Zugang'), findsNothing);
+      expect(find.text('KALO Bewohnerportal-Zugang'), findsOneWidget);
+      expect(find.text('E-Mail / Bewohner-ID / Kundennummer'), findsOneWidget);
+      expect(find.text('KALO (Kalorimeta) Daten abrufen'), findsOneWidget);
+    });
+
     testWidgets('displays realistic energy carrier chips, allows switching and user overwrite',
         (WidgetTester tester) async {
       tester.view.physicalSize = const Size(1080, 5000);
