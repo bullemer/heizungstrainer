@@ -8,6 +8,7 @@ import 'package:heizungstrainer/screens/home_screen.dart';
 import 'package:heizungstrainer/screens/community_screen.dart';
 import 'package:heizungstrainer/screens/backup_screen.dart';
 import 'package:heizungstrainer/screens/log_screen.dart';
+import 'package:heizungstrainer/widgets/app_top_status_bar.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -147,9 +148,23 @@ class _MainShellState extends State<MainShell> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: IndexedStack(
-        index: _selectedIndex,
-        children: _screens,
+      body: SafeArea(
+        bottom: false,
+        child: Column(
+          children: [
+            const AppTopStatusBar(),
+            Expanded(
+              child: MediaQuery.removePadding(
+                context: context,
+                removeTop: true,
+                child: IndexedStack(
+                  index: _selectedIndex,
+                  children: _screens,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _selectedIndex,

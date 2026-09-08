@@ -292,6 +292,21 @@ class DatabaseService {
     }
   }
 
+  /// Returns the timestamp of the last successful billing data sync, or null if never synced.
+  Future<DateTime?> getLastBillingSyncTime() async {
+    final db = await database;
+    final rows = await db.query(
+      'brunata_cache',
+      columns: ['updated_at'],
+      where: 'key = ?',
+      whereArgs: ['latest'],
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    final updatedAt = rows.first['updated_at'] as int;
+    return DateTime.fromMillisecondsSinceEpoch(updatedAt);
+  }
+
   // ──────────────────────────────────────────────────────────────────────────
   // Activity and Diagnostic Logging
   // ──────────────────────────────────────────────────────────────────────────

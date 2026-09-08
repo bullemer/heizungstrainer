@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'package:heizungstrainer/providers/ecl_provider.dart';
+import 'package:heizungstrainer/widgets/app_top_status_bar.dart';
 
 /// Connection & auto-discovery screen.
 ///
@@ -83,14 +84,19 @@ class _ConnectionScreenState extends State<ConnectionScreen>
               ),
             ),
             child: SafeArea(
-              child: Center(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.symmetric(horizontal: 32),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      // ── Logo / Icon ──────────────────────────────
-                      _buildHeader(colorScheme, provider),
+              child: Column(
+                children: [
+                  const AppTopStatusBar(),
+                  Expanded(
+                    child: Center(
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.symmetric(horizontal: 32),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const SizedBox(height: 16),
+                            // ── Logo / Icon ──────────────────────────────
+                            _buildHeader(colorScheme, provider),
                       const SizedBox(height: 48),
 
                       // ── Status Card ──────────────────────────────
@@ -111,15 +117,18 @@ class _ConnectionScreenState extends State<ConnectionScreen>
 
                       // ── Home-network-only notice ─────────────────
                       _buildNetworkNotice(theme, colorScheme),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),
-            ),
-          );
-        },
-      ),
-    );
+            ],
+          ),
+        ),
+      );
+    },
+  ),
+);
   }
 
   Widget _buildHeader(ColorScheme colorScheme, ECLProvider provider) {

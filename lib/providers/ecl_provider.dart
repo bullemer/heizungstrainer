@@ -84,6 +84,7 @@ class ECLProvider extends ChangeNotifier {
   BrunataSyncState _brunataSyncState = BrunataSyncState.idle;
   BrunataMeterData? _brunataData;
   String? _brunataSyncError;
+  DateTime? _lastBillingSyncTime;
 
   /// Maximum number of historical readings to keep per parameter.
   static const int _maxHistoryLength = 60; // ~10 minutes at 10s polling
@@ -165,9 +166,28 @@ class ECLProvider extends ChangeNotifier {
   BrunataSyncState get brunataSyncState => _brunataSyncState;
   BrunataMeterData? get brunataData => _brunataData;
   String? get brunataSyncError => _brunataSyncError;
+  DateTime? get lastBillingSyncTime => _lastBillingSyncTime;
+  bool get hasBillingSynced => _lastBillingSyncTime != null;
   bool get isBrunataSyncing => _brunataSyncState != BrunataSyncState.idle &&
       _brunataSyncState != BrunataSyncState.complete &&
       _brunataSyncState != BrunataSyncState.error;
+
+  void setLastBillingSyncTime(DateTime? time) {
+    _lastBillingSyncTime = time;
+    notifyListeners();
+  }
+
+  @visibleForTesting
+  void setConnectedForTesting({
+    String? ip,
+    String? errorMessage,
+    ECLConnectionState state = ECLConnectionState.connected,
+  }) {
+    _controllerIp = ip;
+    _errorMessage = errorMessage;
+    _connectionState = state;
+    notifyListeners();
+  }
 
   /// Returns the trend history for a parameter as a list of display values.
   List<double> getHistory(ECLParameter parameter) {
@@ -546,6 +566,12 @@ class ECLProvider extends ChangeNotifier {
         } else {
           _brunataData = cachedBrunata;
         }
+        notifyListeners();
+      }
+
+      final cachedSyncTime = await _databaseService.getLastBillingSyncTime();
+      if (cachedSyncTime != null) {
+        _lastBillingSyncTime = cachedSyncTime;
         notifyListeners();
       }
     } catch (e) {
@@ -1260,6 +1286,7 @@ class ECLProvider extends ChangeNotifier {
         _brunataData = result.data;
         _brunataSyncState = BrunataSyncState.complete;
         _brunataSyncError = null;
+        _lastBillingSyncTime = DateTime.now();
         await _databaseService.cacheBrunataData(result.data!);
 
         _logService.logBilling(
