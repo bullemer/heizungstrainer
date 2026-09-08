@@ -33,8 +33,9 @@ class _CommunityScreenState extends State<CommunityScreen> {
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<ECLProvider>();
-    final data = provider.brunataData ?? BrunataMeterData.demo();
+    final data = provider.brunataData;
     final isSyncing = provider.isBrunataSyncing;
+    final billingName = provider.currentBillingDescriptor.name;
 
     return Scaffold(
       backgroundColor: _background,
@@ -60,12 +61,12 @@ class _CommunityScreenState extends State<CommunityScreen> {
           else
             IconButton(
               icon: const Icon(Icons.sync_rounded, color: _accentLight),
-              tooltip: 'Mit Brunata abgleichen',
+              tooltip: 'Mit $billingName abgleichen',
               onPressed: () => provider.syncBrunataData(),
             ),
           IconButton(
             icon: const Icon(Icons.settings_outlined, color: _textSecondary),
-            tooltip: 'Brunata Zugangsdaten & Tarif',
+            tooltip: '$billingName Zugangsdaten & Tarif',
             onPressed: () {
               Navigator.push(
                 context,
@@ -75,61 +76,162 @@ class _CommunityScreenState extends State<CommunityScreen> {
           ),
         ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
-        children: [
-          // ── Sync Banner (if syncing or error) ─────────────────────────
-          if (provider.brunataSyncError != null)
-            _buildSyncErrorBanner(provider.brunataSyncError!),
+      body: data == null
+          ? _buildUnsyncedEmptyState(context, provider)
+          : ListView(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+              children: [
+                // ── Sync Banner (if syncing or error) ─────────────────────────
+                if (provider.brunataSyncError != null)
+                  _buildSyncErrorBanner(provider.brunataSyncError!, billingName),
 
-          // ── Efficiency Headline Benchmark ─────────────────────────────
-          _buildBenchmarkCard(data),
-          const SizedBox(height: 14),
+                // ── Efficiency Headline Benchmark ─────────────────────────────
+                _buildBenchmarkCard(data),
+                const SizedBox(height: 14),
 
-          // ── Weather-Adjustment / HGT Note ─────────────────────────────
-          _buildWeatherNormalizationNote(),
-          const SizedBox(height: 16),
+                // ── Weather-Adjustment / HGT Note ─────────────────────────────
+                _buildWeatherNormalizationNote(),
+                const SizedBox(height: 16),
 
-          // ── Per-Medium YTD Summary ────────────────────────────────────
-          Row(
-            children: [
-              Expanded(
-                child: _MediumSummaryCard(
-                  icon: Icons.local_fire_department_rounded,
-                  label: 'Heizung',
-                  ytd: data.heatingYtdActual,
-                  projection: data.heatingProjection,
-                  price: data.pricePerKwh,
-                  accent: const Color(0xFFFF7043),
+                // ── Per-Medium YTD Summary ────────────────────────────────────
+                Row(
+                  children: [
+                    Expanded(
+                      child: _MediumSummaryCard(
+                        icon: Icons.local_fire_department_rounded,
+                        label: 'Heizung',
+                        ytd: data.heatingYtdActual,
+                        projection: data.heatingProjection,
+                        price: data.pricePerKwh,
+                        accent: const Color(0xFFFF7043),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _MediumSummaryCard(
+                        icon: Icons.water_drop_rounded,
+                        label: 'Warmwasser',
+                        ytd: data.warmWaterYtdActual,
+                        projection: data.warmWaterProjection,
+                        price: data.pricePerKwh,
+                        accent: const Color(0xFF42A5F5),
+                        isMetered: data.hasWarmWater,
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _MediumSummaryCard(
-                  icon: Icons.water_drop_rounded,
-                  label: 'Warmwasser',
-                  ytd: data.warmWaterYtdActual,
-                  projection: data.warmWaterProjection,
-                  price: data.pricePerKwh,
-                  accent: const Color(0xFF42A5F5),
-                ),
-              ),
+                const SizedBox(height: 20),
+
+                // ── Filter Chips ──────────────────────────────────────────────
+                _buildFilterTabs(),
+                const SizedBox(height: 16),
+
+                // ── Filtered Charts ───────────────────────────────────────────
+                ..._buildFilteredCharts(data),
+              ],
+            ),
+    );
+  }
+
+  Widget _buildUnsyncedEmptyState(BuildContext context, ECLProvider provider) {
+    final billingName = provider.currentBillingDescriptor.name;
+    final isSyncing = provider.isBrunataSyncing;
+
+    return Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            if (provider.brunataSyncError != null) ...[
+              _buildSyncErrorBanner(provider.brunataSyncError!, billingName),
+              const SizedBox(height: 16),
             ],
-          ),
-          const SizedBox(height: 20),
-
-          // ── Filter Chips ──────────────────────────────────────────────
-          _buildFilterTabs(),
-          const SizedBox(height: 16),
-
-          // ── Filtered Charts ───────────────────────────────────────────
-          ..._buildFilteredCharts(data),
-        ],
+            Container(
+              width: 72,
+              height: 72,
+              decoration: BoxDecoration(
+                color: _accent.withValues(alpha: 0.15),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.cloud_sync_outlined,
+                size: 36,
+                color: _accentLight,
+              ),
+            ),
+            const SizedBox(height: 20),
+            const Text(
+              'Noch keine Abrechnungsdaten',
+              style: TextStyle(
+                color: _textPrimary,
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              'Synchronisiere die Verbrauchsdaten mit $billingName, um den Liegenschafts-Vergleich, Vorjahreswerte und Monatsanalysen anzuzeigen.',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: _textSecondary,
+                fontSize: 13.5,
+                height: 1.4,
+              ),
+            ),
+            const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: isSyncing ? null : () => provider.syncBrunataData(),
+                icon: isSyncing
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Icon(Icons.sync_rounded),
+                label: Text(
+                    isSyncing ? 'Synchronisiere…' : 'Jetzt mit $billingName abgleichen'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: _accent,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                );
+              },
+              icon: const Icon(Icons.key_rounded, size: 18),
+              label: const Text('Zugangsdaten prüfen / anpassen'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: _textSecondary,
+                side: const BorderSide(color: _border),
+                padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildSyncErrorBanner(String error) {
+  Widget _buildSyncErrorBanner(String error, String providerName) {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -144,7 +246,7 @@ class _CommunityScreenState extends State<CommunityScreen> {
           const SizedBox(width: 10),
           Expanded(
             child: Text(
-              'Brunata Sync: $error (Demo-Daten aktiv)',
+              '$providerName Sync: $error',
               style: const TextStyle(color: Color(0xFFEF5350), fontSize: 12),
             ),
           ),
@@ -155,8 +257,33 @@ class _CommunityScreenState extends State<CommunityScreen> {
 
   Widget _buildBenchmarkCard(BrunataMeterData data) {
     final diff = data.communityComparisonPercentage;
-    final isBetter = diff <= 0;
-    final badgeColor = isBetter ? _green : _orange;
+    final isNeutral = diff.abs() < 0.05;
+    final isBetter = diff < 0;
+    final badgeColor = isNeutral
+        ? const Color(0xFF64B5F6)
+        : (isBetter ? _green : _orange);
+
+    final badgeText = isNeutral
+        ? 'Im Schnitt'
+        : (isBetter ? 'Vorbildlich' : 'Optimierbar');
+
+    final diffText = isNeutral
+        ? '0.0%'
+        : (isBetter
+            ? '${diff.abs().toStringAsFixed(1)}%'
+            : '+${diff.toStringAsFixed(1)}%');
+
+    final comparisonText = isNeutral
+        ? 'im Liegenschafts-Durchschnitt'
+        : (isBetter
+            ? 'unter dem Gebäude-Durchschnitt'
+            : 'über dem Gebäude-Durchschnitt');
+
+    final explanationText = isNeutral
+        ? 'Deine Wohnung liegt genau im Durchschnitt der Liegenschaft.'
+        : (isBetter
+            ? 'Deine Wohnung verbraucht ${diff.abs().toStringAsFixed(1)}% weniger Wärmeenergie als der Liegenschafts-Durchschnitt.'
+            : 'Deine Wohnung liegt ${diff.toStringAsFixed(1)}% über dem Schnitt der Liegenschaft. Eine Absenkung der Heizkurve um 1–2 Stufen kann spürbar sparen.');
 
     return Container(
       padding: const EdgeInsets.all(18),
@@ -195,7 +322,7 @@ class _CommunityScreenState extends State<CommunityScreen> {
                   border: Border.all(color: badgeColor.withValues(alpha: 0.35)),
                 ),
                 child: Text(
-                  isBetter ? 'Vorbildlich' : 'Optimierbar',
+                  badgeText,
                   style: TextStyle(
                     color: badgeColor,
                     fontWeight: FontWeight.bold,
@@ -211,9 +338,7 @@ class _CommunityScreenState extends State<CommunityScreen> {
             textBaseline: TextBaseline.alphabetic,
             children: [
               Text(
-                isBetter
-                    ? '${diff.abs().toStringAsFixed(1)}%'
-                    : '+${diff.toStringAsFixed(1)}%',
+                diffText,
                 style: TextStyle(
                   fontSize: 32,
                   fontWeight: FontWeight.w800,
@@ -223,9 +348,7 @@ class _CommunityScreenState extends State<CommunityScreen> {
               ),
               const SizedBox(width: 8),
               Text(
-                isBetter
-                    ? 'unter dem Gebäude-Durchschnitt'
-                    : 'über dem Gebäude-Durchschnitt',
+                comparisonText,
                 style: const TextStyle(
                   fontSize: 13.5,
                   fontWeight: FontWeight.w500,
@@ -236,9 +359,7 @@ class _CommunityScreenState extends State<CommunityScreen> {
           ),
           const SizedBox(height: 8),
           Text(
-            isBetter
-                ? 'Deine Wohnung verbraucht spürbar weniger Wärmeenergie als die 23 Vergleichswohnungen der Liegenschaft.'
-                : 'Deine Wohnung liegt über dem Schnitt der 23 Vergleichswohnungen. Eine Absenkung der Heizkurve um 1–2 Stufen kann spürbar sparen.',
+            explanationText,
             style: const TextStyle(
               fontSize: 12.5,
               color: _textSecondary,
@@ -323,6 +444,56 @@ class _CommunityScreenState extends State<CommunityScreen> {
     }
 
     if (charts.isEmpty) {
+      if (_selectedFilterIndex == 3 && !data.hasWarmWater) {
+        return [
+          Container(
+            margin: const EdgeInsets.symmetric(vertical: 20),
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: _card,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: _border),
+            ),
+            child: Column(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF42A5F5).withValues(alpha: 0.12),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.water_drop_outlined,
+                    size: 32,
+                    color: Color(0xFF42A5F5),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'Keine Warmwasserdaten erfasst',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.bold,
+                    color: _textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Im Brunata-Portal sind für diese Wohneinheit keine separaten Warmwasserzähler registriert. '
+                  'Die Warmwasseraufbereitung erfolgt in dieser Liegenschaft in der Regel dezentral (z. B. elektrischer Durchlauferhitzer) '
+                  'oder wird ohne getrennte Zähler abgerechnet.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    color: _textSecondary,
+                    height: 1.4,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ];
+      }
       return [
         const Center(
           child: Padding(
@@ -354,6 +525,7 @@ class _MediumSummaryCard extends StatelessWidget {
     required this.projection,
     required this.price,
     required this.accent,
+    this.isMetered = true,
   });
 
   final IconData icon;
@@ -362,6 +534,7 @@ class _MediumSummaryCard extends StatelessWidget {
   final double projection;
   final double price;
   final Color accent;
+  final bool isMetered;
 
   @override
   Widget build(BuildContext context) {
@@ -377,49 +550,97 @@ class _MediumSummaryCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              Icon(icon, color: accent, size: 18),
+              Icon(icon,
+                  color: isMetered ? accent : const Color(0xFF8E8E9A), size: 18),
               const SizedBox(width: 6),
-              Text(
-                label,
-                style: const TextStyle(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 13.5,
-                  color: Color(0xFFFFFFFF),
+              Expanded(
+                child: Text(
+                  label,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13.5,
+                    color: Color(0xFFFFFFFF),
+                  ),
                 ),
               ),
+              if (!isMetered)
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: const Text(
+                    'Dezentral',
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: Color(0xFFB0B0BC),
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
             ],
           ),
           const SizedBox(height: 14),
-          Text(
-            '${_fmtKwh(ytd)} kWh',
-            style: const TextStyle(
-              fontSize: 22,
-              fontWeight: FontWeight.bold,
-              color: Color(0xFFFFFFFF),
-            ),
-          ),
-          Text(
-            'bisher · ≈ ${_fmtEur(ytd * price)}',
-            style: const TextStyle(
-              fontSize: 11.5,
-              color: Color(0xFFB0B0BC),
-            ),
-          ),
-          if (projection > 0) ...[
-            const SizedBox(height: 8),
+          if (isMetered) ...[
             Text(
-              'Prognose ${_fmtKwh(projection)} kWh',
-              style: TextStyle(
-                fontSize: 12,
-                color: accent,
-                fontWeight: FontWeight.w600,
+              '${_fmtKwh(ytd)} kWh',
+              style: const TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFFFFFFFF),
               ),
             ),
             Text(
-              '≈ ${_fmtEur(projection * price)}',
+              'bisher · ≈ ${_fmtEur(ytd * price)}',
               style: const TextStyle(
                 fontSize: 11.5,
                 color: Color(0xFFB0B0BC),
+              ),
+            ),
+            if (projection > 0) ...[
+              const SizedBox(height: 8),
+              Text(
+                'Prognose ${_fmtKwh(projection)} kWh',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: accent,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              Text(
+                '≈ ${_fmtEur(projection * price)}',
+                style: const TextStyle(
+                  fontSize: 11.5,
+                  color: Color(0xFFB0B0BC),
+                ),
+              ),
+            ],
+          ] else ...[
+            const Text(
+              'Nicht erfasst',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFFB0B0BC),
+              ),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Kein Zähler im Portal',
+              style: TextStyle(
+                fontSize: 11.5,
+                color: Color(0xFF8E8E9A),
+              ),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'Nur Heizung wird über Brunata abgerechnet.',
+              style: TextStyle(
+                fontSize: 10.5,
+                color: Color(0xFF70707D),
+                height: 1.25,
               ),
             ),
           ],

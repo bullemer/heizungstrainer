@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 
+import 'package:heizungstrainer/models/brunata_chart.dart';
 import 'package:heizungstrainer/models/brunata_meter_data.dart';
 import 'package:heizungstrainer/models/configuration_backup.dart';
 import 'package:heizungstrainer/providers/ecl_provider.dart';
@@ -139,6 +140,75 @@ void main() {
       expect(updated.currentBillingPeriodCost, demo.consumedKwh * 0.15);
       expect(updated.consumedKwh, demo.consumedKwh);
     });
+
+    test('calculateCommunityComparisonPercentage computes accurate diff for demo charts', () {
+      final demo = BrunataMeterData.demo();
+      final diff = calculateCommunityComparisonPercentage(demo.charts);
+      expect(diff, isNotNull);
+      expect(diff, closeTo(-22.1, 0.1));
+    });
+
+    test('calculateCommunityComparisonPercentage handles real scraped Brunata Hamburg structure', () {
+      final realCharts = [
+        const BrunataChart(
+          source: 'liegenschaft_heizung',
+          title: 'Liegenschaftsvergleich Heizung',
+          subtitle: 'Ausgewählter Abrechnungszeitraum: 01.01.2026 - 31.12.2026',
+          unit: 'Verbrauch in kWh je m²',
+          categories: ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'],
+          series: [
+            BrunataChartSeries(
+              name: 'Durchschnitt der Liegenschaft',
+              values: [10.197, 8.497, 5.187, 3.81, 2.492, 1.835, 1.75, 1.789, 1.705, 4.548, 6.824, 9.098],
+              extrapolated: [false, false, false, false, false, false, false, false, true, true, true, true],
+            ),
+            BrunataChartSeries(
+              name: 'Carsten Bullemer',
+              values: [6.911, 7.726, 5.841, 4.798, 3.229, 1.786, 1.412, 1.703, 1.641, 4.382, 6.573, 8.764],
+              extrapolated: [false, false, false, false, false, false, false, false, true, true, true, true],
+            ),
+          ],
+        ),
+      ];
+
+      final diff = calculateCommunityComparisonPercentage(realCharts);
+      expect(diff, isNotNull);
+      // Carsten: 33.406 vs Avg: 35.559 -> (33.406 - 35.559) / 35.559 = -6.05%
+      expect(diff!, lessThan(0));
+      expect(diff, closeTo(-6.0, 0.2));
+    });
+
+    test('BrunataMeterData.fromJson auto-recomputes communityComparisonPercentage if 0.0 and charts exist', () {
+      final demo = BrunataMeterData.demo();
+      final json = demo.toJson();
+      json['communityComparisonPercentage'] = 0.0;
+
+      final restored = BrunataMeterData.fromJson(json);
+      expect(restored.communityComparisonPercentage, closeTo(-22.1, 0.1));
+    });
+
+    test('hasWarmWater returns false when apartment has no hot water meters', () {
+      final dataNoHotWater = BrunataMeterData(
+        currentBillingPeriodCost: 804.25,
+        consumedKwh: 6434,
+        communityComparisonPercentage: -6.0,
+        periodStart: DateTime(2026, 1, 1),
+        periodEnd: DateTime(2026, 12, 31),
+        pricePerKwh: 0.125,
+        heatingYtdActual: 6434,
+        heatingProjection: 10548,
+        warmWaterYtdActual: 0,
+        warmWaterProjection: 0,
+        charts: const [],
+      );
+
+      expect(dataNoHotWater.hasWarmWater, isFalse);
+    });
+
+    test('hasWarmWater returns true when warm water data is available', () {
+      final demo = BrunataMeterData.demo();
+      expect(demo.hasWarmWater, isTrue);
+    });
   });
 
   group('Widget Tests for P2 Screens', () {
@@ -168,9 +238,35 @@ void main() {
       provider.dispose();
     });
 
-    testWidgets('CommunityScreen renders benchmark, weather note and charts',
+    testWidgets('CommunityScreen renders un-synced state when data is null',
         (tester) async {
       final provider = ECLProvider();
+
+      await tester.pumpWidget(
+        ChangeNotifierProvider.value(
+          value: provider,
+          child: const MaterialApp(
+            home: CommunityScreen(),
+          ),
+        ),
+      );
+
+      await tester.pump();
+
+      expect(find.text('Community Vergleich'), findsOneWidget);
+      expect(find.text('Noch keine Abrechnungsdaten'), findsOneWidget);
+      expect(find.textContaining('Synchronisiere die Verbrauchsdaten'),
+          findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      provider.dispose();
+    });
+
+    testWidgets(
+        'CommunityScreen renders benchmark, weather note and charts when data present',
+        (tester) async {
+      final provider = ECLProvider();
+      provider.setBrunataDataForTesting(BrunataMeterData.demo());
 
       await tester.pumpWidget(
         ChangeNotifierProvider.value(

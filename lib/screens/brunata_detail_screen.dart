@@ -68,6 +68,7 @@ class BrunataDetailScreen extends StatelessWidget {
                   projection: data.warmWaterProjection,
                   price: data.pricePerKwh,
                   accent: const Color(0xFF42A5F5),
+                  isMetered: data.hasWarmWater,
                 ),
               ),
             ],
@@ -149,6 +150,7 @@ class _SummaryCard extends StatelessWidget {
     required this.projection,
     required this.price,
     required this.accent,
+    this.isMetered = true,
   });
 
   final IconData icon;
@@ -157,6 +159,7 @@ class _SummaryCard extends StatelessWidget {
   final double projection;
   final double price;
   final Color accent;
+  final bool isMetered;
 
   @override
   Widget build(BuildContext context) {
@@ -172,46 +175,95 @@ class _SummaryCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              Icon(icon, color: accent, size: 18),
+              Icon(icon,
+                  color: isMetered ? accent : BrunataDetailScreen._textMuted,
+                  size: 18),
               const SizedBox(width: 6),
-              Text(
-                label,
-                style: const TextStyle(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 13.5,
-                  color: BrunataDetailScreen._textPrimary,
+              Expanded(
+                child: Text(
+                  label,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13.5,
+                    color: BrunataDetailScreen._textPrimary,
+                  ),
                 ),
               ),
+              if (!isMetered)
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: const Text(
+                    'Dezentral',
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: BrunataDetailScreen._textMuted,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
             ],
           ),
           const SizedBox(height: 14),
-          Text(
-            '${_fmtKwh(ytd)} kWh',
-            style: const TextStyle(
-              fontSize: 22,
-              fontWeight: FontWeight.bold,
-              color: BrunataDetailScreen._textPrimary,
-            ),
-          ),
-          Text(
-            'bisher · ≈ ${_fmtEur(ytd * price)}',
-            style: const TextStyle(
-                fontSize: 11.5, color: BrunataDetailScreen._textMuted),
-          ),
-          if (projection > 0) ...[
-            const SizedBox(height: 10),
+          if (isMetered) ...[
             Text(
-              'Hochrechnung ${_fmtKwh(projection)} kWh',
-              style: TextStyle(
-                fontSize: 12,
-                color: accent.withValues(alpha: 0.95),
-                fontWeight: FontWeight.w600,
+              '${_fmtKwh(ytd)} kWh',
+              style: const TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+                color: BrunataDetailScreen._textPrimary,
               ),
             ),
             Text(
-              '≈ ${_fmtEur(projection * price)}',
+              'bisher · ≈ ${_fmtEur(ytd * price)}',
               style: const TextStyle(
                   fontSize: 11.5, color: BrunataDetailScreen._textMuted),
+            ),
+            if (projection > 0) ...[
+              const SizedBox(height: 10),
+              Text(
+                'Hochrechnung ${_fmtKwh(projection)} kWh',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: accent.withValues(alpha: 0.95),
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              Text(
+                '≈ ${_fmtEur(projection * price)}',
+                style: const TextStyle(
+                    fontSize: 11.5, color: BrunataDetailScreen._textMuted),
+              ),
+            ],
+          ] else ...[
+            const Text(
+              'Nicht erfasst',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: BrunataDetailScreen._textMuted,
+              ),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Kein Zähler im Portal',
+              style: TextStyle(
+                fontSize: 11.5,
+                color: BrunataDetailScreen._textMuted,
+              ),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'Nur Heizung wird über das Portal erfasst.',
+              style: TextStyle(
+                fontSize: 10.5,
+                color: Color(0xFF70707D),
+                height: 1.25,
+              ),
             ),
           ],
         ],

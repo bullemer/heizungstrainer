@@ -869,11 +869,15 @@ class BrunataLocalScraperService {
           '(@ $pricePerKwh €/kWh); warm water YTD $warmYtd; '
           '${charts.length} charts parsed');
 
+      final communityDiff =
+          calculateCommunityComparisonPercentage(charts) ?? 0.0;
+      debugPrint('[Brunata] Community comparison: $communityDiff%');
+
       final now = DateTime.now();
       return BrunataSyncResult.success(BrunataMeterData(
         currentBillingPeriodCost: cost,
         consumedKwh: heatingYtd,
-        communityComparisonPercentage: 0, // Calculated elsewhere.
+        communityComparisonPercentage: communityDiff,
         periodStart: DateTime(now.year, 1, 1),
         periodEnd: DateTime(now.year, 12, 31),
         pricePerKwh: pricePerKwh,

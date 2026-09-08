@@ -10,6 +10,7 @@ import 'package:heizungstrainer/models/brunata_meter_data.dart';
 import 'package:heizungstrainer/screens/brunata_detail_screen.dart';
 import 'package:heizungstrainer/services/brunata_local_scraper_service.dart';
 import 'package:heizungstrainer/services/heating_analytics_service.dart';
+import 'package:heizungstrainer/widgets/app_top_status_bar.dart';
 import 'package:heizungstrainer/widgets/heating_curve_chart.dart';
 
 /// The full "Analyse & Sparpotenzial" section.
@@ -27,6 +28,8 @@ class AnalysisSection extends StatelessWidget {
   final BrunataSyncState brunataSyncState;
   final String? brunataSyncError;
   final VoidCallback? onSyncBrunata;
+  final DateTime? lastBillingSyncTime;
+  final String? billingProviderName;
 
   const AnalysisSection({
     super.key,
@@ -38,15 +41,17 @@ class AnalysisSection extends StatelessWidget {
     this.brunataSyncState = BrunataSyncState.idle,
     this.brunataSyncError,
     this.onSyncBrunata,
+    this.lastBillingSyncTime,
+    this.billingProviderName,
   });
 
   @override
   Widget build(BuildContext context) {
-    final brunata = brunataData ?? BrunataMeterData.demo();
+    final brunata = brunataData;
     final savings = HeatingAnalyticsService.analyzeSavings(
       currentShift: parallelShift,
       // Use the real synced heating cost; 0 falls back to an estimate.
-      annualBaseCost: brunataData?.currentBillingPeriodCost ?? 0,
+      annualBaseCost: brunata?.currentBillingPeriodCost ?? 0,
     );
 
     return Column(
@@ -84,7 +89,8 @@ class AnalysisSection extends StatelessWidget {
 
         // ── A. Brunata Cost Card (tap to drill down) ────────
         GestureDetector(
-          onTap: (brunata.hasDetail &&
+          onTap: (brunata != null &&
+                  brunata.hasDetail &&
                   brunataSyncState != BrunataSyncState.initializing &&
                   brunataSyncState != BrunataSyncState.loggingIn &&
                   brunataSyncState != BrunataSyncState.navigating &&
@@ -100,7 +106,9 @@ class AnalysisSection extends StatelessWidget {
             syncState: brunataSyncState,
             syncError: brunataSyncError,
             onSync: onSyncBrunata,
-            showDetailHint: brunata.hasDetail,
+            showDetailHint: brunata?.hasDetail ?? false,
+            lastBillingSyncTime: lastBillingSyncTime,
+            billingProviderName: billingProviderName,
           ),
         ),
         const SizedBox(height: 12),
@@ -126,11 +134,13 @@ class AnalysisSection extends StatelessWidget {
 // ═══════════════════════════════════════════════════════════════════════════
 
 class _BrunataCostCard extends StatelessWidget {
-  final BrunataMeterData brunata;
+  final BrunataMeterData? brunata;
   final BrunataSyncState syncState;
   final String? syncError;
   final VoidCallback? onSync;
   final bool showDetailHint;
+  final DateTime? lastBillingSyncTime;
+  final String? billingProviderName;
 
   const _BrunataCostCard({
     required this.brunata,
@@ -138,7 +148,12 @@ class _BrunataCostCard extends StatelessWidget {
     this.syncError,
     this.onSync,
     this.showDetailHint = false,
+    this.lastBillingSyncTime,
+    this.billingProviderName,
   });
+
+  String get _effectiveBillingName =>
+      billingProviderName ?? 'Abrechnungsstelle';
 
   bool get _isSyncing =>
       syncState != BrunataSyncState.idle &&
@@ -162,6 +177,8 @@ class _BrunataCostCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final meterData = brunata;
+
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
@@ -178,14 +195,33 @@ class _BrunataCostCard extends StatelessWidget {
               const Icon(Icons.euro_rounded,
                   color: Color(0xFFFFA726), size: 20),
               const SizedBox(width: 8),
-              const Expanded(
-                child: Text(
-                  'Heizkosten dieses Jahr',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 13.5,
-                    color: Color(0xFFECECF0),
-                  ),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Heizkosten dieses Jahr',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13.5,
+                        color: Color(0xFFECECF0),
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      lastBillingSyncTime != null
+                          ? '$_effectiveBillingName · Letzter Sync: ${AppTopStatusBar.formatSyncTime(lastBillingSyncTime!)}'
+                          : '$_effectiveBillingName · Noch nie synchronisiert',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        color: lastBillingSyncTime != null
+                            ? const Color(0xFF9E9EA8)
+                            : const Color(0xFFFFB74D),
+                      ),
+                    ),
+                  ],
                 ),
               ),
               if (showDetailHint) ...[
@@ -201,21 +237,32 @@ class _BrunataCostCard extends StatelessWidget {
                     color: Color(0xFFFFA726), size: 18),
                 const SizedBox(width: 4),
               ],
-              if (brunata.isAboveCommunityAverage)
+              if (meterData != null &&
+                  meterData.communityComparisonPercentage.abs() >= 0.5)
                 Container(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFFFA726).withValues(alpha: 0.12),
+                    color: (meterData.isAboveCommunityAverage
+                            ? const Color(0xFFFFA726)
+                            : const Color(0xFF66BB6A))
+                        .withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(8),
                     border: Border.all(
-                      color: const Color(0xFFFFA726).withValues(alpha: 0.3),
+                      color: (meterData.isAboveCommunityAverage
+                              ? const Color(0xFFFFA726)
+                              : const Color(0xFF66BB6A))
+                          .withValues(alpha: 0.3),
                     ),
                   ),
                   child: Text(
-                    '⚠️ ${brunata.communityComparisonPercentage.toStringAsFixed(0)}% über Schnitt',
-                    style: const TextStyle(
-                      color: Color(0xFFFFA726),
+                    meterData.isAboveCommunityAverage
+                        ? '⚠️ ${meterData.communityComparisonPercentage.toStringAsFixed(0)}% über Schnitt'
+                        : '🌱 ${meterData.communityComparisonPercentage.abs().toStringAsFixed(0)}% unter Schnitt',
+                    style: TextStyle(
+                      color: meterData.isAboveCommunityAverage
+                          ? const Color(0xFFFFA726)
+                          : const Color(0xFF66BB6A),
                       fontSize: 10.5,
                       fontWeight: FontWeight.w600,
                     ),
@@ -253,15 +300,22 @@ class _BrunataCostCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        '${brunata.currentBillingPeriodCost.toStringAsFixed(2)} €',
+                        meterData != null
+                            ? '${meterData.currentBillingPeriodCost.toStringAsFixed(2)} €'
+                            : '– €',
                         style: const TextStyle(
                           fontSize: 28, fontWeight: FontWeight.bold,
                           color: Color(0xFFECECF0),
                         ),
                       ),
-                      Text('Heizkosten bisher (geschätzt)', style: TextStyle(
-                        fontSize: 11.5, color: Colors.white.withValues(alpha: 0.4),
-                      )),
+                      Text(
+                        meterData != null
+                            ? 'Heizkosten bisher (geschätzt)'
+                            : 'Noch nicht synchronisiert',
+                        style: TextStyle(
+                          fontSize: 11.5, color: Colors.white.withValues(alpha: 0.4),
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -272,15 +326,22 @@ class _BrunataCostCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        '${brunata.consumedKwh.toStringAsFixed(0)} kWh',
+                        meterData != null
+                            ? '${meterData.consumedKwh.toStringAsFixed(0)} kWh'
+                            : '– kWh',
                         style: const TextStyle(
                           fontSize: 22, fontWeight: FontWeight.bold,
                           color: Color(0xFF9E9EA8),
                         ),
                       ),
-                      Text('Heizung Ist-Verbrauch', style: TextStyle(
-                        fontSize: 11.5, color: Colors.white.withValues(alpha: 0.4),
-                      )),
+                      Text(
+                        meterData != null
+                            ? 'Heizung Ist-Verbrauch'
+                            : 'Keine Messwerte vorhanden',
+                        style: TextStyle(
+                          fontSize: 11.5, color: Colors.white.withValues(alpha: 0.4),
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -288,7 +349,9 @@ class _BrunataCostCard extends StatelessWidget {
             ),
             const SizedBox(height: 10),
             Text(
-              '${(brunata.costPerKwh * 100).toStringAsFixed(1)} ct/kWh',
+              meterData != null
+                  ? '${(meterData.costPerKwh * 100).toStringAsFixed(1)} ct/kWh'
+                  : 'Tarif wird nach Synchronisation berechnet',
               style: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.35)),
             ),
           ],
@@ -310,22 +373,70 @@ class _BrunataCostCard extends StatelessWidget {
               ]),
             ),
           ],
-          // Sync button
+          // Sync timestamp info box
           const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.04),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: const Color(0xFF3A3A44).withValues(alpha: 0.6),
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  lastBillingSyncTime != null
+                      ? Icons.cloud_done_outlined
+                      : Icons.warning_amber_rounded,
+                  size: 15,
+                  color: lastBillingSyncTime != null
+                      ? const Color(0xFF81C784)
+                      : const Color(0xFFFFB74D),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    lastBillingSyncTime != null
+                        ? '$_effectiveBillingName: Letzter Sync ${AppTopStatusBar.formatSyncTime(lastBillingSyncTime!)}'
+                        : '$_effectiveBillingName: Noch nie synchronisiert',
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w500,
+                      color: lastBillingSyncTime != null
+                          ? const Color(0xFFB0B0BC)
+                          : const Color(0xFFFFB74D),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+          // Sync button
           SizedBox(
             width: double.infinity,
             child: OutlinedButton.icon(
               onPressed: _isSyncing ? null : onSync,
               icon: _isSyncing
-                  ? const SizedBox(width: 16, height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFFFFA726)))
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Color(0xFFFFA726)),
+                    )
                   : const Icon(Icons.sync_rounded, size: 18),
-              label: Text(_isSyncing ? 'Synchronisiere…' : 'Brunata Portal synchronisieren'),
+              label: Text(_isSyncing
+                  ? 'Synchronisiere…'
+                  : '$_effectiveBillingName synchronisieren'),
               style: OutlinedButton.styleFrom(
                 foregroundColor: const Color(0xFFFFA726),
-                side: BorderSide(color: const Color(0xFFFFA726).withValues(alpha: 0.3)),
+                side: BorderSide(
+                    color: const Color(0xFFFFA726).withValues(alpha: 0.3)),
                 padding: const EdgeInsets.symmetric(vertical: 10),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10)),
               ),
             ),
           ),

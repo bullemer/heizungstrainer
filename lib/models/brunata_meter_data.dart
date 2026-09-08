@@ -57,6 +57,14 @@ class BrunataMeterData {
   /// Whether the user's consumption is above the community average.
   bool get isAboveCommunityAverage => communityComparisonPercentage > 0;
 
+  /// Whether warm water is metered and available in this dataset.
+  /// When false, the property does not have a separate warm water meter
+  /// registered in the billing portal (e.g. decentralized hot water or flat rate).
+  bool get hasWarmWater =>
+      warmWaterYtdActual > 0 ||
+      warmWaterProjection > 0 ||
+      charts.any((c) => c.isWarmWater);
+
   /// Cost per kWh in the current period.
   double get costPerKwh =>
       consumedKwh > 0 ? currentBillingPeriodCost / consumedKwh : 0;
@@ -96,12 +104,27 @@ class BrunataMeterData {
       };
 
   factory BrunataMeterData.fromJson(Map<String, dynamic> json) {
+    var comparisonPct =
+        (json['communityComparisonPercentage'] as num?)?.toDouble() ?? 0.0;
+    final charts = [
+      for (final c in (json['charts'] as List?) ?? const [])
+        BrunataChart.fromJson((c as Map).cast<String, dynamic>()),
+    ];
+
+    // If communityComparisonPercentage was not stored or defaulted to 0,
+    // recompute from harvested Liegenschaft charts if present.
+    if (comparisonPct == 0.0 && charts.isNotEmpty) {
+      final computed = calculateCommunityComparisonPercentage(charts);
+      if (computed != null) {
+        comparisonPct = computed;
+      }
+    }
+
     return BrunataMeterData(
       currentBillingPeriodCost:
           (json['currentBillingPeriodCost'] as num).toDouble(),
       consumedKwh: (json['consumedKwh'] as num).toDouble(),
-      communityComparisonPercentage:
-          (json['communityComparisonPercentage'] as num).toDouble(),
+      communityComparisonPercentage: comparisonPct,
       periodStart: DateTime.parse(json['periodStart'] as String),
       periodEnd: DateTime.parse(json['periodEnd'] as String),
       pricePerKwh: (json['pricePerKwh'] as num?)?.toDouble() ?? 0.128,
@@ -113,10 +136,7 @@ class BrunataMeterData {
           (json['warmWaterYtdActual'] as num?)?.toDouble() ?? 0.0,
       warmWaterProjection:
           (json['warmWaterProjection'] as num?)?.toDouble() ?? 0.0,
-      charts: [
-        for (final c in (json['charts'] as List?) ?? const [])
-          BrunataChart.fromJson((c as Map).cast<String, dynamic>()),
-      ],
+      charts: charts,
     );
   }
 
@@ -142,7 +162,7 @@ class BrunataMeterData {
     return BrunataMeterData(
       currentBillingPeriodCost: 187.50,
       consumedKwh: 1450,
-      communityComparisonPercentage: -14.2,
+      communityComparisonPercentage: -22.1,
       periodStart: DateTime(now.year, 1, 1),
       periodEnd: DateTime(now.year, 12, 31),
       pricePerKwh: 0.12,
@@ -235,4 +255,127 @@ class BrunataMeterData {
       ],
     );
   }
+}
+
+/// Computes the percentage difference between the user's consumption
+/// and the building average from the Liegenschaftsvergleich chart.
+///
+/// Returns:
+/// - negative value (e.g. -6.0) if the user consumed less than average (better).
+/// - positive value (e.g. +15.0) if the user consumed more than average (worse).
+/// - 0.0 if exactly at average.
+/// - null if no comparable Liegenschaft data is found.
+double? calculateCommunityComparisonPercentage(List<BrunataChart> charts) {
+  if (charts.isEmpty) return null;
+
+  // 1. Locate the heating Liegenschaft chart
+  BrunataChart? chart;
+  for (final c in charts) {
+    if (c.source == 'liegenschaft_heizung') {
+      chart = c;
+      break;
+    }
+  }
+  chart ??= charts.cast<BrunataChart?>().firstWhere(
+    (c) =>
+        c != null &&
+        (c.source.contains('liegenschaft') || c.source.contains('building')) &&
+        !c.isWarmWater,
+    orElse: () => null,
+  );
+  chart ??= charts.cast<BrunataChart?>().firstWhere(
+    (c) =>
+        c != null &&
+        (c.title.toLowerCase().contains('liegenschaft') ||
+            c.title.toLowerCase().contains('gebäude') ||
+            c.title.toLowerCase().contains('gebaeude') ||
+            c.title.toLowerCase().contains('vergleich')) &&
+        !c.isWarmWater,
+    orElse: () => null,
+  );
+
+  if (chart == null || chart.series.length < 2) return null;
+
+  // 2. Identify the building average series
+  const avgKeywords = ['durchschnitt', 'schnitt', 'mittel', 'gesamt'];
+  BrunataChartSeries? avgSeries;
+  BrunataChartSeries? userSeries;
+
+  for (final s in chart.series) {
+    final lower = s.name.toLowerCase();
+    if (avgKeywords.any((k) => lower.contains(k))) {
+      avgSeries = s;
+      break;
+    }
+  }
+
+  // 3. Identify user series
+  if (avgSeries != null) {
+    for (final s in chart.series) {
+      if (!identical(s, avgSeries)) {
+        userSeries = s;
+        break;
+      }
+    }
+  } else {
+    // If no series matched avgKeywords, check for user keywords
+    const userKeywords = [
+      'wohnung',
+      'meine',
+      'nutzer',
+      'nutzungseinheit',
+      'kunde',
+      'ich',
+      'ausgewählter',
+      'ausgewaehlter',
+    ];
+    for (final s in chart.series) {
+      final lower = s.name.toLowerCase();
+      if (userKeywords.any((k) => lower.contains(k))) {
+        userSeries = s;
+        break;
+      }
+    }
+    if (userSeries != null) {
+      for (final s in chart.series) {
+        if (!identical(s, userSeries)) {
+          avgSeries = s;
+          break;
+        }
+      }
+    }
+  }
+
+  if (avgSeries == null || userSeries == null) return null;
+
+  // 4. Calculate actual comparison:
+  // Prefer comparing elapsed non-extrapolated months where the user series has
+  // measured values (avoiding comparing an 8-month user YTD to a 12-month avg).
+  double userSum = 0.0;
+  double avgSum = 0.0;
+  final len = userSeries.values.length < avgSeries.values.length
+      ? userSeries.values.length
+      : avgSeries.values.length;
+
+  int actualMonthsCount = 0;
+  for (var i = 0; i < len; i++) {
+    final isUserExtrapolated = userSeries.isExtrapolatedAt(i);
+    // Count months that are actually measured for the user in this period
+    if (!isUserExtrapolated) {
+      userSum += userSeries.values[i];
+      avgSum += avgSeries.values[i];
+      actualMonthsCount++;
+    }
+  }
+
+  // Fallback to total sum if no actual months (or avgSum <= 0)
+  if (actualMonthsCount == 0 || avgSum <= 0) {
+    userSum = userSeries.total;
+    avgSum = avgSeries.total;
+  }
+
+  if (avgSum <= 0) return null;
+
+  final diff = ((userSum - avgSum) / avgSum) * 100.0;
+  return double.parse(diff.toStringAsFixed(1));
 }

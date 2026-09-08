@@ -153,6 +153,9 @@ class HomeScreen extends StatelessWidget {
                   brunataSyncState: provider.brunataSyncState,
                   brunataSyncError: provider.brunataSyncError,
                   onSyncBrunata: provider.syncBrunataData,
+                  lastBillingSyncTime: provider.lastBillingSyncTime,
+                  billingProviderName:
+                      provider.currentBillingDescriptor.name,
                 ),
               ],
             ),

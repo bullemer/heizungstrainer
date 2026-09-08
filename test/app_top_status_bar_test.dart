@@ -8,6 +8,7 @@ import 'package:heizungstrainer/models/brunata_meter_data.dart';
 import 'package:heizungstrainer/providers/ecl_provider.dart';
 import 'package:heizungstrainer/services/database_service.dart';
 import 'package:heizungstrainer/screens/connection_screen.dart';
+import 'package:heizungstrainer/widgets/analysis_section.dart';
 import 'package:heizungstrainer/widgets/app_top_status_bar.dart';
 
 void main() {
@@ -211,11 +212,37 @@ void main() {
       await dbService.cacheBrunataData(meterData);
 
       final cachedSync = await dbService.getLastBillingSyncTime();
-      expect(cachedSync, isNotNull);
       expect(
         DateTime.now().difference(cachedSync!).inSeconds,
         lessThan(5),
       );
     });
+
+    testWidgets('AnalysisSection displays Abrechnungsstelle name and sync timestamp on Heizkosten dieses Jahr card', (tester) async {
+      final syncTime = DateTime(2026, 9, 8, 12, 22);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: AnalysisSection(
+                currentOutdoorTemp: 14.5,
+                currentFlowTemp: 42.0,
+                currentReturnTemp: 34.0,
+                parallelShift: 0.0,
+                brunataData: BrunataMeterData.demo(),
+                lastBillingSyncTime: syncTime,
+                billingProviderName: 'Brunata Hamburg',
+              ),
+            ),
+          ),
+        ),
+      );
+
+      expect(find.text('Heizkosten dieses Jahr'), findsOneWidget);
+      expect(find.textContaining('Brunata Hamburg'), findsAtLeastNWidgets(2));
+      expect(find.textContaining('12:22'), findsAtLeastNWidgets(1));
+    });
   });
 }
+

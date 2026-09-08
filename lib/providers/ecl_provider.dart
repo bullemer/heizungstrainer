@@ -189,6 +189,12 @@ class ECLProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  @visibleForTesting
+  void setBrunataDataForTesting(BrunataMeterData? data) {
+    _brunataData = data;
+    notifyListeners();
+  }
+
   /// Returns the trend history for a parameter as a list of display values.
   List<double> getHistory(ECLParameter parameter) {
     return _history[parameter.id]?.toList() ?? [];
@@ -1304,7 +1310,6 @@ class ECLProvider extends ChangeNotifier {
         _brunataSyncError = result.errorMessage ??
             'Abrechnungs-Synchronisation fehlgeschlagen';
         _brunataSyncState = BrunataSyncState.error;
-        _brunataData ??= BrunataMeterData.demo();
 
         final errLower = _brunataSyncError!.toLowerCase();
         final isAuth = errLower.contains('passwort') ||
@@ -1330,7 +1335,6 @@ class ECLProvider extends ChangeNotifier {
     } catch (e) {
       _brunataSyncError = e.toString();
       _brunataSyncState = BrunataSyncState.error;
-      _brunataData ??= BrunataMeterData.demo();
 
       _logService.logBilling(
         billingId: _selectedBillingId,

@@ -59,7 +59,8 @@ class KaloBillingProvider extends BaseBillingProvider {
     final data = BrunataMeterData(
       currentBillingPeriodCost: totalConsumed * price,
       consumedKwh: totalConsumed,
-      communityComparisonPercentage: -11.2,
+      communityComparisonPercentage:
+          calculateCommunityComparisonPercentage(charts) ?? 0.0,
       periodStart: DateTime(DateTime.now().year, 1, 1),
       periodEnd: DateTime(DateTime.now().year, 12, 31),
       pricePerKwh: price,
