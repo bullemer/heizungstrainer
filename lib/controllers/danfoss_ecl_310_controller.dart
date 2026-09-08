@@ -51,7 +51,7 @@ class DanfossEcl310Controller implements HeatingController {
     int? port,
     Map<String, dynamic>? extraConfig,
   }) async {
-    await _modbusService.connect(host);
+    await _modbusService.connect(host, port: port ?? 502);
   }
 
   @override

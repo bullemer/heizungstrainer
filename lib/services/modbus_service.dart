@@ -49,7 +49,7 @@ class ModbusService {
   /// is cleanly torn down first.
   ///
   /// Throws [ModbusCommunicationException] on failure.
-  Future<void> connect(String ip) async {
+  Future<void> connect(String ip, {int port = 502}) async {
     // Disconnect existing connection when switching targets
     if (_currentIp != null && _currentIp != ip) {
       await disconnect();
@@ -57,6 +57,7 @@ class ModbusService {
 
     _client = ModbusClientTcp(
       ip,
+      serverPort: port,
       unitId: 1,
       connectionMode: ModbusConnectionMode.autoConnectAndKeepConnected,
     );

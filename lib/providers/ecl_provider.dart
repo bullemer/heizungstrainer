@@ -141,13 +141,15 @@ class ECLProvider extends ChangeNotifier {
   BillingProviderDescriptor get currentBillingDescriptor =>
       DeviceRegistry.getBillingProviderDescriptor(_selectedBillingId);
   bool get isSimulatedController =>
-      _selectedControllerId != 'danfoss_ecl_310' &&
-      _selectedControllerId != 'generic_modbus' &&
-      _selectedControllerId != 'bosch_buderus_ems' &&
-      _selectedControllerId != 'viessmann_vicare' &&
-      _selectedControllerId != 'vaillant_ebusd' &&
-      _selectedControllerId != 'weishaupt_wem' &&
-      _selectedControllerId != 'nibe_modbus';
+      _activeController is MockHeatingController ||
+      _controllerIp?.contains('Simulation') == true ||
+      (_selectedControllerId != 'danfoss_ecl_310' &&
+          _selectedControllerId != 'generic_modbus' &&
+          _selectedControllerId != 'bosch_buderus_ems' &&
+          _selectedControllerId != 'viessmann_vicare' &&
+          _selectedControllerId != 'vaillant_ebusd' &&
+          _selectedControllerId != 'weishaupt_wem' &&
+          _selectedControllerId != 'nibe_modbus');
   bool get isGenericModbusController =>
       _selectedControllerId == 'generic_modbus';
   bool get isBoschBuderusEmsController =>
@@ -880,7 +882,9 @@ class ECLProvider extends ChangeNotifier {
   Future<void> refreshReadings() async {
     if (!isConnected) return;
 
-    if (_selectedControllerId != 'danfoss_ecl_310') {
+    if (_activeController is MockHeatingController ||
+        _controllerIp?.contains('Simulation') == true ||
+        _selectedControllerId != 'danfoss_ecl_310') {
       try {
         final telemetry = await _activeController.readTelemetry();
         _readings[ECLRegisters.outdoorTemp.id] = ECLReading(
