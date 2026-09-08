@@ -77,7 +77,11 @@ void main() {
     setUp(() async {
       final db = await databaseFactoryFfi.openDatabase(inMemoryDatabasePath);
       dbService = DatabaseService(preOpenedDb: db);
-      logService = ActivityLogService(databaseService: dbService, enablePersistence: true);
+      logService = ActivityLogService(
+        databaseService: dbService,
+        enablePersistence: true,
+        enableRemoteDispatch: false,
+      );
       await logService.init();
     });
 

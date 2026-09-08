@@ -30,7 +30,10 @@ void main() {
 
     setUp(() async {
       FlutterSecureStorage.setMockInitialValues({});
-      logService = ActivityLogService(enablePersistence: false);
+      logService = ActivityLogService(
+        enablePersistence: false,
+        enableRemoteDispatch: false,
+      );
       provider = ECLProvider(
         logService: logService,
         autoLoadDatabase: false,

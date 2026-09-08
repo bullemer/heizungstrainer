@@ -17,6 +17,7 @@ class ActivityLogService extends ChangeNotifier {
 
   final DatabaseService _databaseService;
   final bool enablePersistence;
+  final bool enableRemoteDispatch;
   final List<ActivityLogEntry> _recentEntries = [];
   bool _isInitialized = false;
 
@@ -25,6 +26,7 @@ class ActivityLogService extends ChangeNotifier {
   ActivityLogService({
     DatabaseService? databaseService,
     this.enablePersistence = true,
+    this.enableRemoteDispatch = true,
   }) : _databaseService = databaseService ?? DatabaseService.instance;
 
   /// Visible for testing to reset or mock the singleton instance.
@@ -328,6 +330,9 @@ class ActivityLogService extends ChangeNotifier {
     notifyListeners();
   }
 
+  static const String defaultBackofficeEndpoint =
+      'http://116.203.233.103:8000/api/v1/telemetry/diagnostics';
+
   /// Prepares and sends the diagnostic bundle to the backoffice endpoint.
   /// User acknowledgment is verified before dispatching.
   Future<bool> sendDiagnosticReport({
@@ -344,22 +349,48 @@ class ActivityLogService extends ChangeNotifier {
     // Mark current logs as acknowledged
     await markAllAcknowledged();
 
-    // The backoffice backend endpoint will be wired in a subsequent phase.
-    // For now, validate payload structure and log readiness.
     final jsonString = jsonEncode(diagnosticPayload);
+    final targetUrl = backofficeUrl ?? defaultBackofficeEndpoint;
+    bool dispatchSuccess = false;
+    String? dispatchStatus;
+
+    if (enableRemoteDispatch && targetUrl.isNotEmpty) {
+      // Dispatch to backoffice API via HttpClient
+      try {
+        final uri = Uri.parse(targetUrl);
+        final client = HttpClient()..connectionTimeout = const Duration(seconds: 8);
+        final request = await client.postUrl(uri);
+        request.headers.set(HttpHeaders.contentTypeHeader, 'application/json; charset=utf-8');
+        request.headers.set('X-API-Key', 'ht_backoffice_secret_2026');
+        request.write(jsonString);
+        final response = await request.close();
+        dispatchSuccess = response.statusCode >= 200 && response.statusCode < 300;
+        dispatchStatus = 'HTTP ${response.statusCode}';
+      } catch (e) {
+        debugPrint('[ActivityLogService] Backoffice dispatch network notice: $e');
+        dispatchStatus = 'Offline/Timeout ($e)';
+      }
+    } else {
+      dispatchSuccess = true;
+      dispatchStatus = 'Local Only / Dispatch Disabled';
+    }
+
     debugPrint(
-      '[ActivityLogService] Diagnostic report prepared (${jsonString.length} bytes). '
-      'Ready for backoffice dispatch to: ${backofficeUrl ?? "default-backoffice"}',
+      '[ActivityLogService] Diagnostic report dispatched to $targetUrl: $dispatchStatus',
     );
 
     await log(ActivityLogEntry.create(
-      level: ActivityLogLevel.success,
+      level: dispatchSuccess ? ActivityLogLevel.success : ActivityLogLevel.info,
       category: ActivityLogCategory.system,
       action: 'DIAGNOSTIC_REPORT_EXPORTED',
-      message: 'Diagnosebericht vom Nutzer bestätigt und exportiert.',
+      message: dispatchSuccess
+          ? 'Diagnosebericht erfolgreich an Backoffice übermittelt ($dispatchStatus).'
+          : 'Diagnosebericht lokal bestätigt ($dispatchStatus).',
       details: {
         'bytes': jsonString.length,
         'entriesCount': (diagnosticPayload['recentActivity'] as List?)?.length ?? 0,
+        'endpoint': targetUrl,
+        'status': dispatchStatus,
       },
       userAcknowledged: true,
     ));
