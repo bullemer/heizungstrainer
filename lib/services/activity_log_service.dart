@@ -331,7 +331,7 @@ class ActivityLogService extends ChangeNotifier {
   }
 
   static const String defaultBackofficeEndpoint =
-      'http://116.203.233.103:8000/api/v1/telemetry/diagnostics';
+      'https://bo.heizungstrainer.de/api/v1/telemetry/diagnostics';
 
   /// Prepares and sends the diagnostic bundle to the backoffice endpoint.
   /// User acknowledgment is verified before dispatching.
