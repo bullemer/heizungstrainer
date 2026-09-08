@@ -992,6 +992,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         const SizedBox(height: 8),
                         _buildNibeModbusConfigCard(provider),
                       ],
+                      const SizedBox(height: 14),
+                      const _WireGuardRemoteAccessCard(),
                       const SizedBox(height: 24),
 
                       // ── SECTION 2: BILLING PROVIDER ───────────────
@@ -4531,3 +4533,311 @@ class _SectionHeader extends StatelessWidget {
     );
   }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// WireGuard Remote Access Guide Card
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _WireGuardRemoteAccessCard extends StatefulWidget {
+  const _WireGuardRemoteAccessCard();
+
+  @override
+  State<_WireGuardRemoteAccessCard> createState() => _WireGuardRemoteAccessCardState();
+}
+
+class _WireGuardRemoteAccessCardState extends State<_WireGuardRemoteAccessCard> {
+  bool _isExpanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    const vpnColor = Color(0xFF00BCD4);
+
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFF23232C),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: vpnColor.withValues(alpha: _isExpanded ? 0.45 : 0.25),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header Row (tappable to expand / collapse)
+          InkWell(
+            onTap: () => setState(() => _isExpanded = !_isExpanded),
+            borderRadius: BorderRadius.circular(16),
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Row(
+                children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: vpnColor.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(
+                      Icons.vpn_lock_rounded,
+                      color: vpnColor,
+                      size: 22,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const Text(
+                              'Fernzugriff via FRITZ!Box WireGuard®',
+                              style: TextStyle(
+                                fontSize: 13.5,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFFECECF0),
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 6, vertical: 1.5),
+                              decoration: BoxDecoration(
+                                color: vpnColor.withValues(alpha: 0.18),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: const Text(
+                                'Zero-Cloud',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                  color: vpnColor,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          'Heizung sicher von unterwegs regeln – 100% ohne offene Ports & ohne Cloud-Zwang.',
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            color: Colors.white.withValues(alpha: 0.6),
+                            height: 1.3,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Icon(
+                    _isExpanded
+                        ? Icons.keyboard_arrow_up_rounded
+                        : Icons.keyboard_arrow_down_rounded,
+                    color: Colors.white.withValues(alpha: 0.6),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          // Expanded Content: Step-by-Step Instructions
+          if (_isExpanded) ...[
+            const Divider(color: Color(0xFF33333E), height: 1),
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Security info banner
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF42A5F5).withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: const Color(0xFF42A5F5).withValues(alpha: 0.25),
+                      ),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Icon(
+                          Icons.shield_rounded,
+                          color: Color(0xFF42A5F5),
+                          size: 18,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            'Warum WireGuard VPN? Heizungsregler (z. B. Modbus TCP Port 502) besitzen bauartbedingt keine Authentifizierung. Eine direkte Portweiterleitung im Router wäre ein schweres Sicherheitsrisiko. Mit WireGuard baust du einen abhörsicheren VPN-Tunnel direkt zu deiner FRITZ!Box auf – dein Smartphone befindet sich dann logisch in deinem Heimnetzwerk. 100% sicher und ohne fremde Cloud-Server.',
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              color: Colors.white.withValues(alpha: 0.8),
+                              height: 1.45,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  const Text(
+                    'Einrichtung in 4 einfachen Schritten:',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFFECECF0),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+
+                  // Step 1
+                  _buildStepRow(
+                    stepNumber: '1',
+                    title: 'FRITZ!Box WireGuard® aktivieren',
+                    description:
+                        '1. Öffne im Browser http://fritz.box (FRITZ!OS ab Version 7.50 erforderlich).\n'
+                        '2. Gehe zu „Internet“ > „Freigaben“ > Reiter „VPN (WireGuard®)“.\n'
+                        '3. Klicke auf „Verbindung hinzufügen“ > „Vereinfachte Einrichtung“.\n'
+                        '4. Vergib einen Namen (z. B. „Smartphone Unterwegs“) und klicke auf Fertigstellen. Die FRITZ!Box zeigt einen QR-Code an.',
+                  ),
+                  const SizedBox(height: 12),
+
+                  // Step 2
+                  _buildStepRow(
+                    stepNumber: '2',
+                    title: 'WireGuard App einrichten',
+                    description:
+                        '1. Installiere die kostenlose offizielle App „WireGuard“ (Google Play Store oder Apple App Store).\n'
+                        '2. Öffne die WireGuard-App und tippe auf „+“ (Tunnel hinzufügen) > „QR-Code scannen“.\n'
+                        '3. Scanne den QR-Code vom Bildschirm deiner FRITZ!Box ab.\n'
+                        '4. Vergib einen Namen (z. B. „Heimnetz FRITZ!Box“) und speichere die Verbindung.',
+                  ),
+                  const SizedBox(height: 12),
+
+                  // Step 3
+                  _buildStepRow(
+                    stepNumber: '3',
+                    title: 'Feste IP für Heizungsregler festlegen',
+                    description:
+                        '1. In der FRITZ!Box unter „Heimnetz“ > „Netzwerk“ deinen Heizungsregler (z. B. Danfoss ECL 310) anklicken (Stift-Symbol).\n'
+                        '2. Haken setzen bei: „Diesem Netzwerkgerät immer die gleiche IPv4-Adresse zuweisen“ (z. B. 192.168.178.50).\n'
+                        '3. Speichern, damit der Regler immer unter derselben IP erreichbar bleibt.',
+                  ),
+                  const SizedBox(height: 12),
+
+                  // Step 4
+                  _buildStepRow(
+                    stepNumber: '4',
+                    title: 'Von unterwegs verbinden & heizen',
+                    description:
+                        '1. Wenn du unterwegs bist (Mobilfunk 4G/5G oder fremdes WLAN): Schalte in der WireGuard-App den VPN-Schalter ein.\n'
+                        '2. Öffne die Heizungstrainer-App: Du bist nun virtuell in deinem Heimnetzwerk!\n'
+                        '3. Gib die lokale IP deines Reglers (z. B. 192.168.178.50) ein und tippe auf Verbinden.\n'
+                        '4. Du kannst alle Sensoren überwachen, Solltemperaturen anpassen und den Urlaubsmodus aktivieren.',
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Pro Tip Container
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFA726).withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: const Color(0xFFFFA726).withValues(alpha: 0.25),
+                      ),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Icon(
+                          Icons.lightbulb_outline_rounded,
+                          color: Color(0xFFFFA726),
+                          size: 18,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            'Pro-Tipp: In den Einstellungen der WireGuard-App kannst du „On-Demand“ aktivieren. Das VPN schaltet sich dann vollautomatisch ein, sobald du dein Heim-WLAN verlässt!',
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              color: Colors.white.withValues(alpha: 0.8),
+                              height: 1.4,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStepRow({
+    required String stepNumber,
+    required String title,
+    required String description,
+  }) {
+    const vpnColor = Color(0xFF00BCD4);
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 24,
+          height: 24,
+          margin: const EdgeInsets.only(top: 1),
+          decoration: BoxDecoration(
+            color: vpnColor.withValues(alpha: 0.18),
+            shape: BoxShape.circle,
+            border: Border.all(color: vpnColor.withValues(alpha: 0.5)),
+          ),
+          alignment: Alignment.center,
+          child: Text(
+            stepNumber,
+            style: const TextStyle(
+              fontSize: 11.5,
+              fontWeight: FontWeight.bold,
+              color: vpnColor,
+            ),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFFECECF0),
+                ),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                description,
+                style: TextStyle(
+                  fontSize: 11.5,
+                  color: Colors.white.withValues(alpha: 0.65),
+                  height: 1.45,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+

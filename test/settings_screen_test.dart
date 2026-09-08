@@ -274,5 +274,41 @@ void main() {
       expect(find.text('0.132'), findsWidgets);
       expect(find.text('Markt-Benchmark aktiv'), findsOneWidget);
     });
+
+    testWidgets('renders WireGuard remote access card and toggles step-by-step guide',
+        (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(1080, 5000);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+
+      final provider = ECLProvider(autoLoadDatabase: false);
+
+      await tester.pumpWidget(buildSettingsScreen(provider));
+      await tester.pumpAndSettle();
+
+      // Card is present
+      expect(find.text('Fernzugriff via FRITZ!Box WireGuard®'), findsOneWidget);
+      expect(find.text('Zero-Cloud'), findsWidgets);
+
+      // Steps are not visible initially
+      expect(find.text('FRITZ!Box WireGuard® aktivieren'), findsNothing);
+
+      // Tap card to expand
+      await tester.tap(find.text('Fernzugriff via FRITZ!Box WireGuard®'));
+      await tester.pumpAndSettle();
+
+      // Now all 4 steps and security info are visible
+      expect(find.text('Einrichtung in 4 einfachen Schritten:'), findsOneWidget);
+      expect(find.text('FRITZ!Box WireGuard® aktivieren'), findsOneWidget);
+      expect(find.text('WireGuard App einrichten'), findsOneWidget);
+      expect(find.text('Feste IP für Heizungsregler festlegen'), findsOneWidget);
+      expect(find.text('Von unterwegs verbinden & heizen'), findsOneWidget);
+      expect(find.textContaining('Warum WireGuard VPN?'), findsOneWidget);
+
+      // Tap card again to collapse
+      await tester.tap(find.text('Fernzugriff via FRITZ!Box WireGuard®'));
+      await tester.pumpAndSettle();
+      expect(find.text('Einrichtung in 4 einfachen Schritten:'), findsNothing);
+    });
   });
 }
