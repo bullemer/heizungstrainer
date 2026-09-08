@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'package:heizungstrainer/providers/ecl_provider.dart';
+import 'package:heizungstrainer/screens/settings_screen.dart';
 
 /// Permanent top status bar rendered at the top of the application.
 ///
@@ -12,6 +13,7 @@ import 'package:heizungstrainer/providers/ecl_provider.dart';
 /// 2. Abrechnungsstelle sync status:
 ///    - Last sync timestamp if synchronization occurred.
 ///    - Prominent notice when there was never a sync with the Abrechnungsstelle.
+/// 3. Direct quick-action link to the Settings section.
 ///
 /// Styled in compact, small fonts (11px) with status-specific icons and colors.
 class AppTopStatusBar extends StatelessWidget {
@@ -117,62 +119,86 @@ class AppTopStatusBar extends StatelessWidget {
               ),
             ),
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
+          child: Row(
             children: [
-              // Controller Status Line
-              Row(
-                children: [
-                  Icon(
-                    controllerIcon,
-                    key: const Key('controller_status_icon'),
-                    size: 13,
-                    color: controllerColor,
-                  ),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      controllerText,
-                      key: const Key('controller_status_text'),
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: controllerColor,
-                        letterSpacing: 0.1,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Controller Status Line
+                    Row(
+                      children: [
+                        Icon(
+                          controllerIcon,
+                          key: const Key('controller_status_icon'),
+                          size: 13,
+                          color: controllerColor,
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            controllerText,
+                            key: const Key('controller_status_text'),
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: controllerColor,
+                              letterSpacing: 0.1,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 2),
+                    // Abrechnungsstelle Status Line
+                    Row(
+                      children: [
+                        Icon(
+                          billingIcon,
+                          key: const Key('billing_status_icon'),
+                          size: 13,
+                          color: billingColor,
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            billingText,
+                            key: const Key('billing_status_text'),
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w500,
+                              color: billingColor,
+                              letterSpacing: 0.1,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
-              const SizedBox(height: 2),
-              // Abrechnungsstelle Status Line
-              Row(
-                children: [
-                  Icon(
-                    billingIcon,
-                    key: const Key('billing_status_icon'),
-                    size: 13,
-                    color: billingColor,
-                  ),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      billingText,
-                      key: const Key('billing_status_text'),
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w500,
-                        color: billingColor,
-                        letterSpacing: 0.1,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ],
+              const SizedBox(width: 8),
+              IconButton(
+                key: const Key('top_bar_settings_button'),
+                icon: const Icon(
+                  Icons.settings_outlined,
+                  size: 18,
+                  color: Color(0xFF9E9EA8),
+                ),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                splashRadius: 18,
+                tooltip: 'Einstellungen',
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                  );
+                },
               ),
             ],
           ),

@@ -7,6 +7,7 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:heizungstrainer/models/brunata_meter_data.dart';
 import 'package:heizungstrainer/providers/ecl_provider.dart';
 import 'package:heizungstrainer/services/database_service.dart';
+import 'package:heizungstrainer/screens/connection_screen.dart';
 import 'package:heizungstrainer/widgets/app_top_status_bar.dart';
 
 void main() {
@@ -153,6 +154,51 @@ void main() {
       expect(billingIconFinder, findsOneWidget);
       final Icon iconWidget = tester.widget(billingIconFinder);
       expect(iconWidget.icon, Icons.cloud_done_outlined);
+
+      provider.dispose();
+    });
+
+    testWidgets('AppTopStatusBar contains Settings button', (tester) async {
+      final provider = ECLProvider(
+        databaseService: dbService,
+        autoLoadDatabase: false,
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ChangeNotifierProvider<ECLProvider>.value(
+            value: provider,
+            child: const Scaffold(
+              body: AppTopStatusBar(),
+            ),
+          ),
+        ),
+      );
+
+      expect(find.byKey(const Key('top_bar_settings_button')), findsOneWidget);
+      provider.dispose();
+    });
+
+    testWidgets('ConnectionScreen (startpage) contains Settings buttons', (tester) async {
+      final provider = ECLProvider(
+        databaseService: dbService,
+        autoLoadDatabase: false,
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ChangeNotifierProvider<ECLProvider>.value(
+            value: provider,
+            child: const ConnectionScreen(),
+          ),
+        ),
+      );
+
+      // Verify top navigation button
+      expect(find.byKey(const Key('startpage_settings_button')), findsOneWidget);
+
+      // Verify main action list button
+      expect(find.byKey(const Key('startpage_settings_action_button')), findsOneWidget);
 
       provider.dispose();
     });

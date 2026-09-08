@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'package:heizungstrainer/providers/ecl_provider.dart';
+import 'package:heizungstrainer/screens/settings_screen.dart';
 import 'package:heizungstrainer/widgets/app_top_status_bar.dart';
 
 /// Connection & auto-discovery screen.
@@ -87,6 +88,28 @@ class _ConnectionScreenState extends State<ConnectionScreen>
               child: Column(
                 children: [
                   const AppTopStatusBar(),
+                  // ── Top Navigation Bar ──────────────────────────
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        TextButton.icon(
+                          key: const Key('startpage_settings_button'),
+                          onPressed: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                            );
+                          },
+                          icon: const Icon(Icons.settings_outlined, size: 18),
+                          label: const Text('Einstellungen', style: TextStyle(fontSize: 13)),
+                          style: TextButton.styleFrom(
+                            foregroundColor: colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                   Expanded(
                     child: Center(
                       child: SingleChildScrollView(
@@ -473,6 +496,23 @@ class _ConnectionScreenState extends State<ConnectionScreen>
                 ),
               ),
             ],
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              key: const Key('startpage_settings_action_button'),
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                );
+              },
+              icon: const Icon(Icons.settings_outlined),
+              label: const Text('Einstellungen (Regler & Abrechnung)'),
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
+            ),
           ],
         );
 
@@ -543,6 +583,23 @@ class _ConnectionScreenState extends State<ConnectionScreen>
                 ),
               ),
             ],
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              key: const Key('startpage_error_settings_action_button'),
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                );
+              },
+              icon: const Icon(Icons.settings_outlined),
+              label: const Text('Einstellungen (Regler & Abrechnung)'),
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
+            ),
           ],
         );
     }
