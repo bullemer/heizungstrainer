@@ -20,6 +20,7 @@ import 'package:heizungstrainer/providers/ecl_provider.dart';
 import 'package:heizungstrainer/screens/log_screen.dart';
 import 'package:heizungstrainer/services/device_registry.dart';
 import 'package:heizungstrainer/services/energy_price_service.dart';
+import 'package:heizungstrainer/widgets/pro_upgrade_dialog.dart';
 
 /// Hub for hardware controller selection, sub-metering provider configuration,
 /// tariff pricing, and offline storage settings.
@@ -938,6 +939,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
                     children: [
                       _ActiveSystemSummary(provider: provider),
+                      const SizedBox(height: 16),
+                      _LicenseStatusCard(provider: provider),
                       const SizedBox(height: 24),
 
                       // ── SECTION 1: HEATING CONTROLLER ─────────────
@@ -3871,6 +3874,115 @@ class _ActiveSystemSummary extends StatelessWidget {
                 ),
               ),
             ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LicenseStatusCard extends StatelessWidget {
+  final ECLProvider provider;
+
+  const _LicenseStatusCard({required this.provider});
+
+  @override
+  Widget build(BuildContext context) {
+    final license = provider.licenseService;
+    final isPro = license.isPro;
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFF2A2A34),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: isPro
+              ? const Color(0xFF66BB6A).withValues(alpha: 0.35)
+              : const Color(0xFFFFA726).withValues(alpha: 0.35),
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: isPro
+                  ? const Color(0xFF66BB6A).withValues(alpha: 0.15)
+                  : const Color(0xFFFFA726).withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(
+              isPro ? Icons.verified_rounded : Icons.workspace_premium_outlined,
+              color: isPro ? const Color(0xFF66BB6A) : const Color(0xFFFFA726),
+              size: 20,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      isPro ? 'Heizungstrainer Pro' : 'Free Edition',
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFFECECF0),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                      decoration: BoxDecoration(
+                        color: isPro
+                            ? const Color(0xFF66BB6A).withValues(alpha: 0.2)
+                            : Colors.white.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        isPro ? 'Aktiv' : 'Basis',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          color: isPro ? const Color(0xFF66BB6A) : Colors.white70,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  isPro
+                      ? 'Schreibrechte & Urlaubs-Autopilot freigeschaltet.'
+                      : 'Nur Lesezugriff. Upgrade für Schreibzugriff & Sicherungen.',
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    color: Colors.white.withValues(alpha: 0.6),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          FilledButton.tonal(
+            style: FilledButton.styleFrom(
+              backgroundColor: isPro
+                  ? const Color(0xFF66BB6A).withValues(alpha: 0.15)
+                  : const Color(0xFFFFA726).withValues(alpha: 0.15),
+              foregroundColor: isPro ? const Color(0xFF66BB6A) : const Color(0xFFFFA726),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              minimumSize: Size.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            onPressed: () => ProUpgradeDialog.show(context),
+            child: Text(
+              isPro ? 'Details' : 'Upgrade',
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+            ),
           ),
         ],
       ),

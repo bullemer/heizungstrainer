@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import 'package:heizungstrainer/exceptions/license_exception.dart';
 import 'package:heizungstrainer/models/ecl_parameter.dart';
 import 'package:heizungstrainer/models/ecl_reading.dart';
 import 'package:heizungstrainer/providers/ecl_provider.dart';
 import 'package:heizungstrainer/screens/settings_screen.dart';
 import 'package:heizungstrainer/services/heating_analytics_service.dart';
 import 'package:heizungstrainer/widgets/analysis_section.dart';
+import 'package:heizungstrainer/widgets/pro_upgrade_dialog.dart';
 import 'package:heizungstrainer/widgets/sparkline_chart.dart';
 import 'package:heizungstrainer/widgets/radial_indicator.dart';
 
@@ -24,6 +26,20 @@ class HomeScreen extends StatelessWidget {
           style: TextStyle(fontWeight: FontWeight.w700, fontSize: 20),
         ),
         actions: [
+          Consumer<ECLProvider>(
+            builder: (context, provider, _) {
+              final isPro = provider.licenseService.isPro;
+              return IconButton(
+                onPressed: () => ProUpgradeDialog.show(context),
+                icon: Icon(
+                  isPro ? Icons.workspace_premium_rounded : Icons.workspace_premium_outlined,
+                  color: isPro ? const Color(0xFF66BB6A) : const Color(0xFFFFA726),
+                  size: 22,
+                ),
+                tooltip: isPro ? 'Pro-Lizenz aktiv' : 'Upgrade auf Pro',
+              );
+            },
+          ),
           IconButton(
             onPressed: () {
               Navigator.of(context).push(
@@ -580,6 +596,14 @@ class _HeatingComfortCardState extends State<_HeatingComfortCard> {
           content: Text('Heizkurve auf ${_comfortLabel(_sliderValue)} gesetzt'),
           backgroundColor: const Color(0xFF66BB6A),
         ));
+      }
+    } on LicenseRequiredException {
+      if (mounted) {
+        setState(() => _isSaving = false);
+        await ProUpgradeDialog.show(
+          context,
+          featureHint: 'Das Verstellen und Schreiben der Heizkurve',
+        );
       }
     } catch (_) {
       if (mounted) {

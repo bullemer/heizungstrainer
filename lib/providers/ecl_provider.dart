@@ -37,6 +37,9 @@ import 'package:heizungstrainer/services/database_service.dart';
 import 'package:heizungstrainer/services/device_registry.dart';
 import 'package:heizungstrainer/services/discovery_service.dart';
 import 'package:heizungstrainer/services/energy_price_service.dart';
+import 'package:heizungstrainer/exceptions/license_exception.dart';
+import 'package:heizungstrainer/models/license_info.dart';
+import 'package:heizungstrainer/services/license_service.dart';
 import 'package:heizungstrainer/services/modbus_service.dart';
 
 /// Connection lifecycle states for the ECL 310 controller.
@@ -57,6 +60,7 @@ class ECLProvider extends ChangeNotifier {
   final DatabaseService _databaseService;
   final ActivityLogService _logService;
   final EnergyPriceService _energyPriceService;
+  final LicenseService _licenseService;
   final FlutterSecureStorage _secureStorage;
 
   static const String _controllerStorageKey = 'selected_controller_id';
@@ -125,6 +129,7 @@ class ECLProvider extends ChangeNotifier {
   HeatingController get activeController => _activeController;
   BillingProvider get activeBillingProvider => _activeBillingProvider;
   EnergyPriceService get energyPriceService => _energyPriceService;
+  LicenseService get licenseService => _licenseService;
   GenericModbusConfig get genericModbusConfig => _genericModbusConfig;
   BoschBuderusEmsConfig get boschBuderusConfig => _boschBuderusConfig;
   ViessmannConfig get viessmannConfig => _viessmannConfig;
@@ -221,6 +226,7 @@ class ECLProvider extends ChangeNotifier {
     DatabaseService? databaseService,
     ActivityLogService? logService,
     EnergyPriceService? energyPriceService,
+    LicenseService? licenseService,
     FlutterSecureStorage? secureStorage,
     bool autoLoadDatabase = true,
   })  : _modbusService = modbusService ?? ModbusService(),
@@ -235,7 +241,11 @@ class ECLProvider extends ChangeNotifier {
         _energyPriceService = energyPriceService ??
             EnergyPriceService(
               secureStorage: secureStorage ?? const FlutterSecureStorage(),
-            ) {
+            ),
+        _licenseService = licenseService ??
+            (autoLoadDatabase
+                ? LicenseService(secureStorage: secureStorage ?? const FlutterSecureStorage())
+                : LicenseService(initialTier: LicenseTier.pro)) {
     _activeController = DeviceRegistry.createController(
       _selectedControllerId,
       modbusService: _modbusService,
@@ -252,6 +262,7 @@ class ECLProvider extends ChangeNotifier {
     if (autoLoadDatabase) {
       _initFromDatabase();
       _logService.init();
+      _licenseService.init();
     }
     _initHardwareSettings();
   }
@@ -1137,6 +1148,24 @@ class ECLProvider extends ChangeNotifier {
       );
       throw const ModbusCommunicationException(
         message: 'Keine Verbindung zum Regler.',
+      );
+    }
+
+    // License Gate: Enforce Pro tier for writing parameters to the controller
+    if (!_licenseService.canWriteParameters) {
+      await _logService.logSecurityGate(
+        controllerId: _selectedControllerId,
+        message: 'Schreibbefehl blockiert: Heizungstrainer Pro erforderlich.',
+        details: {
+          'parameterId': parameter.id,
+          'parameterName': parameter.name,
+          'tier': _licenseService.currentTier.name,
+        },
+        errorCode: 'LICENSE_PRO_REQUIRED',
+      );
+      throw const LicenseRequiredException(
+        message: 'Das Verändern von Regler-Parametern erfordert Heizungstrainer Pro.',
+        featureName: 'Parametrierung schreiben',
       );
     }
 
