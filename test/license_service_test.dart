@@ -1,3 +1,4 @@
+import 'package:cryptography/cryptography.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -7,6 +8,7 @@ import 'package:heizungstrainer/models/ecl_parameter.dart';
 import 'package:heizungstrainer/models/license_info.dart';
 import 'package:heizungstrainer/providers/ecl_provider.dart';
 import 'package:heizungstrainer/services/activity_log_service.dart';
+import 'package:heizungstrainer/services/license_key.dart';
 import 'package:heizungstrainer/services/license_service.dart';
 import 'package:heizungstrainer/widgets/pro_upgrade_dialog.dart';
 
@@ -40,106 +42,110 @@ void main() {
 
     test('serializes and deserializes accurately', () {
       final now = DateTime(2026, 9, 8, 20, 0);
-      final pro = LicenseInfo.proInApp(
-        purchaseId: 'GPA.1234-5678',
-        productId: LicenseService.proLifetimeProductId,
+      final pro = LicenseInfo.proOffline(
+        licenseKey: 'HT2-AAAAA',
         activatedAt: now,
+        customerReference: 'ABCDEF012345',
       );
 
-      final json = pro.toJson();
-      final restored = LicenseInfo.fromJson(json);
-
+      final restored = LicenseInfo.decode(pro.encode())!;
       expect(restored.tier, LicenseTier.pro);
-      expect(restored.source, LicenseSource.inAppPurchase);
-      expect(restored.purchaseId, 'GPA.1234-5678');
-      expect(restored.productId, LicenseService.proLifetimeProductId);
+      expect(restored.source, LicenseSource.offlineKey);
+      expect(restored.licenseKey, 'HT2-AAAAA');
       expect(restored.activatedAt, now);
-      expect(restored.isPro, true);
-
-      final encoded = pro.encode();
-      final decoded = LicenseInfo.decode(encoded);
-      expect(decoded?.purchaseId, 'GPA.1234-5678');
+      expect(restored.customerReference, 'ABCDEF012345');
     });
   });
 
-  group('LicenseService Offline Key Cryptography Tests', () {
-    test('verifies predefined demo keys', () {
-      expect(LicenseService.verifyOfflineKey('HT-PRO-DEMO-2026'), true);
-      expect(LicenseService.verifyOfflineKey('HTPRO-TEST-KEY-VALID'), true);
-      expect(LicenseService.verifyOfflineKey(' ht-pro-demo-2026 '), true);
+  group('Ed25519 offline licence keys', () {
+    late TestIssuer issuer;
+    setUp(() async => issuer = await TestIssuer.create());
+
+    test('a key signed with the matching private key verifies', () async {
+      final key = await issuer.issue(licenseId: [1, 2, 3, 4, 5, 6], issuedDay: 277);
+      expect(key, startsWith('HT2-'));
+
+      final data = await LicenseKeyCodec.verify(key, issuer.publicKey);
+      expect(data, isNotNull);
+      expect(data!.licenseId, '010203040506');
+      expect(data.issuedAt, DateTime.utc(2026, 10, 5));
+      expect(data.edition, LicenseKeyCodec.editionProLifetime);
     });
 
-    test('dynamically generated key validates successfully', () {
-      final key = LicenseService.generateKey();
-      expect(key.startsWith('HTPRO-'), true);
-      expect(LicenseService.verifyOfflineKey(key), true);
+    test('copy-paste noise (spaces, line breaks, lowercase) is tolerated', () async {
+      final key = await issuer.issue();
+      final messy = ' ${key.toLowerCase().replaceAll('-', ' - ').replaceFirst(' ', '\n')} ';
+      expect(await LicenseKeyCodec.verify(messy, issuer.publicKey), isNotNull);
     });
 
-    test('tampered or invalid keys fail verification', () {
-      final validKey = LicenseService.generateKey();
-      // Corrupt the last character
-      final corrupted = validKey.substring(0, validKey.length - 1) +
-          (validKey.endsWith('A') ? 'B' : 'A');
+    test('tampered, foreign-signed, old-format and demo keys are rejected', () async {
+      final key = await issuer.issue();
+      final other = await TestIssuer.create();
+      final foreign = await other.issue();
 
-      expect(LicenseService.verifyOfflineKey(corrupted), false);
-      expect(LicenseService.verifyOfflineKey('HTPRO-INVALID-KEY'), false);
-      expect(LicenseService.verifyOfflineKey('RANDOM-STRING-123'), false);
-      expect(LicenseService.verifyOfflineKey(''), false);
+      // Flip one character in the payload part.
+      final chars = key.split('');
+      final i = 6;
+      chars[i] = chars[i] == 'A' ? 'B' : 'A';
+      final tampered = chars.join();
+
+      for (final bad in [
+        tampered,
+        foreign,
+        key.substring(0, key.length - 7),
+        'HTPRO-A8C2-91B4-E4F0-77A1', // old HMAC format
+        'HT-PRO-DEMO-2026',
+        'HT-PRO-DEVELOPER-BYPASS',
+        '',
+      ]) {
+        expect(await LicenseKeyCodec.verify(bad, issuer.publicKey), isNull, reason: bad);
+      }
     });
 
-    test('activates offline key and persists into in-memory storage', () async {
+    test('the production public key rejects test-signed keys', () async {
+      final key = await issuer.issue();
+      expect(await LicenseKeyCodec.verify(key, LicenseKeyCodec.productionPublicKey), isNull);
+    });
+
+    test('activates a valid key, persists it and re-verifies on start', () async {
       final inMemory = <String, String>{};
-      final service = LicenseService(inMemoryStorage: inMemory);
-
+      final service = LicenseService(inMemoryStorage: inMemory, publicKey: issuer.publicKey);
       expect(service.isPro, false);
-      expect(service.canWriteParameters, false);
 
-      final validKey = LicenseService.generateKey();
-      final activated = await service.activateOfflineKey(validKey);
-
-      expect(activated, true);
+      final key = await issuer.issue(licenseId: [9, 9, 9, 9, 9, 9]);
+      expect(await service.activateOfflineKey(key), true);
       expect(service.isPro, true);
-      expect(service.canWriteParameters, true);
-      expect(service.currentInfo.source, LicenseSource.offlineKey);
+      expect(service.currentInfo.customerReference, '090909090909');
 
-      // Re-initialize from storage
-      final reloadedService = LicenseService(inMemoryStorage: inMemory);
-      await reloadedService.init();
-      expect(reloadedService.isPro, true);
-      expect(reloadedService.currentInfo.licenseKey, validKey.toUpperCase());
+      final reloaded = LicenseService(inMemoryStorage: inMemory, publicKey: issuer.publicKey);
+      await reloaded.init();
+      expect(reloaded.isPro, true);
+    });
+
+    test('an edited stored record does not unlock Pro', () async {
+      final forged = <String, String>{
+        'ecl_license_info': LicenseInfo.proOffline(licenseKey: 'HT2-FAKE').encode(),
+      };
+      final service = LicenseService(inMemoryStorage: forged, publicKey: issuer.publicKey);
+      await service.init();
+      expect(service.isPro, false);
+
+      final testOverride = <String, String>{
+        'ecl_license_info': LicenseInfo.proTest().encode(),
+      };
+      final service2 = LicenseService(inMemoryStorage: testOverride, publicKey: issuer.publicKey);
+      await service2.init();
+      expect(service2.isPro, false);
     });
 
     test('rejects invalid key and preserves free tier', () async {
-      final service = LicenseService(inMemoryStorage: {});
-      final result = await service.activateOfflineKey('HTPRO-FAKE-KEY-0000');
-
-      expect(result, false);
+      final service = LicenseService(inMemoryStorage: {}, publicKey: issuer.publicKey);
+      expect(await service.activateOfflineKey('HTPRO-FAKE-KEY-0000'), false);
       expect(service.isPro, false);
-    });
-  });
-
-  group('LicenseService In-App Purchase & Lifecycle Tests', () {
-    test('activates and restores in-app purchase', () async {
-      final service = LicenseService(inMemoryStorage: {});
-
-      final success = await service.activateInAppPurchase(
-        purchaseId: 'GPA.999-888',
-        productId: LicenseService.proLifetimeProductId,
-      );
-
-      expect(success, true);
-      expect(service.isPro, true);
-      expect(service.currentInfo.source, LicenseSource.inAppPurchase);
-
-      final restored = await service.restorePurchases();
-      expect(restored, true);
     });
 
     test('revokeLicense resets to free tier', () async {
-      final service = LicenseService(
-        inMemoryStorage: {},
-        initialTier: LicenseTier.pro,
-      );
+      final service = LicenseService(inMemoryStorage: {}, initialTier: LicenseTier.pro);
       expect(service.isPro, true);
 
       await service.revokeLicense();
@@ -239,13 +245,17 @@ void main() {
       expect(find.text('Sensoren & Zähler live lesen'), findsOneWidget);
       expect(find.text('Heizkurven-Shift direkt schreiben'), findsOneWidget);
       expect(find.text('Aktivieren'), findsOneWidget);
-      expect(find.textContaining('Einmalkauf'), findsOneWidget);
+      expect(find.textContaining('19,99 € einmalig'), findsOneWidget);
+      expect(find.textContaining('In-App'), findsNothing);
     });
 
-    testWidgets('entering valid demo key activates Pro', (tester) async {
+    testWidgets('entering a valid signed key activates Pro; demo key does not', (tester) async {
+      final issuer = (await tester.runAsync(TestIssuer.create))!;
+      final key = (await tester.runAsync(() => issuer.issue()))!;
       final freeLicense = LicenseService(
         inMemoryStorage: {},
         initialTier: LicenseTier.free,
+        publicKey: issuer.publicKey,
       );
       final provider = ECLProvider(
         licenseService: freeLicense,
@@ -264,12 +274,49 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // Enter demo key
-      await tester.enterText(find.byType(TextField), 'HT-PRO-DEMO-2026');
-      await tester.tap(find.text('Aktivieren'));
-      await tester.pumpAndSettle();
+      Future<void> submit(String text) async {
+        await tester.enterText(find.byType(TextField), text);
+        await tester.tap(find.text('Aktivieren'));
+        await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 200)));
+        await tester.pumpAndSettle();
+      }
 
+      await submit('HT-PRO-DEMO-2026');
+      expect(freeLicense.isPro, false);
+      expect(find.textContaining('Ungültiger Lizenzschlüssel'), findsOneWidget);
+
+      await submit(key);
       expect(freeLicense.isPro, true);
     });
   });
+}
+
+/// Signs keys in the production format with a throwaway Ed25519 key pair.
+class TestIssuer {
+  TestIssuer._(this._keyPair, this.publicKey);
+
+  final SimpleKeyPair _keyPair;
+  final List<int> publicKey;
+
+  static Future<TestIssuer> create() async {
+    final keyPair = await Ed25519().newKeyPair();
+    final publicKey = (await keyPair.extractPublicKey()).bytes;
+    return TestIssuer._(keyPair, publicKey);
+  }
+
+  Future<String> issue({
+    List<int> licenseId = const [0xAB, 0xCD, 0xEF, 0x01, 0x23, 0x45],
+    int issuedDay = 0,
+    int edition = LicenseKeyCodec.editionProLifetime,
+  }) async {
+    final payload = [
+      LicenseKeyCodec.formatVersion,
+      ...licenseId,
+      (issuedDay >> 8) & 0xFF,
+      issuedDay & 0xFF,
+      edition,
+    ];
+    final signature = await Ed25519().sign(payload, keyPair: _keyPair);
+    return LicenseKeyCodec.format([...payload, ...signature.bytes]);
+  }
 }

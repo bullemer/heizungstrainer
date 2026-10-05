@@ -63,22 +63,6 @@ class LicenseInfo {
     );
   }
 
-  /// Pro license activated via Google Play or Apple App Store In-App Purchase.
-  factory LicenseInfo.proInApp({
-    required String purchaseId,
-    required String productId,
-    DateTime? activatedAt,
-  }) {
-    return LicenseInfo(
-      tier: LicenseTier.pro,
-      source: LicenseSource.inAppPurchase,
-      purchaseId: purchaseId,
-      productId: productId,
-      activatedAt: activatedAt ?? DateTime.now(),
-      note: 'In-App-Kauf (App Store / Google Play)',
-    );
-  }
-
   /// Test or debug override for development.
   factory LicenseInfo.proTest({String note = 'Entwickler-Override'}) {
     return LicenseInfo(

@@ -4,8 +4,8 @@ import 'package:provider/provider.dart';
 import 'package:heizungstrainer/providers/ecl_provider.dart';
 import 'package:heizungstrainer/services/license_service.dart';
 
-/// Modal dialog / bottom sheet that explains Pro benefits and enables
-/// unlocking via either an offline cryptographic license key or In-App Purchase.
+/// Modal bottom sheet that explains Pro benefits and unlocks Pro with an
+/// offline licence key.
 class ProUpgradeDialog extends StatefulWidget {
   final String? featureHint;
 
@@ -74,37 +74,9 @@ class _ProUpgradeDialogState extends State<ProUpgradeDialog> {
       Navigator.pop(context, true);
     } else {
       setState(() {
-        _errorMessage = 'Ungültiger Lizenzschlüssel. Bitte prüfe Tippfehler oder das Format HTPRO-XXXX-...';
+        _errorMessage = 'Ungültiger Lizenzschlüssel. Bitte den vollständigen Schlüssel '
+            '(beginnt mit HT2-) aus der E-Mail kopieren und einfügen.';
       });
-    }
-  }
-
-  Future<void> _triggerInAppPurchase(LicenseService licenseService) async {
-    setState(() => _isVerifying = true);
-    HapticFeedback.mediumImpact();
-
-    // In production with in_app_purchase plugin, this launches the Google/Apple billing flow.
-    // For local readiness, simulate a verified purchase:
-    final purchaseId = 'GPA.${DateTime.now().millisecondsSinceEpoch}';
-    final success = await licenseService.activateInAppPurchase(
-      purchaseId: purchaseId,
-      productId: LicenseService.proLifetimeProductId,
-    );
-
-    if (!mounted) return;
-    setState(() => _isVerifying = false);
-
-    if (success) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          backgroundColor: _ecoGreen,
-          content: Text(
-            '🎉 In-App-Kauf erfolgreich! Heizungstrainer Pro ist aktiv.',
-            style: TextStyle(fontWeight: FontWeight.bold),
-          ),
-        ),
-      );
-      Navigator.pop(context, true);
     }
   }
 
@@ -213,7 +185,7 @@ class _ProUpgradeDialogState extends State<ProUpgradeDialog> {
                         await licenseService.revokeLicense();
                         if (mounted) setState(() {});
                       },
-                      child: const Text('Lizenz zurücksetzen (Test-Modus)'),
+                      child: const Text('Lizenz von diesem Gerät entfernen'),
                     ),
                   ],
                 ),
@@ -261,9 +233,9 @@ class _ProUpgradeDialogState extends State<ProUpgradeDialog> {
               ),
               const SizedBox(height: 20),
 
-              // Weg 1: Offline License Key
+              // Offline licence key
               const Text(
-                'Weg 1: Offline-Lizenzschlüssel (Website-Kauf)',
+                'Lizenzschlüssel eingeben',
                 style: TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w700,
@@ -278,8 +250,11 @@ class _ProUpgradeDialogState extends State<ProUpgradeDialog> {
                     child: TextField(
                       controller: _keyController,
                       textCapitalization: TextCapitalization.characters,
+                      minLines: 1,
+                      maxLines: 4,
                       decoration: InputDecoration(
-                        hintText: 'HTPRO-XXXX-XXXX-XXXX',
+                        hintText: 'HT2-XXXXX-XXXXX-…',
+                        errorMaxLines: 3,
                         hintStyle: const TextStyle(color: Colors.white24, fontSize: 13),
                         filled: true,
                         fillColor: const Color(0xFF1E1E24),
@@ -315,31 +290,12 @@ class _ProUpgradeDialogState extends State<ProUpgradeDialog> {
               ),
               const SizedBox(height: 16),
 
-              // Weg 2: In-App Purchase
               const Text(
-                'Weg 2: In-App-Kauf (Google Play / App Store)',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                  color: Color(0xFFECECF0),
-                ),
-              ),
-              const SizedBox(height: 8),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  icon: const Icon(Icons.shopping_bag_outlined, color: _accentOrange),
-                  label: const Text('Heizungstrainer Pro freischalten (Einmalkauf)'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: _accentOrange,
-                    side: const BorderSide(color: _accentOrange),
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  onPressed: _isVerifying ? null : () => _triggerInAppPurchase(licenseService),
-                ),
+                'Noch keinen Schlüssel? Pro (19,99 € einmalig) kannst du über das '
+                'Kontaktformular auf heizungstrainer.de/kontakt.html anfragen – du '
+                'bekommst den Lizenzschlüssel per E-Mail. Die Aktivierung funktioniert '
+                'offline, ohne Konto.',
+                style: TextStyle(fontSize: 12.5, color: Color(0xFF9E9EA8), height: 1.4),
               ),
             ],
           ],
