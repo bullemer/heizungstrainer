@@ -13,6 +13,7 @@ import 'package:heizungstrainer/services/activity_log_service.dart';
 import 'package:heizungstrainer/services/heating_curve_model.dart';
 import 'package:heizungstrainer/services/holiday_service.dart';
 import 'package:heizungstrainer/services/license_service.dart';
+import 'package:heizungstrainer/widgets/holiday_end_flow.dart';
 
 /// Provider connected to the simulated controller with Pro (write) access.
 Future<ECLProvider> connectedSimulation(ActivityLogService logService) async {
@@ -494,6 +495,10 @@ void main() {
       // Tap on 'Wochenend-Trip' preset card. The write mixes a settle delay
       // (fake clock) with real SQLite I/O, so advance both until it's done.
       await tester.tap(find.textContaining('Wochenend-Trip'));
+      await tester.pumpAndSettle();
+      // presets ask before writing to the heating
+      expect(find.text('Wochenend-Trip starten?'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('confirmPreset')));
       for (var i = 0; i < 20 && find.byType(SnackBar).evaluate().isEmpty; i++) {
         await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
         await tester.pump(const Duration(milliseconds: 100));
@@ -560,6 +565,54 @@ void main() {
       expect(active.targetRoomTemp, 15);
       expect(fake.room, 15);
     });
+  });
+
+  testWidgets('start page card shows the active plan and ends it with confirmation', (tester) async {
+    FlutterSecureStorage.setMockInitialValues({});
+    final (provider, fake) = (await tester.runAsync(() async {
+      final fake = _RoomOnlyController(room: 22);
+      final p = ECLProvider(
+        logService: ActivityLogService(enablePersistence: false, enableRemoteDispatch: false),
+        licenseService: LicenseService(inMemoryStorage: {}, initialTier: LicenseTier.pro),
+        autoLoadDatabase: false,
+      );
+      await p.setSelectedController('nibe_modbus');
+      p.useControllerForTesting(fake);
+      p.setConnectedForTesting(ip: '192.168.178.60');
+      await p.setBetaWritesEnabled(true);
+      await p.refreshReadings();
+      return (p, fake);
+    }))!;
+    final service = HolidayService(inMemoryStorage: {});
+    final now = DateTime.now();
+    await tester.runAsync(() => service.activatePlan(
+          plan: HolidayPlan(
+              id: 'p_home', title: '1 Woche Urlaub', startDateTime: now,
+              endDateTime: now.add(const Duration(days: 7)), roomSetbackKelvin: 4, createdAt: now),
+          provider: provider,
+          now: now,
+        ));
+    expect(fake.room, 18);
+
+    await tester.pumpWidget(MaterialApp(
+        home: Scaffold(body: ActiveHolidayCard(provider: provider, service: service))));
+    for (var i = 0; i < 5; i++) {
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
+      await tester.pump();
+    }
+    expect(find.text('Urlaubsmodus aktiv: 1 Woche Urlaub'), findsOneWidget);
+    expect(find.textContaining('Raum-Sollwert auf 18.0 °C (normal 22.0 °C)'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('endHolidayFromHome')));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('zurück auf 22.0 °C'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('confirmEndHoliday')));
+    for (var i = 0; i < 10 && find.byKey(const Key('activeHolidayCard')).evaluate().isNotEmpty; i++) {
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(fake.room, 22);
+    expect(find.byKey(const Key('activeHolidayCard')), findsNothing);
   });
 }
 

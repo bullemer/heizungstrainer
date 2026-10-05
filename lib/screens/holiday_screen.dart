@@ -7,6 +7,7 @@ import 'package:heizungstrainer/services/heating_curve_model.dart';
 import 'package:heizungstrainer/models/ecl_parameter.dart';
 import 'package:heizungstrainer/providers/ecl_provider.dart';
 import 'package:heizungstrainer/services/holiday_service.dart';
+import 'package:heizungstrainer/widgets/holiday_end_flow.dart';
 
 /// Screen managing holiday, weekend absence, and automatic setback timers.
 class HolidayScreen extends StatefulWidget {
@@ -173,85 +174,16 @@ class _HolidayScreenState extends State<HolidayScreen> {
   }
 
   Future<void> _cancelActivePlan() async {
-    if (_activePlan == null) return;
-    final provider = context.read<ECLProvider>();
-
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: _card,
-        title: const Text('Abwesenheitsmodus beenden?'),
-        content: const Text(
-          'Die Heizung schaltet sofort wieder auf die normalen Komfort-Einstellungen um.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Abbrechen'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: _accentOrange),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Jetzt beenden'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirm != true) return;
-
-    HapticFeedback.mediumImpact();
-    final plan = _activePlan!;
+    final plan = _activePlan;
+    if (plan == null) return;
     setState(() => _isLoading = true);
-
-    try {
-      await _holidayService.cancelOrFinishPlan(plan: plan, provider: provider);
-    } catch (e) {
-      await _loadState();
-      if (!mounted) return;
-      final closeAnyway = await showDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          backgroundColor: _card,
-          title: const Text('Normalbetrieb nicht wiederhergestellt'),
-          content: Text(
-            '$e\n\nDu kannst es erneut versuchen, sobald der Regler erreichbar ist. '
-            'Oder den Plan ohne Änderung am Regler schließen – dann stell die '
-            'Parallelverschiebung bitte selbst auf ${plan.normalShift.toStringAsFixed(0)} zurück.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Plan aktiv lassen'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Ohne Zurücksetzen schließen'),
-            ),
-          ],
-        ),
-      );
-      if (closeAnyway == true) {
-        await _holidayService.cancelOrFinishPlan(
-          plan: plan,
-          provider: provider,
-          restore: false,
-        );
-        await _loadState();
-      }
-      return;
-    }
+    await endHolidayPlanWithConfirmation(
+      context,
+      plan: plan,
+      service: _holidayService,
+      provider: context.read<ECLProvider>(),
+    );
     await _loadState();
-
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(plan.setbackApplied
-              ? '✓ Normalbetrieb wiederhergestellt.'
-              : '✓ Geplante Abwesenheit verworfen.'),
-        ),
-      );
-    }
   }
 
   Future<void> _openCustomPlanDialog() async {
@@ -708,7 +640,7 @@ class _HolidayScreenState extends State<HolidayScreen> {
               Expanded(
                 child: _buildMiniStat(
                   label: 'Vorheizen ab',
-                  value: '${plan.preheatStartTime.hour.toString().padLeft(2, '0')}:${plan.preheatStartTime.minute.toString().padLeft(2, '0')}',
+                  value: _whenText(plan.preheatStartTime),
                   color: _accentOrange,
                 ),
               ),
@@ -735,6 +667,14 @@ class _HolidayScreenState extends State<HolidayScreen> {
         ],
       ),
     );
+  }
+
+  /// "13:08" today, otherwise "12.10. 01:08".
+  static String _whenText(DateTime t) {
+    final now = DateTime.now();
+    final hm = '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+    final sameDay = t.year == now.year && t.month == now.month && t.day == now.day;
+    return sameDay ? hm : '${t.day}.${t.month}. $hm';
   }
 
   Widget _buildMiniStat({
@@ -784,13 +724,7 @@ class _HolidayScreenState extends State<HolidayScreen> {
             icon: p.icon,
             title: p.title,
             subtitle: _presetSubtitle(p),
-            onTap: () => _activatePreset(
-              title: p.planTitle,
-              duration: p.duration,
-              setbackShift: p.setbackShift,
-              roomSetbackKelvin: p.roomSetbackKelvin,
-              preheatHours: p.preheatHours,
-            ),
+            onTap: () => _confirmPreset(p),
           ),
           const SizedBox(height: 8),
         ],
@@ -808,6 +742,42 @@ class _HolidayScreenState extends State<HolidayScreen> {
     _HolidayPreset(Icons.bolt_outlined, 'Kurztrip / Tagesabwesenheit (12 Std.)', 'Kurztrip (12 Std.)',
         Duration(hours: 12), -2.0, 2.0, 2.0),
   ];
+
+  /// A preset writes to the heating right away – ask first, showing exactly
+  /// what will change (an accidental tap must not lower the heating).
+  Future<void> _confirmPreset(_HolidayPreset p) async {
+    final provider = context.read<ECLProvider>();
+    final roomMode = provider.holidayControlMode == 'room';
+    final current = provider.getReading(ECLRegisters.roomTargetTemp)?.displayValue;
+    final change = roomMode && current != null
+        ? 'Raum-Sollwert ${current.toStringAsFixed(1)} → '
+            '${(current - p.roomSetbackKelvin).clamp(HolidayService.minHolidayRoomSetpoint, 30).toStringAsFixed(1)} °C'
+        : 'Parallelverschiebung ${p.setbackShift.toStringAsFixed(0)}';
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: _card,
+        title: Text('${p.planTitle} starten?'),
+        content: Text('$change ab sofort.\n${_presetSubtitle(p)}'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Abbrechen')),
+          FilledButton(
+            key: const Key('confirmPreset'),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Jetzt absenken'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    await _activatePreset(
+      title: p.planTitle,
+      duration: p.duration,
+      setbackShift: p.setbackShift,
+      roomSetbackKelvin: p.roomSetbackKelvin,
+      preheatHours: p.preheatHours,
+    );
+  }
 
   /// Savings for starting the preset now, from the real consumption profile.
   String _presetSubtitle(_HolidayPreset p) {

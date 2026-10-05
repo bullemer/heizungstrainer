@@ -13,6 +13,7 @@ import 'package:heizungstrainer/services/heating_analytics_service.dart';
 import 'package:heizungstrainer/services/heating_curve_model.dart';
 import 'package:heizungstrainer/widgets/analysis_section.dart';
 import 'package:heizungstrainer/widgets/building_profile_picker.dart';
+import 'package:heizungstrainer/widgets/holiday_end_flow.dart';
 import 'package:heizungstrainer/widgets/pro_upgrade_dialog.dart';
 import 'package:heizungstrainer/widgets/sparkline_chart.dart';
 import 'package:heizungstrainer/widgets/radial_indicator.dart';
@@ -150,6 +151,9 @@ class HomeScreen extends StatelessWidget {
                   _SimulatedControllerBanner(provider: provider),
                   const SizedBox(height: 12),
                 ],
+                // ── Aktiver Urlaubsmodus (nur wenn aktiv) ───
+                ActiveHolidayCard(provider: provider),
+
                 // ── Gebäude ─────────────────────────────────
                 BuildingProfileCard(provider: provider),
                 const SizedBox(height: 12),
