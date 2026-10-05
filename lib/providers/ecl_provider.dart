@@ -63,10 +63,13 @@ class ECLProvider extends ChangeNotifier {
   final EnergyPriceService _energyPriceService;
   final LicenseService _licenseService;
   final FlutterSecureStorage _secureStorage;
+  final bool _autoConnect;
 
   static const String _controllerStorageKey = 'selected_controller_id';
   static const String _billingStorageKey = 'selected_billing_id';
   static const String _betaWritePrefix = 'beta_write_enabled_';
+  /// Controller id that last connected successfully; reconnected at app start.
+  static const String _autoConnectKey = 'auto_connect_controller_id';
 
   String _selectedControllerId = 'danfoss_ecl_310';
   String _selectedBillingId = 'brunata_hamburg';
@@ -286,7 +289,9 @@ class ECLProvider extends ChangeNotifier {
     LicenseService? licenseService,
     FlutterSecureStorage? secureStorage,
     bool autoLoadDatabase = true,
-  })  : _modbusService = modbusService ?? ModbusService(),
+    bool? autoConnect,
+  })  : _autoConnect = autoConnect ?? autoLoadDatabase,
+        _modbusService = modbusService ?? ModbusService(),
         _discoveryService = discoveryService ?? DiscoveryService(),
         _brunataScraper = brunataScraper ?? BrunataLocalScraperService(),
         _databaseService = databaseService ?? DatabaseService.instance,
@@ -365,6 +370,7 @@ class ECLProvider extends ChangeNotifier {
         _billingHasCredentials[savedBill] = await _activeBillingProvider.hasCredentials();
       }
       notifyListeners();
+      await _autoConnectAtStartup();
     } catch (e) {
       debugPrint('[Provider] Error loading hardware settings from storage: $e');
     }
@@ -401,6 +407,20 @@ class ECLProvider extends ChangeNotifier {
       details: {'controllerId': id, 'brand': desc.brand, 'model': desc.model, 'protocol': desc.protocol.name},
     );
     notifyListeners();
+  }
+
+  /// Reconnects to the controller that last connected successfully, so the
+  /// app doesn't open on the search screen every time.
+  Future<void> _autoConnectAtStartup() async {
+    if (!_autoConnect || _connectionState != ECLConnectionState.disconnected) return;
+    final lastId = await _secureStorage.read(key: _autoConnectKey);
+    if (lastId == null || lastId != _selectedControllerId) return;
+    if (_selectedControllerId == 'danfoss_ecl_310') {
+      final ip = await _discoveryService.getSavedControllerIp();
+      if (ip != null) await connectToIp(ip);
+    } else if (!isSimulatedController) {
+      await connectToController();
+    }
   }
 
   /// Updates and persists the Generic Modbus TCP configuration.
@@ -854,6 +874,9 @@ class ECLProvider extends ChangeNotifier {
         await _activeController.connect(host: ip, port: port);
       }
       await _discoveryService.saveControllerIp(ip);
+      try {
+        await _secureStorage.write(key: _autoConnectKey, value: _selectedControllerId);
+      } catch (_) {}
       _connectionState = ECLConnectionState.connected;
       _consecutivePollErrors = 0;
       _isReconnecting = false;
@@ -1041,6 +1064,9 @@ class ECLProvider extends ChangeNotifier {
 
     try {
       final newReadings = await _modbusService.readAllParameters();
+      // Parameters the controller doesn't provide (e.g. no "Verschieben" in
+      // this application) must not keep showing a cached or stale value.
+      _readings.removeWhere((id, _) => !newReadings.containsKey(id));
       _readings.addAll(newReadings);
       _consecutivePollErrors = 0;
       if (_isReconnecting) {

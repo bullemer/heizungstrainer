@@ -61,7 +61,7 @@ void main() {
       provider.dispose();
     });
 
-    testWidgets('displays failure when not possible to connect to controller', (tester) async {
+    testWidgets('shows neutral "Nicht verbunden" before any connection attempt', (tester) async {
       final provider = ECLProvider(
         databaseService: dbService,
         autoLoadDatabase: false,
@@ -83,8 +83,17 @@ void main() {
       expect(controllerTextFinder, findsOneWidget);
 
       final Text textWidget = tester.widget(controllerTextFinder);
-      expect(textWidget.data, contains('Verbindung nicht möglich'));
+      expect(textWidget.data, contains('Nicht verbunden'));
       expect(textWidget.style?.fontSize, 11);
+
+      // A real failure is shown as an error.
+      provider.setConnectedForTesting(
+        state: ECLConnectionState.error,
+        errorMessage: 'Zeitüberschreitung',
+      );
+      await tester.pump();
+      final Text errorText = tester.widget(controllerTextFinder);
+      expect(errorText.data, contains('Verbindung nicht möglich: Zeitüberschreitung'));
 
       provider.dispose();
     });

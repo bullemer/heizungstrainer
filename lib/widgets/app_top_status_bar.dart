@@ -77,11 +77,14 @@ class AppTopStatusBar extends StatelessWidget {
           final err = provider.errorMessage;
           if (err != null && err.isNotEmpty) {
             controllerText = 'Verbindung nicht möglich: $err';
+            controllerIcon = Icons.error_outline_rounded;
+            controllerColor = const Color(0xFFE57373); // Soft red
           } else {
-            controllerText = 'Verbindung nicht möglich: Keine Verbindung zum Regler';
+            // Not connected yet (no attempt failed) – neutral, not an error.
+            controllerText = 'Nicht verbunden: $controllerName';
+            controllerIcon = Icons.link_off_rounded;
+            controllerColor = const Color(0xFF9E9EA8);
           }
-          controllerIcon = Icons.error_outline_rounded;
-          controllerColor = const Color(0xFFE57373); // Soft red
         }
 
         // 2. Abrechnungsstelle sync info

@@ -137,6 +137,44 @@ abstract final class ECLRegisters {
     maxValue: 30.0,
   );
 
+  // ── Heating curve, circuit 1 (read-only here) ─────────────────
+  // PNU 11175 slope (×0.1), 11177/11178 min/max flow, 11400–11405 the six
+  // flow-temperature points at -30/-15/-5/0/5/15 °C outdoor, all for a room
+  // setpoint of 20 °C (Danfoss Kommunikationsbeschreibung, Tabelle 6-3).
+
+  static const curveSlope = ECLParameter(
+    id: 'curve_slope', name: 'Heizkurve (Neigung)', unit: '',
+    modbusAddress: 11174, multiplier: 0.1,
+  );
+  static const curveMinFlow = ECLParameter(
+    id: 'curve_min_flow', name: 'Min. Vorlauftemperatur', unit: '°C',
+    modbusAddress: 11176, multiplier: 1.0,
+  );
+  static const curveMaxFlow = ECLParameter(
+    id: 'curve_max_flow', name: 'Max. Vorlauftemperatur', unit: '°C',
+    modbusAddress: 11177, multiplier: 1.0,
+  );
+
+  /// Outdoor temperatures of the six curve points, in register order.
+  static const List<double> curvePointOutdoorTemps = [-30, -15, -5, 0, 5, 15];
+
+  static const List<ECLParameter> curvePoints = [
+    ECLParameter(id: 'curve_point_m30', name: 'Vorlauf bei -30 °C', unit: '°C', modbusAddress: 11399, multiplier: 1.0),
+    ECLParameter(id: 'curve_point_m15', name: 'Vorlauf bei -15 °C', unit: '°C', modbusAddress: 11400, multiplier: 1.0),
+    ECLParameter(id: 'curve_point_m5', name: 'Vorlauf bei -5 °C', unit: '°C', modbusAddress: 11401, multiplier: 1.0),
+    ECLParameter(id: 'curve_point_0', name: 'Vorlauf bei 0 °C', unit: '°C', modbusAddress: 11402, multiplier: 1.0),
+    ECLParameter(id: 'curve_point_p5', name: 'Vorlauf bei 5 °C', unit: '°C', modbusAddress: 11403, multiplier: 1.0),
+    ECLParameter(id: 'curve_point_p15', name: 'Vorlauf bei 15 °C', unit: '°C', modbusAddress: 11404, multiplier: 1.0),
+  ];
+
+  /// Optional curve parameters; not every application provides them.
+  static const List<ECLParameter> curveParameters = [
+    curveSlope,
+    curveMinFlow,
+    curveMaxFlow,
+    ...curvePoints,
+  ];
+
   /// All registered parameters.
   static const List<ECLParameter> all = [
     outdoorTemp,
@@ -145,6 +183,7 @@ abstract final class ECLRegisters {
     hotWaterTemp,
     heatingCurveShift,
     roomTargetTemp,
+    ...curveParameters,
   ];
 
   static const List<ECLParameter> writableParameters = [

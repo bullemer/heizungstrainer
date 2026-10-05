@@ -7,8 +7,10 @@ import 'package:heizungstrainer/exceptions/license_exception.dart';
 import 'package:heizungstrainer/models/ecl_parameter.dart';
 import 'package:heizungstrainer/models/ecl_reading.dart';
 import 'package:heizungstrainer/providers/ecl_provider.dart';
+import 'package:heizungstrainer/screens/curve_simulator_screen.dart';
 import 'package:heizungstrainer/screens/settings_screen.dart';
 import 'package:heizungstrainer/services/heating_analytics_service.dart';
+import 'package:heizungstrainer/services/heating_curve_model.dart';
 import 'package:heizungstrainer/widgets/analysis_section.dart';
 import 'package:heizungstrainer/widgets/pro_upgrade_dialog.dart';
 import 'package:heizungstrainer/widgets/sparkline_chart.dart';
@@ -550,12 +552,35 @@ class _HeatingComfortCardState extends State<_HeatingComfortCard> {
     _syncFromProvider();
   }
 
+  // Room-setpoint mode: some controllers (e.g. Danfoss ECL 310 applications
+  // without a "Verschieben" parameter) move the heating curve via the comfort
+  // room setpoint instead of a shift.
+  static const double _roomMin = 17;
+  static const double _roomMax = 25;
+
+  ECLReading? get _shiftReading =>
+      widget.provider.getReading(ECLRegisters.heatingCurveShift);
+  ECLReading? get _roomReading =>
+      widget.provider.getReading(ECLRegisters.roomTargetTemp);
+
+  bool get _roomMode => _shiftReading == null && _roomReading != null;
+  bool get _hasControl => _shiftReading != null || _roomReading != null;
+
+  ECLParameter get _parameter =>
+      _roomMode ? ECLRegisters.roomTargetTemp : ECLRegisters.heatingCurveShift;
+
+  /// Slider position on the -3..+3 comfort scale (for colours/energy text).
+  double get _comfortOffset => _roomMode
+      ? (_sliderValue - (_roomReading?.displayValue ?? 21)).clamp(-3, 3).toDouble()
+      : _sliderValue;
+
   void _syncFromProvider() {
-    final raw = widget.provider
-            .getReading(ECLRegisters.heatingCurveShift)
-            ?.displayValue ??
-        0;
-    _sliderValue = raw.clamp(-3, 3).toDouble();
+    if (_roomMode) {
+      final room = _roomReading!.displayValue.clamp(_roomMin, _roomMax).toDouble();
+      _sliderValue = (room * 2).round() / 2;
+    } else {
+      _sliderValue = (_shiftReading?.displayValue ?? 0).clamp(-3, 3).toDouble();
+    }
   }
 
   @override
@@ -565,6 +590,7 @@ class _HeatingComfortCardState extends State<_HeatingComfortCard> {
   }
 
   String _comfortLabel(double value) {
+    if (_roomMode) return '${value.toStringAsFixed(1)} °C';
     if (value <= -3) return 'Sparmodus';
     if (value <= -2) return 'Etwas kühler';
     if (value <= -1) return 'Leicht reduziert';
@@ -586,15 +612,16 @@ class _HeatingComfortCardState extends State<_HeatingComfortCard> {
     setState(() => _isSaving = true);
     HapticFeedback.mediumImpact();
     try {
-      await widget.provider
-          .writeParameter(ECLRegisters.heatingCurveShift, _sliderValue);
+      await widget.provider.writeParameter(_parameter, _sliderValue);
       if (mounted) {
         setState(() {
           _isEditing = false;
           _isSaving = false;
         });
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Heizkurve auf ${_comfortLabel(_sliderValue)} gesetzt'),
+          content: Text(_roomMode
+              ? 'Komfort-Raumsollwert auf ${_comfortLabel(_sliderValue)} gesetzt'
+              : 'Heizkurve auf ${_comfortLabel(_sliderValue)} gesetzt'),
           backgroundColor: const Color(0xFF66BB6A),
         ));
       }
@@ -617,7 +644,38 @@ class _HeatingComfortCardState extends State<_HeatingComfortCard> {
     }
   }
 
+  Widget _buildRoomModePreview(Color accent) {
+    final current = _roomReading?.displayValue;
+    final delta = current == null ? 0.0 : _sliderValue - current;
+    final percent = (delta.abs() * 6).round();
+    final String text;
+    if (delta.abs() < 0.25) {
+      text = 'Aktueller Komfort-Raumsollwert des Reglers. Der Regler verschiebt '
+          'die Heizkurve passend dazu.';
+    } else if (delta < 0) {
+      text = 'Grob ca. $percent % weniger Heizenergie (Faustregel ~6 % je °C). '
+          'Der Regler senkt die Heizkurve entsprechend ab.';
+    } else {
+      text = 'Grob ca. $percent % mehr Heizenergie (Faustregel ~6 % je °C). '
+          'Der Regler hebt die Heizkurve entsprechend an.';
+    }
+    return Container(
+      margin: const EdgeInsets.only(top: 14),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: accent.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: accent.withValues(alpha: 0.25)),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: 11.5, height: 1.35),
+      ),
+    );
+  }
+
   Widget _buildPhysicalImpactPreview(double sliderValue, Color accent) {
+    if (_roomMode) return _buildRoomModePreview(accent);
     final outdoorReading = widget.provider.getReading(ECLRegisters.outdoorTemp);
     final outdoorTemp =
         (outdoorReading != null && !outdoorReading.isSensorDisconnected)
@@ -722,7 +780,7 @@ class _HeatingComfortCardState extends State<_HeatingComfortCard> {
 
   @override
   Widget build(BuildContext context) {
-    final accent = _comfortColor(_sliderValue);
+    final accent = _comfortColor(_comfortOffset);
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -772,7 +830,7 @@ class _HeatingComfortCardState extends State<_HeatingComfortCard> {
                       ),
                     ),
                     Text(
-                      'Heizkurve',
+                      _roomMode ? 'Komfort-Raumsollwert (verschiebt die Heizkurve)' : 'Heizkurve',
                       style: TextStyle(
                         fontSize: 12,
                         color: Colors.white.withValues(alpha: 0.5),
@@ -817,11 +875,11 @@ class _HeatingComfortCardState extends State<_HeatingComfortCard> {
               thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 12),
             ),
             child: Slider(
-              value: _sliderValue,
-              min: -3,
-              max: 3,
-              divisions: 6,
-              onChanged: widget.provider.isConnected
+              value: _sliderValue.clamp(_roomMode ? _roomMin : -3, _roomMode ? _roomMax : 3).toDouble(),
+              min: _roomMode ? _roomMin : -3,
+              max: _roomMode ? _roomMax : 3,
+              divisions: _roomMode ? ((_roomMax - _roomMin) * 2).round() : 6,
+              onChanged: widget.provider.isConnected && _hasControl
                   ? (v) {
                       HapticFeedback.selectionClick();
                       setState(() {
@@ -832,6 +890,16 @@ class _HeatingComfortCardState extends State<_HeatingComfortCard> {
                   : null,
             ),
           ),
+
+          if (widget.provider.isConnected && !_hasControl)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Text(
+                'Dieser Regler stellt weder eine Parallelverschiebung noch einen '
+                'Raum-Sollwert zum Verstellen bereit.',
+                style: TextStyle(fontSize: 11.5, color: Colors.orange.shade200),
+              ),
+            ),
 
           if (widget.provider.isConnected && widget.provider.isBetaWriteBlocked)
             Padding(
@@ -849,14 +917,14 @@ class _HeatingComfortCardState extends State<_HeatingComfortCard> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  '❄️ Sparmodus',
+                  _roomMode ? '❄️ ${_roomMin.toStringAsFixed(0)} °C' : '❄️ Sparmodus',
                   style: TextStyle(
                     fontSize: 11,
                     color: Colors.white.withValues(alpha: 0.4),
                   ),
                 ),
                 Text(
-                  '🔥 Max. Komfort',
+                  _roomMode ? '🔥 ${_roomMax.toStringAsFixed(0)} °C' : '🔥 Max. Komfort',
                   style: TextStyle(
                     fontSize: 11,
                     color: Colors.white.withValues(alpha: 0.4),
@@ -868,6 +936,19 @@ class _HeatingComfortCardState extends State<_HeatingComfortCard> {
 
           // Live physical impact preview
           _buildPhysicalImpactPreview(_sliderValue, accent),
+
+          if (ControllerHeatingCurve.fromReadings(widget.provider.getReading) != null)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                key: const Key('openCurveSimulator'),
+                icon: const Icon(Icons.show_chart_rounded, size: 18),
+                label: const Text('Heizkurve & Sparrechner'),
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const CurveSimulatorScreen()),
+                ),
+              ),
+            ),
 
           // Save/Cancel buttons
           if (_isEditing) ...[

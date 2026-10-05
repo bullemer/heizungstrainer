@@ -238,6 +238,16 @@ class ModbusService {
       }
     }
 
+    // 3. Optional heating-curve parameters (not every application has them;
+    //    a missing one is not a connection problem).
+    for (final param in ECLRegisters.curveParameters) {
+      try {
+        results[param.id] = await readParameter(param);
+      } catch (err) {
+        debugPrint('[Modbus] Curve parameter ${param.id} not available: $err');
+      }
+    }
+
     // If every single parameter failed to read, the connection is broken
     if (results.isEmpty && failureCount > 0) {
       if (lastError is ModbusCommunicationException) throw lastError;
