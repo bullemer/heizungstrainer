@@ -474,12 +474,26 @@ class ECLProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Marks the selected controller for automatic reconnect at the next start
+  /// (manual IP and discovery both end here).
+  Future<void> _rememberSuccessfulConnection() async {
+    try {
+      await _secureStorage.write(key: _autoConnectKey, value: _selectedControllerId);
+    } catch (e) {
+      debugPrint('[Provider] Could not remember controller for auto-connect: $e');
+    }
+  }
+
   /// Reconnects to the controller that last connected successfully, so the
   /// app doesn't open on the search screen every time.
   Future<void> _autoConnectAtStartup() async {
     if (!_autoConnect || _connectionState != ECLConnectionState.disconnected) return;
     final lastId = await _secureStorage.read(key: _autoConnectKey);
-    if (lastId == null || lastId != _selectedControllerId) return;
+    if (lastId == null || lastId != _selectedControllerId) {
+      debugPrint('[Provider] Auto-connect skipped (last: $lastId, selected: $_selectedControllerId)');
+      return;
+    }
+    debugPrint('[Provider] Auto-connect to $lastId');
     if (_selectedControllerId == 'danfoss_ecl_310') {
       final ip = await _discoveryService.getSavedControllerIp();
       if (ip != null) await connectToIp(ip);
@@ -854,6 +868,7 @@ class ECLProvider extends ChangeNotifier {
       notifyListeners();
 
       await _modbusService.connect(ip);
+      await _rememberSuccessfulConnection();
       _connectionState = ECLConnectionState.connected;
       _consecutivePollErrors = 0;
       _isReconnecting = false;
@@ -939,9 +954,7 @@ class ECLProvider extends ChangeNotifier {
         await _activeController.connect(host: ip, port: port);
       }
       await _discoveryService.saveControllerIp(ip);
-      try {
-        await _secureStorage.write(key: _autoConnectKey, value: _selectedControllerId);
-      } catch (_) {}
+      await _rememberSuccessfulConnection();
       _connectionState = ECLConnectionState.connected;
       _consecutivePollErrors = 0;
       _isReconnecting = false;
