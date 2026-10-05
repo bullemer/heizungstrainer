@@ -170,6 +170,70 @@ class ECLProvider extends ChangeNotifier {
 
   final Map<String, bool> _billingHasCredentials = {};
 
+  // ── Comfort preview & savings inputs ───────────────────────────────────
+  static const String annualHeatingKwhKey = 'annual_heating_kwh';
+  double? _comfortPreview;
+  double? _annualHeatingKwhManual;
+  double? _cachedPricePerKwh;
+
+  /// Setpoint the user is currently trying on the home slider (not written
+  /// yet); the curve chart shows it as a dashed line. Null = no preview.
+  double? get comfortPreview => _comfortPreview;
+
+  void setComfortPreview(double? value) {
+    if (_comfortPreview == value) return;
+    _comfortPreview = value;
+    notifyListeners();
+  }
+
+  /// Last known price per kWh (tariff / billing), for savings in €.
+  double? get pricePerKwhCached => _cachedPricePerKwh;
+
+  /// Heating energy per year used for savings: the user's own value, else the
+  /// real billing projection (demo billing providers are ignored).
+  double? get annualHeatingKwh {
+    if (_annualHeatingKwhManual != null && _annualHeatingKwhManual! > 0) {
+      return _annualHeatingKwhManual;
+    }
+    if (isSimulatedBilling) return null;
+    final projection = _brunataData?.heatingProjection;
+    return (projection != null && projection > 0) ? projection : null;
+  }
+
+  /// Where [annualHeatingKwh] comes from, for labels.
+  String? get annualHeatingKwhSource {
+    if (_annualHeatingKwhManual != null && _annualHeatingKwhManual! > 0) return 'eigener Wert';
+    return annualHeatingKwh == null ? null : 'Hochrechnung ${currentBillingDescriptor.name}';
+  }
+
+  double? get annualHeatingKwhManual => _annualHeatingKwhManual;
+
+  Future<void> setAnnualHeatingKwh(double? kwh) async {
+    _annualHeatingKwhManual = (kwh != null && kwh > 0) ? kwh : null;
+    notifyListeners();
+    try {
+      if (_annualHeatingKwhManual == null) {
+        await _secureStorage.delete(key: annualHeatingKwhKey);
+      } else {
+        await _secureStorage.write(key: annualHeatingKwhKey, value: _annualHeatingKwhManual.toString());
+      }
+    } catch (e) {
+      debugPrint('[Provider] Could not persist annual heating kWh: $e');
+    }
+  }
+
+  /// Loads the inputs for savings estimates (own annual kWh, price).
+  Future<void> refreshSavingsInputs() async {
+    try {
+      _annualHeatingKwhManual =
+          double.tryParse(await _secureStorage.read(key: annualHeatingKwhKey) ?? '');
+    } catch (_) {}
+    try {
+      _cachedPricePerKwh = await getPricePerKwh();
+    } catch (_) {}
+    notifyListeners();
+  }
+
   /// Controllers (Beta drivers) the user explicitly allowed to write to.
   final Set<String> _betaWritesAllowed = {};
 
@@ -370,6 +434,7 @@ class ECLProvider extends ChangeNotifier {
         _billingHasCredentials[savedBill] = await _activeBillingProvider.hasCredentials();
       }
       notifyListeners();
+      await refreshSavingsInputs();
       await _autoConnectAtStartup();
     } catch (e) {
       debugPrint('[Provider] Error loading hardware settings from storage: $e');
@@ -1677,6 +1742,7 @@ class ECLProvider extends ChangeNotifier {
       _brunataData = existing.copyWithPrice(price);
       await _databaseService.cacheBrunataData(_brunataData!);
     }
+    _cachedPricePerKwh = price;
     notifyListeners();
   }
 
@@ -1723,6 +1789,7 @@ class ECLProvider extends ChangeNotifier {
       _brunataData = existing.copyWithPrice(pricePerKwh);
       await _databaseService.cacheBrunataData(_brunataData!);
     }
+    _cachedPricePerKwh = pricePerKwh;
     notifyListeners();
     if (syncAfterSave) {
       await syncBillingData();

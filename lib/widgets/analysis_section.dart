@@ -11,6 +11,8 @@ import 'package:heizungstrainer/screens/brunata_detail_screen.dart';
 import 'package:heizungstrainer/services/brunata_local_scraper_service.dart';
 import 'package:heizungstrainer/services/heating_analytics_service.dart';
 import 'package:heizungstrainer/widgets/app_top_status_bar.dart';
+import 'package:heizungstrainer/services/heating_curve_model.dart';
+import 'package:heizungstrainer/widgets/controller_curve_chart.dart';
 import 'package:heizungstrainer/widgets/heating_curve_chart.dart';
 
 /// The full "Analyse & Sparpotenzial" section.
@@ -31,6 +33,16 @@ class AnalysisSection extends StatelessWidget {
   final DateTime? lastBillingSyncTime;
   final String? billingProviderName;
 
+  /// The controller's real curve (Danfoss), with the current comfort
+  /// setpoint and the setpoint being previewed on the home slider. When
+  /// present, these replace the generic model curve and savings tip.
+  final ControllerHeatingCurve? controllerCurve;
+  final double? roomSetpoint;
+  final double? previewSetpoint;
+  final double? annualHeatingKwh;
+  final String? annualHeatingKwhSource;
+  final double? pricePerKwh;
+
   const AnalysisSection({
     super.key,
     required this.currentOutdoorTemp,
@@ -43,6 +55,12 @@ class AnalysisSection extends StatelessWidget {
     this.onSyncBrunata,
     this.lastBillingSyncTime,
     this.billingProviderName,
+    this.controllerCurve,
+    this.roomSetpoint,
+    this.previewSetpoint,
+    this.annualHeatingKwh,
+    this.annualHeatingKwhSource,
+    this.pricePerKwh,
   });
 
   @override
@@ -114,16 +132,28 @@ class AnalysisSection extends StatelessWidget {
         const SizedBox(height: 12),
 
         // ── B. Heating Curve Chart ──────────────────────────
-        _HeatingCurveSection(
-          parallelShift: parallelShift,
-          currentOutdoorTemp: currentOutdoorTemp,
-          currentFlowTemp: currentFlowTemp,
-        ),
-        const SizedBox(height: 12),
+        if (controllerCurve != null && roomSetpoint != null)
+          _ControllerCurveSection(
+            curve: controllerCurve!,
+            roomSetpoint: roomSetpoint!,
+            previewSetpoint: previewSetpoint,
+            outdoorTemp: currentOutdoorTemp,
+            annualHeatingKwh: annualHeatingKwh,
+            annualHeatingKwhSource: annualHeatingKwhSource,
+            pricePerKwh: pricePerKwh,
+          )
+        else ...[
+          _HeatingCurveSection(
+            parallelShift: parallelShift,
+            currentOutdoorTemp: currentOutdoorTemp,
+            currentFlowTemp: currentFlowTemp,
+          ),
+          const SizedBox(height: 12),
 
-        // ── C. Smart Savings Advice ─────────────────────────
-        if (savings.hasOptimizationPotential)
-          _SavingsAdviceCard(savings: savings),
+          // ── C. Smart Savings Advice (generic model) ───────
+          if (savings.hasOptimizationPotential)
+            _SavingsAdviceCard(savings: savings),
+        ],
       ],
     );
   }
@@ -561,6 +591,130 @@ class _HeatingCurveSection extends StatelessWidget {
               ],
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Real controller curve with the live preview from the home slider, and what
+/// the previewed setpoint means per year in kWh and €.
+class _ControllerCurveSection extends StatelessWidget {
+  final ControllerHeatingCurve curve;
+  final double roomSetpoint;
+  final double? previewSetpoint;
+  final double outdoorTemp;
+  final double? annualHeatingKwh;
+  final String? annualHeatingKwhSource;
+  final double? pricePerKwh;
+
+  const _ControllerCurveSection({
+    required this.curve,
+    required this.roomSetpoint,
+    required this.previewSetpoint,
+    required this.outdoorTemp,
+    required this.annualHeatingKwh,
+    required this.annualHeatingKwhSource,
+    required this.pricePerKwh,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final preview = previewSetpoint;
+    final previewing = preview != null && (preview - roomSetpoint).abs() >= 0.25;
+    final flowNow = curve.flowAt(outdoorTemp, roomSetpoint);
+    final flowPreview = previewing ? curve.flowAt(outdoorTemp, preview) : flowNow;
+    final savings = previewing
+        ? RoomTemperatureSavings.estimate(
+            currentSetpoint: roomSetpoint,
+            newSetpoint: preview,
+            annualHeatingKwh: annualHeatingKwh,
+            pricePerKwh: pricePerKwh,
+          )
+        : null;
+    const muted = TextStyle(fontSize: 11.5, color: Color(0xFF9E9EA8), height: 1.35);
+
+    return Container(
+      key: const Key('controllerCurveSection'),
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: const Color(0xFF2A2A32),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFF3A3A44)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            const Icon(Icons.show_chart_rounded, color: Color(0xFFFFA726), size: 18),
+            const SizedBox(width: 8),
+            const Expanded(
+              child: Text('Heizkurve deines Reglers',
+                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5, color: Color(0xFFECECF0))),
+            ),
+            Text('Raum-Soll ${roomSetpoint.toStringAsFixed(1)} °C',
+                style: const TextStyle(color: Color(0xFFFFA726), fontSize: 11, fontWeight: FontWeight.w600)),
+          ]),
+          const SizedBox(height: 12),
+          ControllerCurveChart(
+            curve: curve,
+            roomSetpoint: roomSetpoint,
+            simulatedSetpoint: preview,
+            outdoorTemp: outdoorTemp,
+            height: 200,
+          ),
+          const SizedBox(height: 10),
+          Text(
+            previewing
+                ? 'Vorschau ${preview.toStringAsFixed(1)} °C (gestrichelt): Vorlauf bei '
+                    '${outdoorTemp.toStringAsFixed(1)} °C außen ${flowNow.toStringAsFixed(1)} → '
+                    '${flowPreview.toStringAsFixed(1)} °C. Noch nicht übernommen.'
+                : 'Vorlauf jetzt bei ${outdoorTemp.toStringAsFixed(1)} °C außen: '
+                    '${flowNow.toStringAsFixed(1)} °C. Bewege oben „Haus Basis-Wärme“, um eine '
+                    'andere Einstellung zu simulieren.',
+            style: muted,
+          ),
+          if (savings != null) ...[
+            const SizedBox(height: 10),
+            ControllerSavingsLine(savings: savings, source: annualHeatingKwhSource),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// "ca. X % weniger Heizenergie · ≈ Y kWh/Jahr · ≈ Z €/Jahr" with its basis.
+class ControllerSavingsLine extends StatelessWidget {
+  final RoomTemperatureSavings savings;
+  final String? source;
+
+  const ControllerSavingsLine({super.key, required this.savings, required this.source});
+
+  @override
+  Widget build(BuildContext context) {
+    final saving = savings.percent > 0;
+    final color = saving ? const Color(0xFF66BB6A) : const Color(0xFFFF7043);
+    final verb = saving ? 'weniger' : 'mehr';
+    final parts = <String>['ca. ${savings.percent.abs().toStringAsFixed(0)} % $verb Heizenergie'];
+    if (savings.kwhPerYear != null) parts.add('≈ ${savings.kwhPerYear!.abs().toStringAsFixed(0)} kWh/Jahr');
+    if (savings.euroPerYear != null) parts.add('≈ ${savings.euroPerYear!.abs().toStringAsFixed(0)} €/Jahr');
+    final basis = savings.kwhPerYear == null
+        ? 'Für kWh und € den Jahresverbrauch im Sparrechner eintragen oder die Abrechnung synchronisieren.'
+        : 'Basis: ${source ?? 'Jahresverbrauch'} und dein kWh-Preis; Faustregel ~6 % je °C.';
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(parts.join(' · '), style: TextStyle(color: color, fontWeight: FontWeight.w700, fontSize: 12.5)),
+          const SizedBox(height: 3),
+          Text(basis, style: const TextStyle(fontSize: 11, color: Color(0xFF9E9EA8))),
         ],
       ),
     );

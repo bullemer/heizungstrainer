@@ -1,9 +1,11 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:heizungstrainer/models/ecl_parameter.dart';
 import 'package:heizungstrainer/models/ecl_reading.dart';
 import 'package:heizungstrainer/services/curve_optimizer_service.dart';
 import 'package:heizungstrainer/services/heating_curve_model.dart';
+import 'package:heizungstrainer/widgets/analysis_section.dart';
 
 /// Values read from a real ECL Comfort 310 on 2026-10-05.
 const realPoints = [40.0, 36.0, 32.0, 29.0, 26.0, 22.0];
@@ -99,6 +101,41 @@ void main() {
       final loaded = await CurveOptimizerService(inMemoryStorage: store).load();
       expect(loaded.currentSetpoint, 21.5);
       expect(loaded.stepStartedAt, t0);
+    });
+  });
+
+  group('AnalysisSection with the controller curve', () {
+    Widget build({double? preview}) => MaterialApp(
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: AnalysisSection(
+                currentOutdoorTemp: 5,
+                currentFlowTemp: 30,
+                currentReturnTemp: 25,
+                parallelShift: 0,
+                controllerCurve: ControllerHeatingCurve.fromReadings(readingsFrom(realController())),
+                roomSetpoint: 22,
+                previewSetpoint: preview,
+                annualHeatingKwh: 8000,
+                annualHeatingKwhSource: 'eigener Wert',
+                pricePerKwh: 0.12,
+              ),
+            ),
+          ),
+        );
+
+    testWidgets('shows the real curve and no preview by default', (tester) async {
+      await tester.pumpWidget(build());
+      expect(find.byKey(const Key('controllerCurveSection')), findsOneWidget);
+      expect(find.textContaining('Bewege oben'), findsOneWidget);
+      expect(find.textContaining('kWh/Jahr'), findsNothing);
+    });
+
+    testWidgets('slider preview shows the new flow and kWh/€ per year', (tester) async {
+      await tester.pumpWidget(build(preview: 21));
+      // 5 °C outdoor: 26 + 2.5 = 28.5 now, 26 + 1.25 = 27.25 at 21 °C
+      expect(find.textContaining('28.5 → 27.3'), findsOneWidget);
+      expect(find.textContaining('ca. 6 % weniger Heizenergie · ≈ 480 kWh/Jahr · ≈ 58 €/Jahr'), findsOneWidget);
     });
   });
 }

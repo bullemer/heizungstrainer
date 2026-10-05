@@ -175,6 +175,14 @@ class HomeScreen extends StatelessWidget {
                   lastBillingSyncTime: provider.lastBillingSyncTime,
                   billingProviderName:
                       provider.currentBillingDescriptor.name,
+                  controllerCurve:
+                      ControllerHeatingCurve.fromReadings(provider.getReading),
+                  roomSetpoint:
+                      provider.getReading(ECLRegisters.roomTargetTemp)?.displayValue,
+                  previewSetpoint: provider.comfortPreview,
+                  annualHeatingKwh: provider.annualHeatingKwh,
+                  annualHeatingKwhSource: provider.annualHeatingKwhSource,
+                  pricePerKwh: provider.pricePerKwhCached,
                 ),
               ],
             ),
@@ -613,6 +621,7 @@ class _HeatingComfortCardState extends State<_HeatingComfortCard> {
     HapticFeedback.mediumImpact();
     try {
       await widget.provider.writeParameter(_parameter, _sliderValue);
+      widget.provider.setComfortPreview(null);
       if (mounted) {
         setState(() {
           _isEditing = false;
@@ -646,30 +655,44 @@ class _HeatingComfortCardState extends State<_HeatingComfortCard> {
 
   Widget _buildRoomModePreview(Color accent) {
     final current = _roomReading?.displayValue;
-    final delta = current == null ? 0.0 : _sliderValue - current;
-    final percent = (delta.abs() * 6).round();
-    final String text;
-    if (delta.abs() < 0.25) {
-      text = 'Aktueller Komfort-Raumsollwert des Reglers. Der Regler verschiebt '
-          'die Heizkurve passend dazu.';
-    } else if (delta < 0) {
-      text = 'Grob ca. $percent % weniger Heizenergie (Faustregel ~6 % je °C). '
-          'Der Regler senkt die Heizkurve entsprechend ab.';
-    } else {
-      text = 'Grob ca. $percent % mehr Heizenergie (Faustregel ~6 % je °C). '
-          'Der Regler hebt die Heizkurve entsprechend an.';
+    final curve = ControllerHeatingCurve.fromReadings(widget.provider.getReading);
+    final outdoor = widget.provider.getReading(ECLRegisters.outdoorTemp);
+    final outdoorTemp =
+        (outdoor != null && !outdoor.isSensorDisconnected) ? outdoor.displayValue : null;
+    if (current == null || (_sliderValue - current).abs() < 0.25) {
+      return Padding(
+        padding: const EdgeInsets.only(top: 12),
+        child: Text(
+          'Aktueller Komfort-Raumsollwert des Reglers. Schieb den Regler, um zu sehen, '
+          'wie sich Heizkurve, Energie und Kosten ändern.',
+          style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 11.5, height: 1.35),
+        ),
+      );
     }
-    return Container(
-      margin: const EdgeInsets.only(top: 14),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: accent.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: accent.withValues(alpha: 0.25)),
-      ),
-      child: Text(
-        text,
-        style: TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: 11.5, height: 1.35),
+    final savings = RoomTemperatureSavings.estimate(
+      currentSetpoint: current,
+      newSetpoint: _sliderValue,
+      annualHeatingKwh: widget.provider.annualHeatingKwh,
+      pricePerKwh: widget.provider.pricePerKwhCached,
+    );
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (curve != null && outdoorTemp != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Text(
+                'Vorlauf bei ${outdoorTemp.toStringAsFixed(1)} °C außen: '
+                '${curve.flowAt(outdoorTemp, current).toStringAsFixed(1)} → '
+                '${curve.flowAt(outdoorTemp, _sliderValue).toStringAsFixed(1)} °C '
+                '(Kurve unten gestrichelt)',
+                style: TextStyle(color: Colors.white.withValues(alpha: 0.75), fontSize: 11.5),
+              ),
+            ),
+          ControllerSavingsLine(savings: savings, source: widget.provider.annualHeatingKwhSource),
+        ],
       ),
     );
   }
@@ -886,6 +909,7 @@ class _HeatingComfortCardState extends State<_HeatingComfortCard> {
                         _sliderValue = v;
                         _isEditing = true;
                       });
+                      if (_roomMode) widget.provider.setComfortPreview(v);
                     }
                   : null,
             ),
@@ -964,6 +988,7 @@ class _HeatingComfortCardState extends State<_HeatingComfortCard> {
                               _isEditing = false;
                               _syncFromProvider();
                             });
+                            widget.provider.setComfortPreview(null);
                           },
                     style: OutlinedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 12),

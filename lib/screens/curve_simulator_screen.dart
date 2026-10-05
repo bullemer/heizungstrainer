@@ -1,7 +1,5 @@
-import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:provider/provider.dart';
 
 import 'package:heizungstrainer/exceptions/license_exception.dart';
@@ -10,35 +8,29 @@ import 'package:heizungstrainer/models/ecl_parameter.dart';
 import 'package:heizungstrainer/providers/ecl_provider.dart';
 import 'package:heizungstrainer/services/curve_optimizer_service.dart';
 import 'package:heizungstrainer/services/heating_curve_model.dart';
+import 'package:heizungstrainer/widgets/controller_curve_chart.dart';
 import 'package:heizungstrainer/widgets/pro_upgrade_dialog.dart';
 
 /// Shows the controller's real heating curve, simulates a different comfort
 /// room setpoint (curve + rough savings) and runs the step-by-step assistant.
 class CurveSimulatorScreen extends StatefulWidget {
   final CurveOptimizerService? optimizer;
-  final FlutterSecureStorage? storage;
 
-  const CurveSimulatorScreen({super.key, this.optimizer, this.storage});
+  const CurveSimulatorScreen({super.key, this.optimizer});
 
   @override
   State<CurveSimulatorScreen> createState() => _CurveSimulatorScreenState();
 }
 
 class _CurveSimulatorScreenState extends State<CurveSimulatorScreen> {
-  static const _annualKwhKey = 'annual_heating_kwh';
   static const _card = Color(0xFF2A2A32);
   static const _border = Color(0xFF3A3A44);
-  static const _current = Color(0xFFFFA726);
-  static const _simulated = Color(0xFF42A5F5);
   static const _green = Color(0xFF66BB6A);
 
   late final CurveOptimizerService _optimizer;
-  late final FlutterSecureStorage _storage;
   final _annualController = TextEditingController();
 
   double? _simSetpoint;
-  double? _price;
-  double? _annualKwhManual;
   OptimizerState _opt = OptimizerState.idle;
   bool _busy = false;
 
@@ -46,7 +38,6 @@ class _CurveSimulatorScreenState extends State<CurveSimulatorScreen> {
   void initState() {
     super.initState();
     _optimizer = widget.optimizer ?? CurveOptimizerService();
-    _storage = widget.storage ?? const FlutterSecureStorage();
     _load();
   }
 
@@ -59,43 +50,21 @@ class _CurveSimulatorScreenState extends State<CurveSimulatorScreen> {
   Future<void> _load() async {
     final provider = context.read<ECLProvider>();
     final opt = await _optimizer.load();
-    double? price;
-    String? manual;
-    try {
-      price = await provider.getPricePerKwh();
-    } catch (_) {}
-    try {
-      manual = await _storage.read(key: _annualKwhKey);
-    } catch (_) {}
+    await provider.refreshSavingsInputs();
     if (!mounted) return;
     setState(() {
       _opt = opt;
-      _price = price;
-      _annualKwhManual = double.tryParse(manual ?? '');
-      if (_annualKwhManual != null) _annualController.text = _annualKwhManual!.toStringAsFixed(0);
+      final manual = provider.annualHeatingKwhManual;
+      if (manual != null) _annualController.text = manual.toStringAsFixed(0);
     });
   }
 
-  double? get _annualKwh {
-    if (_annualKwhManual != null && _annualKwhManual! > 0) return _annualKwhManual;
-    final provider = context.read<ECLProvider>();
-    // Demo billing providers return fixed sample numbers – never use those.
-    if (provider.isSimulatedBilling) return null;
-    final projection = provider.brunataData?.heatingProjection;
-    return (projection != null && projection > 0) ? projection : null;
-  }
+  double? get _annualKwh => context.read<ECLProvider>().annualHeatingKwh;
+  double? get _price => context.read<ECLProvider>().pricePerKwhCached;
 
-  Future<void> _saveAnnual(String text) async {
-    final value = double.tryParse(text.replaceAll('.', '').replaceAll(',', '.'));
-    setState(() => _annualKwhManual = value);
-    try {
-      if (value == null) {
-        await _storage.delete(key: _annualKwhKey);
-      } else {
-        await _storage.write(key: _annualKwhKey, value: value.toString());
-      }
-    } catch (_) {}
-  }
+  Future<void> _saveAnnual(String text) => context
+      .read<ECLProvider>()
+      .setAnnualHeatingKwh(double.tryParse(text.replaceAll('.', '').replaceAll(',', '.')));
 
   /// Writes [setpoint]; returns true on a confirmed write.
   Future<bool> _write(double setpoint) async {
@@ -202,11 +171,11 @@ class _CurveSimulatorScreenState extends State<CurveSimulatorScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              SizedBox(height: 230, child: _chart(curve, room, sim, outdoorTemp)),
+              ControllerCurveChart(curve: curve, roomSetpoint: room, simulatedSetpoint: sim, outdoorTemp: outdoorTemp),
               const SizedBox(height: 8),
               Wrap(spacing: 16, children: [
-                _legend(_current, 'Aktuell (${room.toStringAsFixed(1)} °C)'),
-                if ((sim - room).abs() >= 0.25) _legend(_simulated, 'Simuliert (${sim.toStringAsFixed(1)} °C)'),
+                _legend(ControllerCurveChart.currentColor, 'Aktuell (${room.toStringAsFixed(1)} °C)'),
+                if ((sim - room).abs() >= 0.25) _legend(ControllerCurveChart.simulatedColor, 'Simuliert (${sim.toStringAsFixed(1)} °C)'),
               ]),
             ],
           ),
@@ -241,8 +210,8 @@ class _CurveSimulatorScreenState extends State<CurveSimulatorScreen> {
                 keyboardType: TextInputType.number,
                 decoration: InputDecoration(
                   labelText: 'Heizenergie pro Jahr (kWh)',
-                  helperText: _annualKwhManual == null && _annualKwh != null
-                      ? 'Aus der Brunata-Hochrechnung: ${_annualKwh!.toStringAsFixed(0)} kWh – oder eigenen Wert eintragen'
+                  helperText: provider.annualHeatingKwhManual == null && _annualKwh != null
+                      ? '${provider.annualHeatingKwhSource}: ${_annualKwh!.toStringAsFixed(0)} kWh – oder eigenen Wert eintragen'
                       : 'Steht auf deiner Heizkostenabrechnung',
                   border: const OutlineInputBorder(),
                 ),
@@ -371,80 +340,6 @@ class _CurveSimulatorScreenState extends State<CurveSimulatorScreen> {
         ],
       ),
     );
-  }
-
-  Widget _chart(ControllerHeatingCurve curve, double room, double sim, double? outdoorTemp) {
-    List<FlSpot> spots(double setpoint) => [
-          for (var x = -20.0; x <= 20.0; x += 1) FlSpot(x, curve.flowAt(x, setpoint)),
-        ];
-    final current = spots(room);
-    final simulated = spots(sim);
-    final all = [...current, ...simulated].map((s) => s.y);
-    final minY = (all.reduce((a, b) => a < b ? a : b) / 5).floor() * 5 - 5.0;
-    final maxY = (all.reduce((a, b) => a > b ? a : b) / 5).ceil() * 5 + 5.0;
-    const axis = TextStyle(color: Color(0xFF9E9EA8), fontSize: 10);
-
-    return LineChart(LineChartData(
-      minX: -20,
-      maxX: 20,
-      minY: minY,
-      maxY: maxY,
-      gridData: FlGridData(
-        horizontalInterval: 5,
-        verticalInterval: 5,
-        getDrawingHorizontalLine: (_) => const FlLine(color: _border, strokeWidth: 0.5),
-        getDrawingVerticalLine: (_) => const FlLine(color: _border, strokeWidth: 0.5),
-      ),
-      titlesData: FlTitlesData(
-        leftTitles: AxisTitles(
-          axisNameWidget: const Text('Vorlauf °C', style: axis),
-          sideTitles: SideTitles(
-            showTitles: true,
-            reservedSize: 30,
-            interval: 5,
-            getTitlesWidget: (v, _) => Text('${v.toInt()}', style: axis),
-          ),
-        ),
-        bottomTitles: AxisTitles(
-          axisNameWidget: const Text('Außentemperatur °C', style: axis),
-          sideTitles: SideTitles(
-            showTitles: true,
-            reservedSize: 22,
-            interval: 5,
-            getTitlesWidget: (v, _) => Text('${v.toInt()}', style: axis),
-          ),
-        ),
-        topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-        rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-      ),
-      borderData: FlBorderData(show: false),
-      lineBarsData: [
-        LineChartBarData(spots: current, color: _current, barWidth: 3, dotData: const FlDotData(show: false)),
-        if ((sim - room).abs() >= 0.25)
-          LineChartBarData(
-            spots: simulated,
-            color: _simulated,
-            barWidth: 2.5,
-            dashArray: [6, 4],
-            dotData: const FlDotData(show: false),
-          ),
-      ],
-      extraLinesData: ExtraLinesData(verticalLines: [
-        if (outdoorTemp != null)
-          VerticalLine(
-            x: outdoorTemp.clamp(-20, 20).toDouble(),
-            color: Colors.white.withValues(alpha: 0.35),
-            strokeWidth: 1,
-            dashArray: [4, 4],
-            label: VerticalLineLabel(
-              show: true,
-              alignment: Alignment.topRight,
-              style: const TextStyle(color: Color(0xFFBDBDC7), fontSize: 10),
-              labelResolver: (_) => 'jetzt',
-            ),
-          ),
-      ]),
-    ));
   }
 
   Widget _legend(Color c, String label) => Row(mainAxisSize: MainAxisSize.min, children: [
