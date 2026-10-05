@@ -38,6 +38,7 @@ import 'package:heizungstrainer/services/database_service.dart';
 import 'package:heizungstrainer/services/device_registry.dart';
 import 'package:heizungstrainer/services/discovery_service.dart';
 import 'package:heizungstrainer/services/energy_price_service.dart';
+import 'package:heizungstrainer/services/heating_curve_model.dart';
 import 'package:heizungstrainer/exceptions/license_exception.dart';
 import 'package:heizungstrainer/models/license_info.dart';
 import 'package:heizungstrainer/services/license_service.dart';
@@ -215,6 +216,26 @@ class ECLProvider extends ChangeNotifier {
 
   double? get annualHeatingKwhManual => _annualHeatingKwhManual;
 
+  static const String buildingReferenceKey = 'building_reference';
+  BuildingReference? _buildingReference;
+
+  /// Building type for the EnergieSchweiz guide band in the curve chart.
+  BuildingReference? get buildingReference => _buildingReference;
+
+  Future<void> setBuildingReference(BuildingReference? value) async {
+    _buildingReference = value;
+    notifyListeners();
+    try {
+      if (value == null) {
+        await _secureStorage.delete(key: buildingReferenceKey);
+      } else {
+        await _secureStorage.write(key: buildingReferenceKey, value: value.name);
+      }
+    } catch (e) {
+      debugPrint('[Provider] Could not persist building type: $e');
+    }
+  }
+
   Future<void> setAnnualHeatingKwh(double? kwh) async {
     _annualHeatingKwhManual = (kwh != null && kwh > 0) ? kwh : null;
     notifyListeners();
@@ -237,6 +258,10 @@ class ECLProvider extends ChangeNotifier {
     } catch (_) {}
     try {
       _cachedPricePerKwh = await getPricePerKwh();
+    } catch (_) {}
+    try {
+      _buildingReference =
+          BuildingReference.fromName(await _secureStorage.read(key: buildingReferenceKey));
     } catch (_) {}
     notifyListeners();
   }

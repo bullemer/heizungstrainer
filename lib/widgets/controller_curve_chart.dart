@@ -13,8 +13,17 @@ class ControllerCurveChart extends StatelessWidget {
   final double? outdoorTemp;
   final double height;
 
+  /// Grey dashed reference: Danfoss factory curve at the same room setpoint.
+  final bool showFactoryCurve;
+
+  /// Green band: EnergieSchweiz guide values for this building type
+  /// (defined for 20 °C room temperature).
+  final BuildingReference? reference;
+
   static const currentColor = Color(0xFFFFA726);
   static const simulatedColor = Color(0xFF42A5F5);
+  static const factoryColor = Color(0xFF9E9EA8);
+  static const referenceColor = Color(0xFF66BB6A);
   static const _grid = Color(0xFF3A3A44);
 
   const ControllerCurveChart({
@@ -24,6 +33,8 @@ class ControllerCurveChart extends StatelessWidget {
     this.simulatedSetpoint,
     this.outdoorTemp,
     this.height = 230,
+    this.showFactoryCurve = true,
+    this.reference,
   });
 
   bool get showsSimulation =>
@@ -40,7 +51,19 @@ class ControllerCurveChart extends StatelessWidget {
         ];
     final current = spots(room);
     final simulated = spots(sim);
-    final all = [...current, ...simulated].map((s) => s.y);
+    final factory = [
+      for (var x = -20.0; x <= 20.0; x += 1) FlSpot(x, danfossFactoryCurve.flowAt(x, room)),
+    ];
+    final ref = reference;
+    final refLow = ref == null ? <FlSpot>[] : [for (var x = -20.0; x <= 20.0; x += 1) FlSpot(x, ref.lowAt(x))];
+    final refHigh = ref == null ? <FlSpot>[] : [for (var x = -20.0; x <= 20.0; x += 1) FlSpot(x, ref.highAt(x))];
+    final all = [
+      ...current,
+      ...simulated,
+      if (showFactoryCurve) ...factory,
+      ...refLow,
+      ...refHigh,
+    ].map((s) => s.y);
     final minY = (all.reduce((a, b) => a < b ? a : b) / 5).floor() * 5 - 5.0;
     final maxY = (all.reduce((a, b) => a > b ? a : b) / 5).ceil() * 5 + 5.0;
     const axis = TextStyle(color: Color(0xFF9E9EA8), fontSize: 10);
@@ -79,7 +102,24 @@ class ControllerCurveChart extends StatelessWidget {
         rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
       ),
       borderData: FlBorderData(show: false),
+      // Index 0/1 = guide band edges (filled between), drawn first = behind.
+      betweenBarsData: [
+        if (ref != null)
+          BetweenBarsData(fromIndex: 0, toIndex: 1, color: referenceColor.withValues(alpha: 0.16)),
+      ],
       lineBarsData: [
+        if (ref != null) ...[
+          LineChartBarData(spots: refLow, color: referenceColor.withValues(alpha: 0.5), barWidth: 1, dotData: const FlDotData(show: false)),
+          LineChartBarData(spots: refHigh, color: referenceColor.withValues(alpha: 0.5), barWidth: 1, dotData: const FlDotData(show: false)),
+        ],
+        if (showFactoryCurve)
+          LineChartBarData(
+            spots: factory,
+            color: factoryColor.withValues(alpha: 0.8),
+            barWidth: 1.5,
+            dashArray: [3, 4],
+            dotData: const FlDotData(show: false),
+          ),
         LineChartBarData(spots: current, color: currentColor, barWidth: 3, dotData: const FlDotData(show: false)),
         if (showsSimulation)
           LineChartBarData(

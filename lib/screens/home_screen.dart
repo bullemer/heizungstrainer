@@ -23,6 +23,30 @@ class HomeScreen extends StatelessWidget {
   static ControllerHeatingCurve? _controllerCurve(ECLProvider provider) =>
       ControllerHeatingCurve.fromReadings(provider.getReading);
 
+  /// Building type for the EnergieSchweiz guide band in the curve chart.
+  static Future<void> _pickBuildingReference(BuildContext context, ECLProvider provider) async {
+    final picked = await showDialog<Object>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: const Text('Gebäudetyp'),
+        children: [
+          for (final b in BuildingReference.values)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(ctx, b),
+              child: Text(b.label,
+                  style: TextStyle(fontWeight: b == provider.buildingReference ? FontWeight.w700 : null)),
+            ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(ctx, 'none'),
+            child: const Text('Keinen Richtwert anzeigen'),
+          ),
+        ],
+      ),
+    );
+    if (picked == null) return;
+    await provider.setBuildingReference(picked is BuildingReference ? picked : null);
+  }
+
   /// Lets the user enter/correct the annual heating consumption used for the
   /// savings estimate (overrides the billing portal value).
   static Future<void> _editAnnualKwh(BuildContext context, ECLProvider provider) async {
@@ -169,6 +193,8 @@ class HomeScreen extends StatelessWidget {
                     annualHeatingKwhSource: provider.annualHeatingKwhSource,
                     pricePerKwh: provider.pricePerKwhCached,
                     onEditAnnualKwh: () => _editAnnualKwh(context, provider),
+                    buildingReference: provider.buildingReference,
+                    onPickBuildingReference: () => _pickBuildingReference(context, provider),
                     onOpenAssistant: () => Navigator.of(context).push(
                       MaterialPageRoute(builder: (_) => const CurveSimulatorScreen()),
                     ),

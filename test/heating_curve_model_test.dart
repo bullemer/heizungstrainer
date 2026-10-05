@@ -208,4 +208,46 @@ void main() {
     expect(find.text('−1200 kWh (12 %)'), findsOneWidget);
     expect(find.textContaining('letzten 12 Monate'), findsOneWidget);
   });
+
+  group('Reference curves', () {
+    test('Danfoss factory curve (slope 1.0) incl. room correction', () {
+      expect(danfossFactoryCurve.flowAt(0, 20), 45);
+      expect(danfossFactoryCurve.flowAt(0, 22), 50); // +2 × 1.0 × 2.5
+    });
+
+    test('EnergieSchweiz guide band: values at −8/+15 °C, linear between', () {
+      const r = BuildingReference.radiator2000to2010;
+      expect(r.lowAt(-8), 40);
+      expect(r.highAt(-8), 50);
+      expect(r.lowAt(15), 25);
+      expect(r.lowAt(3.5), closeTo(32.5, 1e-9));
+      expect(r.highAt(20), 25); // flat above +15 °C
+      expect(BuildingReference.fromName('floorAfter2010'), BuildingReference.floorAfter2010);
+      expect(BuildingReference.fromName('nope'), isNull);
+    });
+  });
+
+  testWidgets('verdict compares the real curve with the guide band at −8 °C', (tester) async {
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: SingleChildScrollView(
+          child: HeatingSimulationCard(
+            curve: ControllerHeatingCurve.fromReadings(readingsFrom(realController()))!,
+            roomSetpoint: 22,
+            previewSetpoint: null,
+            outdoorTemp: 5,
+            annualHeatingKwh: null,
+            annualHeatingKwhSource: null,
+            pricePerKwh: null,
+            buildingReference: BuildingReference.radiator2000to2010,
+          ),
+        ),
+      ),
+    ));
+    // real curve at −8 °C, 20 °C room: 36 + 0.7 × (32 − 36) = 33.2 °C
+    expect(find.textContaining('liefert deine Kurve 33 °C'), findsOneWidget);
+    expect(find.textContaining('unter dem Richtwert (40–50 °C)'), findsOneWidget);
+    expect(find.text('Danfoss-Werkseinstellung'), findsOneWidget);
+    expect(find.text('Richtwert EnergieSchweiz'), findsOneWidget);
+  });
 }

@@ -616,6 +616,8 @@ class HeatingSimulationCard extends StatelessWidget {
   final double? pricePerKwh;
   final VoidCallback? onEditAnnualKwh;
   final VoidCallback? onOpenAssistant;
+  final BuildingReference? buildingReference;
+  final VoidCallback? onPickBuildingReference;
 
   const HeatingSimulationCard({
     super.key,
@@ -628,7 +630,40 @@ class HeatingSimulationCard extends StatelessWidget {
     required this.pricePerKwh,
     this.onEditAnnualKwh,
     this.onOpenAssistant,
+    this.buildingReference,
+    this.onPickBuildingReference,
   });
+
+  Widget _legendItem(Color color, String label, {bool dashed = false, bool band = false}) => Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 16,
+            height: band ? 8 : 3,
+            decoration: BoxDecoration(
+              color: band ? color.withValues(alpha: 0.3) : (dashed ? null : color),
+              border: dashed ? Border(top: BorderSide(color: color, width: 2)) : null,
+            ),
+          ),
+          const SizedBox(width: 5),
+          Text(label, style: const TextStyle(fontSize: 11, color: Color(0xFFBDBDC7))),
+        ],
+      );
+
+  /// Where the current curve sits relative to the guide band at −8 °C.
+  String? _referenceVerdict() {
+    final ref = buildingReference;
+    if (ref == null) return null;
+    final own = curve.flowAt(-8, 20); // guide values are for 20 °C room
+    final lo = ref.lowAtMinus8, hi = ref.highAtMinus8;
+    final range = '${lo.toStringAsFixed(0)}–${hi.toStringAsFixed(0)} °C';
+    final where = own > hi + 0.5
+        ? 'über dem Richtwert ($range) – hier steckt Sparpotenzial, wenn alle Räume warm genug bleiben.'
+        : own < lo - 0.5
+            ? 'unter dem Richtwert ($range) – gut, solange alle Räume warm genug werden.'
+            : 'im Richtwert-Bereich ($range).';
+    return 'Bei −8 °C außen liefert deine Kurve ${own.toStringAsFixed(0)} °C (bei 20 °C Raum) – $where';
+  }
 
   Widget _savingsTable() {
     const style = TextStyle(fontSize: 12, color: Color(0xFFBDBDC7));
@@ -718,7 +753,33 @@ class HeatingSimulationCard extends StatelessWidget {
             simulatedSetpoint: preview,
             outdoorTemp: outdoorTemp,
             height: 200,
+            reference: buildingReference,
           ),
+          const SizedBox(height: 8),
+          Wrap(spacing: 12, runSpacing: 4, children: [
+            _legendItem(ControllerCurveChart.currentColor, 'Deine Kurve'),
+            if (previewing) _legendItem(ControllerCurveChart.simulatedColor, 'Vorschau', dashed: true),
+            _legendItem(ControllerCurveChart.factoryColor, 'Danfoss-Werkseinstellung', dashed: true),
+            if (buildingReference != null)
+              _legendItem(ControllerCurveChart.referenceColor, 'Richtwert EnergieSchweiz', band: true),
+          ]),
+          const SizedBox(height: 6),
+          Row(children: [
+            Expanded(
+              child: Text(
+                buildingReference == null
+                    ? 'Wähle deinen Gebäudetyp, um den Richtwert-Bereich (EnergieSchweiz) einzublenden.'
+                    : _referenceVerdict()!,
+                style: muted,
+              ),
+            ),
+            if (onPickBuildingReference != null)
+              TextButton(
+                key: const Key('pickBuildingReference'),
+                onPressed: onPickBuildingReference,
+                child: Text(buildingReference == null ? 'Gebäudetyp' : 'Ändern'),
+              ),
+          ]),
           const SizedBox(height: 10),
           Text(
             previewing

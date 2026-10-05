@@ -100,3 +100,53 @@ class RoomTemperatureSavings {
     return RoomTemperatureSavings(percent: percent, kwhPerYear: kwh, euroPerYear: euro);
   }
 }
+
+/// Danfoss ECL factory curve (Kommunikationsbeschreibung, Tabelle 6-3:
+/// slope 1.0, points 75/60/50/45/40/28 °C, min 10 / max 90 °C). Many
+/// installations run on it unchanged – the "most common" curve.
+const ControllerHeatingCurve danfossFactoryCurve = ControllerHeatingCurve(
+  outdoorTemps: [-30, -15, -5, 0, 5, 15],
+  flowTemps: [75, 60, 50, 45, 40, 28],
+  slope: 1.0,
+  minFlow: 10,
+  maxFlow: 90,
+);
+
+/// Guide values for the flow temperature by heating system and construction
+/// year (EnergieSchweiz/BFE, "Betriebsoptimierung Heizung: Heizkurve
+/// einstellen", 07.2022). Given at −8 °C and +15 °C outdoor for a room
+/// temperature of 20 °C; linear in between, flat above +15 °C.
+enum BuildingReference {
+  radiatorBefore1980('Heizkörper, Baujahr vor 1980', 60, 70, 25),
+  radiator1980to2000('Heizkörper, Baujahr 1980–2000', 50, 60, 25),
+  radiator2000to2010('Heizkörper, Baujahr 2000–2010', 40, 50, 25),
+  radiatorAfter2010('Heizkörper, Baujahr nach 2010', 35, 40, 20),
+  floorUntil1990('Fußbodenheizung, Baujahr bis 1990', 35, 50, 25),
+  floor1990to2010('Fußbodenheizung, Baujahr 1990–2010', 30, 40, 25),
+  floorAfter2010('Fußbodenheizung, Baujahr nach 2010', 30, 35, 20);
+
+  const BuildingReference(this.label, this.lowAtMinus8, this.highAtMinus8, this.at15);
+
+  final String label;
+  final double lowAtMinus8;
+  final double highAtMinus8;
+  final double at15;
+
+  static BuildingReference? fromName(String? name) {
+    for (final b in values) {
+      if (b.name == name) return b;
+    }
+    return null;
+  }
+
+  double _line(double atMinus8, double outdoor) {
+    if (outdoor >= 15) return at15;
+    return atMinus8 + (outdoor + 8) * (at15 - atMinus8) / 23;
+  }
+
+  /// Lower edge of the guide band at [outdoor].
+  double lowAt(double outdoor) => _line(lowAtMinus8, outdoor);
+
+  /// Upper edge of the guide band at [outdoor].
+  double highAt(double outdoor) => _line(highAtMinus8, outdoor);
+}

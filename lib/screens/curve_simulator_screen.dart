@@ -171,7 +171,7 @@ class _CurveSimulatorScreenState extends State<CurveSimulatorScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              ControllerCurveChart(curve: curve, roomSetpoint: room, simulatedSetpoint: sim, outdoorTemp: outdoorTemp),
+              ControllerCurveChart(curve: curve, roomSetpoint: room, simulatedSetpoint: sim, outdoorTemp: outdoorTemp, reference: provider.buildingReference),
               const SizedBox(height: 8),
               Wrap(spacing: 16, children: [
                 _legend(ControllerCurveChart.currentColor, 'Aktuell (${room.toStringAsFixed(1)} °C)'),
