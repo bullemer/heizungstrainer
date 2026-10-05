@@ -276,7 +276,9 @@ class _CurveSimulatorScreenState extends State<CurveSimulatorScreen> {
   }
 
   Widget _assistant(ECLProvider provider, double room) {
-    final phase = CurveOptimizerService.phaseOf(_opt, DateTime.now());
+    final wait = CurveOptimizerService.observationFor(provider.buildingReference);
+    final floor = provider.buildingReference?.isFloorHeating ?? false;
+    final phase = CurveOptimizerService.phaseOf(_opt, DateTime.now(), wait: wait);
     final connected = provider.isConnected && !_busy;
     late final String text;
     final actions = <Widget>[];
@@ -286,20 +288,21 @@ class _CurveSimulatorScreenState extends State<CurveSimulatorScreen> {
         final first = CurveOptimizerService.nextStep(room);
         text = 'Finde die niedrigste Einstellung, bei der es noch angenehm ist: Die App senkt '
             'den Komfort-Raumsollwert in Schritten von 0,5 °C. Nach jedem Schritt beobachtest du '
-            'zwei Tage lang den kältesten Raum (Thermostatventile dabei voll auf). Ist es zu kalt, '
-            'geht sie einen Schritt zurück – das ist dann deine passende Kurve.';
+            '${floor ? 'vier Tage (Fußbodenheizung reagiert träge)' : 'zwei Tage'} lang den kältesten '
+            'Raum (Thermostate/Stellantriebe dabei voll auf). Ist es zu kalt, geht sie einen Schritt '
+            'zurück – das ist dann deine passende Kurve.';
         actions.add(FilledButton(
           onPressed: (connected && first != null) ? () => _startAssistant(room) : null,
           child: Text(first == null ? 'Untergrenze erreicht' : 'Starten: ${first.toStringAsFixed(1)} °C'),
         ));
       case OptimizerPhase.waiting:
-        final left = CurveOptimizerService.observation - DateTime.now().difference(_opt.stepStartedAt!);
+        final left = wait - DateTime.now().difference(_opt.stepStartedAt!);
         text = 'Test läuft: ${_opt.currentSetpoint!.toStringAsFixed(1)} °C. Beobachte den kältesten Raum. '
             'Rückmeldung in ca. ${left.inHours} Std. – wird es vorher zu kalt, melde es gleich.';
         actions.add(OutlinedButton(onPressed: connected ? _feedbackTooCold : null, child: const Text('Zu kalt')));
       case OptimizerPhase.readyForFeedback:
         final next = CurveOptimizerService.nextStep(_opt.currentSetpoint!);
-        text = 'Wie war es die letzten zwei Tage bei ${_opt.currentSetpoint!.toStringAsFixed(1)} °C?';
+        text = 'Wie war es die letzten ${floor ? 'vier' : 'zwei'} Tage bei ${_opt.currentSetpoint!.toStringAsFixed(1)} °C?';
         actions.addAll([
           FilledButton(
             onPressed: connected ? _feedbackComfortable : null,

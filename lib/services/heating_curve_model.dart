@@ -132,6 +132,8 @@ enum BuildingReference {
   final double highAtMinus8;
   final double at15;
 
+  bool get isFloorHeating => name.startsWith('floor');
+
   static BuildingReference? fromName(String? name) {
     for (final b in values) {
       if (b.name == name) return b;

@@ -250,4 +250,15 @@ void main() {
     expect(find.text('Danfoss-Werkseinstellung'), findsOneWidget);
     expect(find.text('Richtwert EnergieSchweiz'), findsOneWidget);
   });
+
+  test('floor heating: longer observation, factory curve labelled for radiators', () {
+    expect(BuildingReference.floor1990to2010.isFloorHeating, isTrue);
+    expect(BuildingReference.radiatorAfter2010.isFloorHeating, isFalse);
+    expect(CurveOptimizerService.observationFor(BuildingReference.floorAfter2010), const Duration(hours: 96));
+    expect(CurveOptimizerService.observationFor(null), const Duration(hours: 48));
+    final s = CurveOptimizerService.started(from: 22, firstStep: 21.5, now: DateTime(2026, 10, 6));
+    final day3 = DateTime(2026, 10, 9);
+    expect(CurveOptimizerService.phaseOf(s, day3), OptimizerPhase.readyForFeedback);
+    expect(CurveOptimizerService.phaseOf(s, day3, wait: const Duration(hours: 96)), OptimizerPhase.waiting);
+  });
 }

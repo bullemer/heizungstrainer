@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:heizungstrainer/services/heating_curve_model.dart';
 
 /// State of the step-by-step search for the lowest comfortable setpoint.
 enum OptimizerPhase { idle, waiting, readyForFeedback, finished }
@@ -56,6 +57,13 @@ class CurveOptimizerService {
   static const double floorSetpoint = 18.0;
   static const Duration observation = Duration(hours: 48);
 
+  /// Floor heating reacts slowly (screed storage), so each step is observed
+  /// twice as long before asking for feedback.
+  static const Duration observationFloor = Duration(hours: 96);
+
+  static Duration observationFor(BuildingReference? building) =>
+      (building?.isFloorHeating ?? false) ? observationFloor : observation;
+
   final FlutterSecureStorage? _storage;
   final Map<String, String>? _inMemory;
 
@@ -83,10 +91,10 @@ class CurveOptimizerService {
     }
   }
 
-  static OptimizerPhase phaseOf(OptimizerState s, DateTime now) {
+  static OptimizerPhase phaseOf(OptimizerState s, DateTime now, {Duration wait = observation}) {
     if (s.resultSetpoint != null) return OptimizerPhase.finished;
     if (!s.active || s.stepStartedAt == null) return OptimizerPhase.idle;
-    return now.difference(s.stepStartedAt!) >= observation
+    return now.difference(s.stepStartedAt!) >= wait
         ? OptimizerPhase.readyForFeedback
         : OptimizerPhase.waiting;
   }

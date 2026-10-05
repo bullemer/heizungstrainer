@@ -869,6 +869,12 @@ class BrunataLocalScraperService {
           '(@ $pricePerKwh €/kWh); warm water YTD $warmYtd; '
           '${charts.length} charts parsed');
 
+      // Structure only (titles, series names, counts, sums) – no personal data.
+      for (final c in charts) {
+        debugPrint('[Brunata] Chart source=${c.source} title="${c.title}" unit="${c.unit}" '
+            'categories=${c.categories.length} series=[${c.series.map((s) => '"${s.name}" n=${s.values.length} '
+                'extrap=${s.extrapolated.where((e) => e).length} sum=${s.total.toStringAsFixed(0)}').join('; ')}]');
+      }
       final communityDiff =
           calculateCommunityComparisonPercentage(charts) ?? 0.0;
       debugPrint('[Brunata] Community comparison: $communityDiff%');

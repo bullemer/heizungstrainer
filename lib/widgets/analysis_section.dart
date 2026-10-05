@@ -759,7 +759,13 @@ class HeatingSimulationCard extends StatelessWidget {
           Wrap(spacing: 12, runSpacing: 4, children: [
             _legendItem(ControllerCurveChart.currentColor, 'Deine Kurve'),
             if (previewing) _legendItem(ControllerCurveChart.simulatedColor, 'Vorschau', dashed: true),
-            _legendItem(ControllerCurveChart.factoryColor, 'Danfoss-Werkseinstellung', dashed: true),
+            _legendItem(
+              ControllerCurveChart.factoryColor,
+              (buildingReference?.isFloorHeating ?? false)
+                  ? 'Danfoss-Werkseinstellung (für Heizkörper)'
+                  : 'Danfoss-Werkseinstellung',
+              dashed: true,
+            ),
             if (buildingReference != null)
               _legendItem(ControllerCurveChart.referenceColor, 'Richtwert EnergieSchweiz', band: true),
           ]),
