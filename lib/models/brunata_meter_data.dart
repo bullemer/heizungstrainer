@@ -334,86 +334,15 @@ double? calculateCommunityComparisonPercentage(List<BrunataChart> charts) {
 
   if (chart == null || chart.series.length < 2) return null;
 
-  // 2. Identify the building average series
-  const avgKeywords = ['durchschnitt', 'schnitt', 'mittel', 'gesamt'];
-  BrunataChartSeries? avgSeries;
-  BrunataChartSeries? userSeries;
-
-  for (final s in chart.series) {
-    final lower = s.name.toLowerCase();
-    if (avgKeywords.any((k) => lower.contains(k))) {
-      avgSeries = s;
-      break;
-    }
-  }
-
-  // 3. Identify user series
-  if (avgSeries != null) {
-    for (final s in chart.series) {
-      if (!identical(s, avgSeries)) {
-        userSeries = s;
-        break;
-      }
-    }
-  } else {
-    // If no series matched avgKeywords, check for user keywords
-    const userKeywords = [
-      'wohnung',
-      'meine',
-      'nutzer',
-      'nutzungseinheit',
-      'kunde',
-      'ich',
-      'ausgewählter',
-      'ausgewaehlter',
-    ];
-    for (final s in chart.series) {
-      final lower = s.name.toLowerCase();
-      if (userKeywords.any((k) => lower.contains(k))) {
-        userSeries = s;
-        break;
-      }
-    }
-    if (userSeries != null) {
-      for (final s in chart.series) {
-        if (!identical(s, userSeries)) {
-          avgSeries = s;
-          break;
-        }
-      }
-    }
-  }
-
-  if (avgSeries == null || userSeries == null) return null;
-
-  // 4. Calculate actual comparison:
-  // Prefer comparing elapsed non-extrapolated months where the user series has
-  // measured values (avoiding comparing an 8-month user YTD to a 12-month avg).
-  double userSum = 0.0;
-  double avgSum = 0.0;
-  final len = userSeries.values.length < avgSeries.values.length
-      ? userSeries.values.length
-      : avgSeries.values.length;
-
-  int actualMonthsCount = 0;
-  for (var i = 0; i < len; i++) {
-    final isUserExtrapolated = userSeries.isExtrapolatedAt(i);
-    // Count months that are actually measured for the user in this period
-    if (!isUserExtrapolated) {
-      userSum += userSeries.values[i];
-      avgSum += avgSeries.values[i];
-      actualMonthsCount++;
-    }
-  }
-
-  // Fallback to total sum if no actual months (or avgSum <= 0)
-  if (actualMonthsCount == 0 || avgSum <= 0) {
-    userSum = userSeries.total;
-    avgSum = avgSeries.total;
-  }
-
-  if (avgSum <= 0) return null;
-
-  final diff = ((userSum - avgSum) / avgSum) * 100.0;
-  return double.parse(diff.toStringAsFixed(1));
+  // Same series pairing as the Δ % column in the detail tables, so both
+  // always agree: own flat vs. building average, compared over the months
+  // that are actually measured.
+  final cmp = chart.comparison;
+  if (cmp == null) return null;
+  final t = chart.title.toLowerCase();
+  final isBuildingChart = chart.source.contains('liegenschaft') ||
+      t.contains('liegenschaft') || t.contains('gebäude') || t.contains('gebaeude');
+  // Never report a year-over-year change as a building comparison.
+  if (cmp.kind != BrunataComparisonKind.buildingAverage && !isBuildingChart) return null;
+  return cmp.totalPercent;
 }

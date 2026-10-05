@@ -283,6 +283,7 @@ class _ChartCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final series = chart.series;
     final rows = chart.categories.length;
+    final cmp = chart.comparison;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -334,9 +335,9 @@ class _ChartCard extends StatelessWidget {
           // Header row
           _TableRow(
             label: '',
-            cells: [for (final s in series) s.name],
+            cells: [for (final s in series) s.name, if (cmp != null) cmp.label],
             isHeader: true,
-            colorFor: _seriesColor,
+            colorFor: (i) => i < series.length ? _seriesColor(i) : BrunataDetailScreen._textMuted,
           ),
           const Divider(height: 14, color: BrunataDetailScreen._border),
 
@@ -348,7 +349,9 @@ class _ChartCard extends StatelessWidget {
                   r < s.values.length
                       ? _valueCell(s, r)
                       : '–',
+                if (cmp != null) _fmtPct(cmp.percentAt(r)),
               ],
+              colorFor: cmp == null ? null : (i) => i == series.length ? _pctColor(cmp.percentAt(r)) : BrunataDetailScreen._textPrimary,
             ),
 
           const Divider(height: 16, color: BrunataDetailScreen._border),
@@ -356,13 +359,23 @@ class _ChartCard extends StatelessWidget {
           // Totals (actual measured)
           _TableRow(
             label: 'Summe (Ist)',
-            cells: [for (final s in series) _fmtKwh(s.actualTotal)],
+            cells: [for (final s in series) _fmtKwh(s.actualTotal), if (cmp != null) _fmtPct(cmp.totalPercent)],
             isTotal: true,
+            colorFor: cmp == null ? null : (i) => i == series.length ? _pctColor(cmp.totalPercent) : BrunataDetailScreen._textPrimary,
           ),
+          if (cmp != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(
+                '${cmp.label}: „${cmp.subject.name}“ gegenüber „${cmp.reference.name}“. '
+                'Summe nur über gemessene Monate; * = hochgerechnet (ohne %).',
+                style: const TextStyle(fontSize: 10.5, color: BrunataDetailScreen._textMuted),
+              ),
+            ),
           if (chart.isKwh)
             _TableRow(
               label: 'Kosten (geschätzt)',
-              cells: [for (final s in series) _fmtEur(s.actualTotal * price)],
+              cells: [for (final s in series) _fmtEur(s.actualTotal * price), if (cmp != null) ''],
               isTotal: true,
             ),
         ],
@@ -373,6 +386,18 @@ class _ChartCard extends StatelessWidget {
   String _valueCell(BrunataChartSeries s, int r) {
     final v = _fmtKwh(s.values[r]);
     return s.isExtrapolatedAt(r) ? '$v*' : v;
+  }
+
+  static String _fmtPct(double? p) {
+    if (p == null) return '–';
+    final sign = p > 0.05 ? '+' : (p < -0.05 ? '−' : '±');
+    return '$sign${p.abs().toStringAsFixed(0)} %';
+  }
+
+  /// Green = less than the reference (good), orange = more.
+  static Color _pctColor(double? p) {
+    if (p == null || p.abs() < 0.5) return BrunataDetailScreen._textMuted;
+    return p < 0 ? const Color(0xFF66BB6A) : const Color(0xFFFF7043);
   }
 
   static Color _seriesColor(int i) {
@@ -466,7 +491,7 @@ class _TableRow extends StatelessWidget {
                 textAlign: TextAlign.right,
                 maxLines: isHeader ? 2 : 1,
                 overflow: TextOverflow.ellipsis,
-                style: isHeader && colorFor != null
+                style: colorFor != null
                     ? style.copyWith(color: colorFor!(i))
                     : style,
               ),

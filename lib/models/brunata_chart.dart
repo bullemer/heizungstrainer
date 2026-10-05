@@ -86,6 +86,58 @@ class BrunataChart {
     return u.contains('kwh') && !u.contains('m²') && !u.contains('m2');
   }
 
+  /// Which series to compare against which (for the "Δ %" column and the
+  /// building comparison): the user's / current series vs. the building
+  /// average or the previous year. Null with fewer than two series.
+  BrunataSeriesComparison? get comparison {
+    if (series.length < 2) return null;
+    const avgKeywords = ['durchschnitt', 'schnitt', 'mittel', 'gesamt', 'liegenschaft', 'gebäude', 'gebaeude', 'ø'];
+    const userKeywords = ['wohnung', 'meine', 'mein ', 'nutzer', 'nutzungseinheit', 'kunde', 'ausgewählt', 'ausgewaehlt', 'ihr'];
+    bool has(BrunataChartSeries s, List<String> keys) => keys.any((k) => s.name.toLowerCase().contains(k));
+
+    // 1. Building average vs. own flat.
+    BrunataChartSeries? avg;
+    for (final s in series) {
+      if (has(s, avgKeywords) && !has(s, userKeywords)) {
+        avg = s;
+        break;
+      }
+    }
+    if (avg != null) {
+      final own = series.firstWhere((s) => !identical(s, avg) && has(s, userKeywords),
+          orElse: () => series.firstWhere((s) => !identical(s, avg)));
+      return BrunataSeriesComparison(subject: own, reference: avg, kind: BrunataComparisonKind.buildingAverage);
+    }
+
+    // 2. Current period (has extrapolated months) vs. previous period.
+    final years = {for (final s in series) s: int.tryParse(RegExp(r'(19|20)\d{2}').stringMatch(s.name) ?? '')};
+    BrunataChartSeries? current;
+    for (final s in series) {
+      if (s.extrapolated.any((e) => e)) {
+        current = s;
+        break;
+      }
+    }
+    current ??= () {
+      final dated = series.where((s) => years[s] != null).toList()
+        ..sort((a, b) => years[b]!.compareTo(years[a]!));
+      return dated.isNotEmpty ? dated.first : null;
+    }();
+    if (current != null) {
+      final others = series.where((s) => !identical(s, current)).toList();
+      final cy = years[current];
+      others.sort((a, b) {
+        // closest earlier year first, else the first other series
+        final ay = years[a], by = years[b];
+        if (cy != null && ay != null && by != null) return (cy - ay).abs().compareTo((cy - by).abs());
+        return 0;
+      });
+      return BrunataSeriesComparison(subject: current, reference: others.first, kind: BrunataComparisonKind.previousPeriod);
+    }
+
+    return BrunataSeriesComparison(subject: series[0], reference: series[1], kind: BrunataComparisonKind.other);
+  }
+
   /// Whether this chart concerns warm water (vs. heating).
   bool get isWarmWater {
     final t = title.toLowerCase();
@@ -123,5 +175,47 @@ class BrunataChart {
           BrunataChartSeries.fromJson((s as Map).cast<String, dynamic>()),
       ],
     );
+  }
+}
+
+
+enum BrunataComparisonKind { buildingAverage, previousPeriod, other }
+
+/// [subject] compared with [reference], month by month.
+class BrunataSeriesComparison {
+  final BrunataChartSeries subject;
+  final BrunataChartSeries reference;
+  final BrunataComparisonKind kind;
+
+  const BrunataSeriesComparison({required this.subject, required this.reference, required this.kind});
+
+  /// Short column header for the Δ % column.
+  String get label => switch (kind) {
+        BrunataComparisonKind.buildingAverage => 'Δ vs. Ø Haus',
+        BrunataComparisonKind.previousPeriod => 'Δ vs. Vorjahr',
+        BrunataComparisonKind.other => 'Δ %',
+      };
+
+  /// Percentage difference for row [i]; null if not comparable (missing,
+  /// extrapolated or zero reference).
+  double? percentAt(int i) {
+    if (i >= subject.values.length || i >= reference.values.length) return null;
+    if (subject.isExtrapolatedAt(i)) return null;
+    final ref = reference.values[i];
+    if (ref <= 0) return null;
+    return (subject.values[i] - ref) / ref * 100;
+  }
+
+  /// Percentage over all rows where both are measured (same months only, so a
+  /// part year is not compared with a full year).
+  double? get totalPercent {
+    var s = 0.0, r = 0.0;
+    final n = subject.values.length < reference.values.length ? subject.values.length : reference.values.length;
+    for (var i = 0; i < n; i++) {
+      if (subject.isExtrapolatedAt(i)) continue;
+      s += subject.values[i];
+      r += reference.values[i];
+    }
+    return r > 0 ? (s - r) / r * 100 : null;
   }
 }

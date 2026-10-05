@@ -261,4 +261,47 @@ void main() {
     expect(CurveOptimizerService.phaseOf(s, day3), OptimizerPhase.readyForFeedback);
     expect(CurveOptimizerService.phaseOf(s, day3, wait: const Duration(hours: 96)), OptimizerPhase.waiting);
   });
+
+  group('Brunata Δ % comparison', () {
+    BrunataChart chart(String title, List<BrunataChartSeries> series, {String source = ''}) => BrunataChart(
+        source: source, title: title, subtitle: '', unit: 'Verbrauch in kWh', categories: const [], series: series);
+    BrunataChartSeries ser(String name, List<double> v, [List<bool>? x]) =>
+        BrunataChartSeries(name: name, values: v, extrapolated: x ?? List.filled(v.length, false));
+
+    test('building comparison: own flat vs. average, regardless of order', () {
+      final c = chart('Liegenschaftsvergleich Heizung', [
+        ser('Liegenschafts-Schnitt', [100, 200]),
+        ser('Meine Wohnung', [90, 220]),
+      ], source: 'liegenschaft_heizung');
+      final cmp = c.comparison!;
+      expect(cmp.kind, BrunataComparisonKind.buildingAverage);
+      expect(cmp.subject.name, 'Meine Wohnung');
+      expect(cmp.percentAt(0), closeTo(-10, 1e-9));
+      expect(cmp.percentAt(1), closeTo(10, 1e-9));
+      expect(cmp.totalPercent, closeTo(10 / 300 * 100, 1e-9));
+      expect(calculateCommunityComparisonPercentage([c]), closeTo(3.33, 0.01));
+    });
+
+    test('monthly comparison: current year (with extrapolation) vs. previous year', () {
+      final c = chart('Monatsvergleich Heizung', [
+        ser('2025', [1000, 800, 600]),
+        ser('2026', [900, 880, 999], [false, false, true]),
+      ], source: 'month_heizung');
+      final cmp = c.comparison!;
+      expect(cmp.kind, BrunataComparisonKind.previousPeriod);
+      expect(cmp.subject.name, '2026');
+      expect(cmp.label, 'Δ vs. Vorjahr');
+      expect(cmp.percentAt(0), closeTo(-10, 1e-9));
+      expect(cmp.percentAt(2), isNull); // extrapolated month
+      expect(cmp.totalPercent, closeTo((1780 - 1800) / 1800 * 100, 1e-9)); // measured months only
+      // a year-over-year change is never reported as a building comparison
+      expect(calculateCommunityComparisonPercentage([c]), isNull);
+    });
+
+    test('years without extrapolation: newest year is compared with the previous one', () {
+      final cmp = chart('Jahresvergleich', [ser('Abrechnung 2024', [10]), ser('Abrechnung 2025', [12])]).comparison!;
+      expect(cmp.subject.name, 'Abrechnung 2025');
+      expect(cmp.percentAt(0), closeTo(20, 1e-9));
+    });
+  });
 }
