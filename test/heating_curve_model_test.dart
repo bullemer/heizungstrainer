@@ -254,8 +254,8 @@ void main() {
   test('floor heating: longer observation, factory curve labelled for radiators', () {
     expect(BuildingReference.floor1990to2010.isFloorHeating, isTrue);
     expect(BuildingReference.radiatorAfter2010.isFloorHeating, isFalse);
-    expect(CurveOptimizerService.observationFor(BuildingReference.floorAfter2010), const Duration(hours: 96));
-    expect(CurveOptimizerService.observationFor(null), const Duration(hours: 48));
+    expect(CurveOptimizerService.observationFor(floorHeating: true), const Duration(hours: 96));
+    expect(CurveOptimizerService.observationFor(floorHeating: false), const Duration(hours: 48));
     final s = CurveOptimizerService.started(from: 22, firstStep: 21.5, now: DateTime(2026, 10, 6));
     final day3 = DateTime(2026, 10, 9);
     expect(CurveOptimizerService.phaseOf(s, day3), OptimizerPhase.readyForFeedback);
@@ -302,6 +302,38 @@ void main() {
       final cmp = chart('Jahresvergleich', [ser('Abrechnung 2024', [10]), ser('Abrechnung 2025', [12])]).comparison!;
       expect(cmp.subject.name, 'Abrechnung 2025');
       expect(cmp.percentAt(0), closeTo(20, 1e-9));
+    });
+  });
+
+  group('BuildingProfile', () {
+    test('every system × age combination maps to a guide row', () {
+      for (final sys in HeatingSystem.values) {
+        for (final age in BuildingAge.values) {
+          final p = BuildingProfile(sys, age);
+          expect(p.reference, isNotNull, reason: p.label);
+          expect(p.reference.isFloorHeating, sys == HeatingSystem.floor, reason: p.label);
+          expect(BuildingProfile.decode(p.encode())!.label, p.label);
+        }
+      }
+    });
+
+    test('mixed systems use radiator values but count as slow (floor)', () {
+      const p = BuildingProfile(HeatingSystem.mixed, BuildingAge.from1990to2000);
+      expect(p.reference, BuildingReference.radiator1980to2000);
+      expect(p.isFloorHeating, isTrue);
+    });
+
+    test('floor heating 1990–2000 now has its own class', () {
+      expect(const BuildingProfile(HeatingSystem.floor, BuildingAge.from1990to2000).reference,
+          BuildingReference.floor1990to2010);
+      expect(const BuildingProfile(HeatingSystem.floor, BuildingAge.before1980).reference,
+          BuildingReference.floorUntil1990);
+    });
+
+    test('reads the single type saved by earlier test builds', () {
+      expect(BuildingProfile.decode('floor1990to2010')!.system, HeatingSystem.floor);
+      expect(BuildingProfile.decode('garbage'), isNull);
+      expect(BuildingProfile.decode(null), isNull);
     });
   });
 }

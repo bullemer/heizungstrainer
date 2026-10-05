@@ -12,6 +12,7 @@ import 'package:heizungstrainer/screens/settings_screen.dart';
 import 'package:heizungstrainer/services/heating_analytics_service.dart';
 import 'package:heizungstrainer/services/heating_curve_model.dart';
 import 'package:heizungstrainer/widgets/analysis_section.dart';
+import 'package:heizungstrainer/widgets/building_profile_picker.dart';
 import 'package:heizungstrainer/widgets/pro_upgrade_dialog.dart';
 import 'package:heizungstrainer/widgets/sparkline_chart.dart';
 import 'package:heizungstrainer/widgets/radial_indicator.dart';
@@ -22,30 +23,6 @@ class HomeScreen extends StatelessWidget {
 
   static ControllerHeatingCurve? _controllerCurve(ECLProvider provider) =>
       ControllerHeatingCurve.fromReadings(provider.getReading);
-
-  /// Building type for the EnergieSchweiz guide band in the curve chart.
-  static Future<void> _pickBuildingReference(BuildContext context, ECLProvider provider) async {
-    final picked = await showDialog<Object>(
-      context: context,
-      builder: (ctx) => SimpleDialog(
-        title: const Text('Gebäudetyp'),
-        children: [
-          for (final b in BuildingReference.values)
-            SimpleDialogOption(
-              onPressed: () => Navigator.pop(ctx, b),
-              child: Text(b.label,
-                  style: TextStyle(fontWeight: b == provider.buildingReference ? FontWeight.w700 : null)),
-            ),
-          SimpleDialogOption(
-            onPressed: () => Navigator.pop(ctx, 'none'),
-            child: const Text('Keinen Richtwert anzeigen'),
-          ),
-        ],
-      ),
-    );
-    if (picked == null) return;
-    await provider.setBuildingReference(picked is BuildingReference ? picked : null);
-  }
 
   /// Lets the user enter/correct the annual heating consumption used for the
   /// savings estimate (overrides the billing portal value).
@@ -173,6 +150,10 @@ class HomeScreen extends StatelessWidget {
                   _SimulatedControllerBanner(provider: provider),
                   const SizedBox(height: 12),
                 ],
+                // ── Gebäude ─────────────────────────────────
+                BuildingProfileCard(provider: provider),
+                const SizedBox(height: 12),
+
                 // ── Smart Status Banner ─────────────────────
                 _SmartStatusBanner(provider: provider),
                 const SizedBox(height: 18),
@@ -194,7 +175,7 @@ class HomeScreen extends StatelessWidget {
                     pricePerKwh: provider.pricePerKwhCached,
                     onEditAnnualKwh: () => _editAnnualKwh(context, provider),
                     buildingReference: provider.buildingReference,
-                    onPickBuildingReference: () => _pickBuildingReference(context, provider),
+                    onPickBuildingReference: () => showBuildingProfilePicker(context, provider),
                     onOpenAssistant: () => Navigator.of(context).push(
                       MaterialPageRoute(builder: (_) => const CurveSimulatorScreen()),
                     ),

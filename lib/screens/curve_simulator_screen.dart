@@ -276,8 +276,8 @@ class _CurveSimulatorScreenState extends State<CurveSimulatorScreen> {
   }
 
   Widget _assistant(ECLProvider provider, double room) {
-    final wait = CurveOptimizerService.observationFor(provider.buildingReference);
-    final floor = provider.buildingReference?.isFloorHeating ?? false;
+    final floor = provider.isFloorHeating;
+    final wait = CurveOptimizerService.observationFor(floorHeating: floor);
     final phase = CurveOptimizerService.phaseOf(_opt, DateTime.now(), wait: wait);
     final connected = provider.isConnected && !_busy;
     late final String text;

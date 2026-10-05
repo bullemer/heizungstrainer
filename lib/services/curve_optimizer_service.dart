@@ -2,7 +2,6 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:heizungstrainer/services/heating_curve_model.dart';
 
 /// State of the step-by-step search for the lowest comfortable setpoint.
 enum OptimizerPhase { idle, waiting, readyForFeedback, finished }
@@ -61,8 +60,8 @@ class CurveOptimizerService {
   /// twice as long before asking for feedback.
   static const Duration observationFloor = Duration(hours: 96);
 
-  static Duration observationFor(BuildingReference? building) =>
-      (building?.isFloorHeating ?? false) ? observationFloor : observation;
+  static Duration observationFor({required bool floorHeating}) =>
+      floorHeating ? observationFloor : observation;
 
   final FlutterSecureStorage? _storage;
   final Map<String, String>? _inMemory;

@@ -217,19 +217,25 @@ class ECLProvider extends ChangeNotifier {
   double? get annualHeatingKwhManual => _annualHeatingKwhManual;
 
   static const String buildingReferenceKey = 'building_reference';
-  BuildingReference? _buildingReference;
+  BuildingProfile? _buildingProfile;
 
-  /// Building type for the EnergieSchweiz guide band in the curve chart.
-  BuildingReference? get buildingReference => _buildingReference;
+  /// The user's building (heating system × age class).
+  BuildingProfile? get buildingProfile => _buildingProfile;
 
-  Future<void> setBuildingReference(BuildingReference? value) async {
-    _buildingReference = value;
+  /// EnergieSchweiz guide row for the curve chart, from [buildingProfile].
+  BuildingReference? get buildingReference => _buildingProfile?.reference;
+
+  /// Floor or mixed heating: slower reaction (optimisation assistant waits longer).
+  bool get isFloorHeating => _buildingProfile?.isFloorHeating ?? false;
+
+  Future<void> setBuildingProfile(BuildingProfile? value) async {
+    _buildingProfile = value;
     notifyListeners();
     try {
       if (value == null) {
         await _secureStorage.delete(key: buildingReferenceKey);
       } else {
-        await _secureStorage.write(key: buildingReferenceKey, value: value.name);
+        await _secureStorage.write(key: buildingReferenceKey, value: value.encode());
       }
     } catch (e) {
       debugPrint('[Provider] Could not persist building type: $e');
@@ -260,8 +266,8 @@ class ECLProvider extends ChangeNotifier {
       _cachedPricePerKwh = await getPricePerKwh();
     } catch (_) {}
     try {
-      _buildingReference =
-          BuildingReference.fromName(await _secureStorage.read(key: buildingReferenceKey));
+      _buildingProfile =
+          BuildingProfile.decode(await _secureStorage.read(key: buildingReferenceKey));
     } catch (_) {}
     notifyListeners();
   }

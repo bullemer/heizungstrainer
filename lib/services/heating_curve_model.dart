@@ -152,3 +152,79 @@ enum BuildingReference {
   /// Upper edge of the guide band at [outdoor].
   double highAt(double outdoor) => _line(highAtMinus8, outdoor);
 }
+
+enum HeatingSystem {
+  radiator('Heizkörper'),
+  floor('Fußbodenheizung'),
+  mixed('Gemischt (Heizkörper + Fußboden)');
+
+  const HeatingSystem(this.label);
+  final String label;
+}
+
+/// Construction year – or, for renovated buildings, the year whose insulation
+/// standard the building now has.
+enum BuildingAge {
+  before1980('vor 1980'),
+  from1980to1990('1980–1990'),
+  from1990to2000('1990–2000'),
+  from2000to2010('2000–2010'),
+  after2010('nach 2010');
+
+  const BuildingAge(this.label);
+  final String label;
+}
+
+/// The user's building: heating system × age class, mapped to the matching
+/// EnergieSchweiz guide row. Mixed systems use the radiator values, because
+/// the radiators need the higher flow temperature.
+class BuildingProfile {
+  final HeatingSystem system;
+  final BuildingAge age;
+
+  const BuildingProfile(this.system, this.age);
+
+  bool get isFloorHeating => system != HeatingSystem.radiator;
+
+  String get label => '${system.label} · Baujahr/Standard ${age.label}';
+
+  BuildingReference get reference {
+    if (system == HeatingSystem.floor) {
+      return switch (age) {
+        BuildingAge.before1980 || BuildingAge.from1980to1990 => BuildingReference.floorUntil1990,
+        BuildingAge.from1990to2000 || BuildingAge.from2000to2010 => BuildingReference.floor1990to2010,
+        BuildingAge.after2010 => BuildingReference.floorAfter2010,
+      };
+    }
+    return switch (age) {
+      BuildingAge.before1980 => BuildingReference.radiatorBefore1980,
+      BuildingAge.from1980to1990 || BuildingAge.from1990to2000 => BuildingReference.radiator1980to2000,
+      BuildingAge.from2000to2010 => BuildingReference.radiator2000to2010,
+      BuildingAge.after2010 => BuildingReference.radiatorAfter2010,
+    };
+  }
+
+  String encode() => '${system.name}|${age.name}';
+
+  /// Also reads the single building type saved by earlier test builds.
+  static BuildingProfile? decode(String? raw) {
+    if (raw == null || raw.isEmpty) return null;
+    final parts = raw.split('|');
+    if (parts.length == 2) {
+      final system = HeatingSystem.values.where((s) => s.name == parts[0]);
+      final age = BuildingAge.values.where((a) => a.name == parts[1]);
+      if (system.isEmpty || age.isEmpty) return null;
+      return BuildingProfile(system.first, age.first);
+    }
+    return switch (BuildingReference.fromName(raw)) {
+      BuildingReference.radiatorBefore1980 => const BuildingProfile(HeatingSystem.radiator, BuildingAge.before1980),
+      BuildingReference.radiator1980to2000 => const BuildingProfile(HeatingSystem.radiator, BuildingAge.from1990to2000),
+      BuildingReference.radiator2000to2010 => const BuildingProfile(HeatingSystem.radiator, BuildingAge.from2000to2010),
+      BuildingReference.radiatorAfter2010 => const BuildingProfile(HeatingSystem.radiator, BuildingAge.after2010),
+      BuildingReference.floorUntil1990 => const BuildingProfile(HeatingSystem.floor, BuildingAge.from1980to1990),
+      BuildingReference.floor1990to2010 => const BuildingProfile(HeatingSystem.floor, BuildingAge.from2000to2010),
+      BuildingReference.floorAfter2010 => const BuildingProfile(HeatingSystem.floor, BuildingAge.after2010),
+      null => null,
+    };
+  }
+}
