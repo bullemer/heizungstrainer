@@ -37,6 +37,11 @@ class ControllerDescriptor {
   final bool isSupported;
   final IconData icon;
 
+  /// Whether the driver's register map and write path have been verified on
+  /// real hardware. Unverified (Beta) drivers are read-only until the user
+  /// explicitly allows writes for that controller.
+  final bool isHardwareVerified;
+
   const ControllerDescriptor({
     required this.id,
     required this.brand,
@@ -45,6 +50,7 @@ class ControllerDescriptor {
     required this.description,
     required this.isSupported,
     required this.icon,
+    this.isHardwareVerified = false,
   });
 }
 
@@ -80,6 +86,7 @@ class DeviceRegistry {
       protocol: ConnectionProtocol.modbusTcp,
       description: 'Direkte Modbus-TCP-Abfrage im lokalen Heimnetzwerk (Port 502).',
       isSupported: true,
+      isHardwareVerified: true,
       icon: Icons.developer_board_rounded,
     ),
     ControllerDescriptor(

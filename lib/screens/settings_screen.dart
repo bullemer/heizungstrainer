@@ -1006,6 +1006,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         const SizedBox(height: 8),
                         _buildNibeModbusConfigCard(provider),
                       ],
+                      if (provider.isBetaController) ...[
+                        const SizedBox(height: 8),
+                        _BetaWriteGateCard(provider: provider),
+                      ],
                       const SizedBox(height: 24),
 
                       // ── SECTION 2: REMOTE ACCESS / WIREGUARD ──────
@@ -4184,6 +4188,97 @@ class _ConnectionStatusBadge extends StatelessWidget {
 }
 
 /// Interactive card for selecting or simulating a heating controller.
+/// Opt-in for writes to a controller whose driver is not verified on hardware.
+class _BetaWriteGateCard extends StatelessWidget {
+  final ECLProvider provider;
+
+  const _BetaWriteGateCard({required this.provider});
+
+  static const _warn = Color(0xFFFFB74D);
+
+  Future<void> _toggle(BuildContext context, bool enable) async {
+    if (!enable) {
+      await provider.setBetaWritesEnabled(false);
+      return;
+    }
+    final brand = provider.currentControllerDescriptor.brand;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF2A2A32),
+        title: Text('Schreibzugriff für $brand freigeben?'),
+        content: Text(
+          'Die $brand-Anbindung ist noch nicht an echter Hardware geprüft. '
+          'Registeradressen oder Skalierung können für deine Anlage falsch sein – '
+          'dann ändert ein Schreibbefehl womöglich einen anderen Wert als angezeigt.\n\n'
+          'Die App prüft Grenzwerte und liest jeden Wert zurück, kann einen falsch '
+          'zugeordneten Parameter aber nicht erkennen. Kontrolliere nach jeder Änderung '
+          'die Werte direkt am Regler.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Abbrechen'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: _warn),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Verstanden, freigeben',
+                style: TextStyle(color: Colors.black)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) await provider.setBetaWritesEnabled(true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = provider.betaWritesEnabled;
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFF3D2E14).withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _warn.withValues(alpha: 0.5)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.science_outlined, color: _warn, size: 22),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Beta-Treiber: Schreibzugriff',
+                  style: TextStyle(fontWeight: FontWeight.w700, color: _warn),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  enabled
+                      ? 'Freigegeben. Die App darf Parallelverschiebung und Raum-Sollwert '
+                          'an diesen Regler senden.'
+                      : 'Nur Lesen. Diese Anbindung ist noch nicht an echter Hardware '
+                          'geprüft; Werte werden angezeigt, aber nicht verändert.',
+                  style: const TextStyle(fontSize: 12.5, color: Color(0xFFBDBDC7)),
+                ),
+              ],
+            ),
+          ),
+          Switch(
+            key: const Key('betaWriteSwitch'),
+            value: enabled,
+            activeThumbColor: _warn,
+            onChanged: (v) => _toggle(context, v),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _ControllerCard extends StatelessWidget {
   final ControllerDescriptor descriptor;
   final bool isSelected;
@@ -4275,9 +4370,11 @@ class _ControllerCard extends StatelessWidget {
                           ),
                           const SizedBox(width: 8),
                           _Badge(
-                            text: descriptor.isSupported
-                                ? 'Hardware'
-                                : 'Simulation',
+                            text: !descriptor.isSupported
+                                ? 'Simulation'
+                                : descriptor.isHardwareVerified
+                                    ? 'Hardware'
+                                    : 'Beta',
                             color: descriptor.isSupported
                                 ? const Color(0xFF4ADE80)
                                 : const Color(0xFFFFB74D),

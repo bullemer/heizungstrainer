@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:heizungstrainer/controllers/heating_controller.dart';
@@ -67,7 +68,7 @@ class FakeController implements HeatingController {
   }
 }
 
-Future<ECLProvider> providerWith(FakeController fake) async {
+Future<ECLProvider> providerWith(FakeController fake, {bool allowBetaWrites = true}) async {
   final provider = ECLProvider(
     logService: ActivityLogService(enablePersistence: false, enableRemoteDispatch: false),
     licenseService: LicenseService(inMemoryStorage: {}, initialTier: LicenseTier.pro),
@@ -76,11 +77,81 @@ Future<ECLProvider> providerWith(FakeController fake) async {
   await provider.setSelectedController('nibe_modbus');
   provider.useControllerForTesting(fake);
   provider.setConnectedForTesting(ip: '192.168.178.60');
+  if (allowBetaWrites) await provider.setBetaWritesEnabled(true);
   return provider;
 }
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  setUp(() => FlutterSecureStorage.setMockInitialValues({}));
+
+  group('Beta write gate', () {
+    test('unverified driver is read-only by default', () async {
+      final fake = FakeController(shift: 0);
+      final provider = await providerWith(fake, allowBetaWrites: false);
+
+      expect(provider.isBetaController, isTrue);
+      expect(provider.isBetaWriteBlocked, isTrue);
+      await expectLater(
+        provider.writeParameter(ECLRegisters.heatingCurveShift, 2),
+        throwsA(isA<ModbusCommunicationException>().having(
+            (e) => e.message, 'message', contains('Beta-Modus'))),
+      );
+      expect(fake.writes, isEmpty);
+    });
+
+    test('explicit opt-in allows writes, revoking blocks again', () async {
+      final fake = FakeController(shift: 0);
+      final provider = await providerWith(fake, allowBetaWrites: false);
+
+      await provider.setBetaWritesEnabled(true);
+      await provider.writeParameter(ECLRegisters.heatingCurveShift, 2);
+      expect(fake.writes, [2]);
+
+      await provider.setBetaWritesEnabled(false);
+      await expectLater(
+        provider.writeParameter(ECLRegisters.heatingCurveShift, 1),
+        throwsA(isA<ModbusCommunicationException>()),
+      );
+      expect(fake.writes, [2]);
+    });
+
+    test('opt-in is per controller and survives an app restart', () async {
+      FlutterSecureStorage.setMockInitialValues({
+        'selected_controller_id': 'nibe_modbus',
+        'beta_write_enabled_nibe_modbus': 'true',
+      });
+      final provider = ECLProvider(
+        logService: ActivityLogService(enablePersistence: false, enableRemoteDispatch: false),
+        licenseService: LicenseService(inMemoryStorage: {}, initialTier: LicenseTier.pro),
+        autoLoadDatabase: false,
+      );
+      for (var i = 0; i < 50 && provider.selectedControllerId != 'nibe_modbus'; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      expect(provider.selectedControllerId, 'nibe_modbus');
+      expect(provider.betaWritesEnabled, isTrue);
+
+      await provider.setSelectedController('vaillant_ebusd');
+      expect(provider.betaWritesEnabled, isFalse);
+    });
+
+    test('Danfoss is verified and never gated; simulation is never gated', () async {
+      final provider = ECLProvider(
+        logService: ActivityLogService(enablePersistence: false, enableRemoteDispatch: false),
+        licenseService: LicenseService(inMemoryStorage: {}, initialTier: LicenseTier.pro),
+        autoLoadDatabase: false,
+      );
+      expect(provider.isBetaController, isFalse);
+
+      await provider.setSelectedController('weishaupt_wem');
+      await provider.startSimulation();
+      expect(provider.isBetaController, isTrue);
+      expect(provider.isBetaWriteBlocked, isFalse);
+      await provider.writeParameter(ECLRegisters.heatingCurveShift, 1);
+      provider.disconnect();
+    });
+  });
 
   group('Readings', () {
     test('values the driver cannot read are absent, not defaulted', () async {

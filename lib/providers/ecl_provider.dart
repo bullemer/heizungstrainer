@@ -66,6 +66,7 @@ class ECLProvider extends ChangeNotifier {
 
   static const String _controllerStorageKey = 'selected_controller_id';
   static const String _billingStorageKey = 'selected_billing_id';
+  static const String _betaWritePrefix = 'beta_write_enabled_';
 
   String _selectedControllerId = 'danfoss_ecl_310';
   String _selectedBillingId = 'brunata_hamburg';
@@ -165,6 +166,54 @@ class ECLProvider extends ChangeNotifier {
       _selectedControllerId == 'nibe_modbus';
 
   final Map<String, bool> _billingHasCredentials = {};
+
+  /// Controllers (Beta drivers) the user explicitly allowed to write to.
+  final Set<String> _betaWritesAllowed = {};
+
+  /// True when the selected driver is not verified on real hardware.
+  bool get isBetaController => !currentControllerDescriptor.isHardwareVerified;
+
+  /// Whether writes to the selected controller are currently blocked by the
+  /// Beta gate (simulation is never blocked: it can't touch real hardware).
+  bool get isBetaWriteBlocked =>
+      isBetaController &&
+      !_betaWritesAllowed.contains(_selectedControllerId) &&
+      !_isSimulationActive;
+
+  bool get betaWritesEnabled => _betaWritesAllowed.contains(_selectedControllerId);
+
+  bool get _isSimulationActive =>
+      _activeController is MockHeatingController ||
+      _controllerIp?.contains('Simulation') == true;
+
+  /// Allows or revokes writes to the selected Beta controller; persisted per
+  /// controller id.
+  Future<void> setBetaWritesEnabled(bool enabled) async {
+    final id = _selectedControllerId;
+    if (enabled) {
+      _betaWritesAllowed.add(id);
+    } else {
+      _betaWritesAllowed.remove(id);
+    }
+    notifyListeners();
+    try {
+      if (enabled) {
+        await _secureStorage.write(key: '$_betaWritePrefix$id', value: 'true');
+      } else {
+        await _secureStorage.delete(key: '$_betaWritePrefix$id');
+      }
+    } catch (e) {
+      debugPrint('[Provider] Could not persist Beta write setting: $e');
+    }
+    await _logService.logSecurityGate(
+      controllerId: id,
+      message: enabled
+          ? 'Schreibzugriff für Beta-Regler ${currentControllerDescriptor.brand} vom Nutzer freigegeben.'
+          : 'Schreibzugriff für Beta-Regler ${currentControllerDescriptor.brand} wieder gesperrt.',
+      details: {'controllerId': id, 'enabled': enabled},
+      errorCode: enabled ? 'BETA_WRITE_ENABLED' : 'BETA_WRITE_DISABLED',
+    );
+  }
 
   bool get isSimulatedBilling {
     if (_selectedBillingId == 'brunata_hamburg') return false;
@@ -283,6 +332,11 @@ class ECLProvider extends ChangeNotifier {
       _vaillantConfig = await VaillantEbusdConfig.load(_secureStorage);
       _weishauptConfig = await WeishauptWemConfig.load(_secureStorage);
       _nibeConfig = await NibeModbusConfig.load(_secureStorage);
+      for (final desc in DeviceRegistry.knownControllers) {
+        if (desc.isHardwareVerified) continue;
+        final allowed = await _secureStorage.read(key: '$_betaWritePrefix${desc.id}');
+        if (allowed == 'true') _betaWritesAllowed.add(desc.id);
+      }
       final savedCtrl = await _secureStorage.read(key: _controllerStorageKey);
       if (savedCtrl != null && savedCtrl.isNotEmpty && savedCtrl != _selectedControllerId) {
         _selectedControllerId = savedCtrl;
@@ -1181,6 +1235,21 @@ class ECLProvider extends ChangeNotifier {
       throw const LicenseRequiredException(
         message: 'Das Verändern von Regler-Parametern erfordert Heizungstrainer Pro.',
         featureName: 'Parametrierung schreiben',
+      );
+    }
+
+    // Beta Gate: unverified drivers stay read-only until the user opts in
+    if (isBetaWriteBlocked) {
+      await _logService.logSecurityGate(
+        controllerId: _selectedControllerId,
+        message: 'Schreibbefehl blockiert: ${currentControllerDescriptor.brand} ist ein Beta-Treiber '
+            'und Schreibzugriff ist nicht freigegeben.',
+        details: {'parameterId': parameter.id, 'targetValue': value},
+        errorCode: 'BETA_WRITE_BLOCKED',
+      );
+      throw ModbusCommunicationException(
+        message: '${currentControllerDescriptor.brand} wird im Beta-Modus nur gelesen. '
+            'Schreibzugriff kannst du in den Einstellungen unter „Heizungsregler“ freigeben.',
       );
     }
 

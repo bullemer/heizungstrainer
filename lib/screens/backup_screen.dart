@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import 'package:heizungstrainer/exceptions/modbus_exceptions.dart';
 import 'package:heizungstrainer/models/configuration_backup.dart';
 import 'package:heizungstrainer/models/ecl_parameter.dart';
 import 'package:heizungstrainer/providers/ecl_provider.dart';
@@ -340,7 +341,7 @@ class _BackupScreenState extends State<BackupScreen> {
         setState(() => _isRestoring = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Fehler beim Wiederherstellen: $e'),
+            content: Text('Fehler beim Wiederherstellen: ${userFacingError(e)}'),
             backgroundColor: const Color(0xFFEF5350),
           ),
         );

@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:heizungstrainer/exceptions/modbus_exceptions.dart';
 import 'package:heizungstrainer/models/ecl_parameter.dart';
 import 'package:heizungstrainer/models/holiday_plan.dart';
 import 'package:heizungstrainer/providers/ecl_provider.dart';
@@ -181,7 +182,7 @@ class HolidayService {
         plan.setbackShift,
       );
     } catch (e) {
-      throw HolidayModeException('Absenkung fehlgeschlagen: $e');
+      throw HolidayModeException('Absenkung fehlgeschlagen: ${userFacingError(e)}');
     }
 
     final applied = plan.copyWith(
@@ -230,7 +231,7 @@ class HolidayService {
         );
       } catch (e) {
         throw HolidayModeException(
-          'Wiederherstellen fehlgeschlagen: $e. Der Plan bleibt aktiv.',
+          'Wiederherstellen fehlgeschlagen: ${userFacingError(e)} Der Plan bleibt aktiv.',
         );
       }
     }

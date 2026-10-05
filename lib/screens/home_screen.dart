@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import 'package:heizungstrainer/exceptions/modbus_exceptions.dart';
 import 'package:heizungstrainer/exceptions/license_exception.dart';
 import 'package:heizungstrainer/models/ecl_parameter.dart';
 import 'package:heizungstrainer/models/ecl_reading.dart';
@@ -482,11 +483,11 @@ class _HighConsumptionWarning extends StatelessWidget {
                   backgroundColor: Color(0xFF66BB6A),
                 ));
               }
-            } catch (_) {
+            } catch (e) {
               if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                  content: Text('Fehler beim Zurücksetzen'),
-                  backgroundColor: Color(0xFFEF5350),
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                  content: Text(userFacingError(e, fallback: 'Fehler beim Zurücksetzen')),
+                  backgroundColor: const Color(0xFFEF5350),
                 ));
               }
             }
@@ -605,12 +606,12 @@ class _HeatingComfortCardState extends State<_HeatingComfortCard> {
           featureHint: 'Das Verstellen und Schreiben der Heizkurve',
         );
       }
-    } catch (_) {
+    } catch (e) {
       if (mounted) {
         setState(() => _isSaving = false);
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Fehler beim Speichern'),
-          backgroundColor: Color(0xFFEF5350),
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(userFacingError(e, fallback: 'Fehler beim Speichern')),
+          backgroundColor: const Color(0xFFEF5350),
         ));
       }
     }
@@ -831,6 +832,15 @@ class _HeatingComfortCardState extends State<_HeatingComfortCard> {
                   : null,
             ),
           ),
+
+          if (widget.provider.isConnected && widget.provider.isBetaWriteBlocked)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Text(
+                'Beta-Regler: nur Lesen. Schreibzugriff in den Einstellungen freigeben.',
+                style: TextStyle(fontSize: 11.5, color: Colors.orange.shade200),
+              ),
+            ),
 
           // Scale labels
           Padding(

@@ -76,3 +76,12 @@ class ControllerNotFoundException implements Exception {
   @override
   String toString() => 'ControllerNotFoundException: $message (subnet: $subnet)';
 }
+
+/// Text to show the user for an error from a controller operation: the plain
+/// message for our own exceptions, [fallback] for anything unexpected.
+String userFacingError(Object error, {String fallback = 'Unbekannter Fehler.'}) {
+  if (error is ModbusCommunicationException) return error.message;
+  if (error is ParameterBoundsException) return error.message;
+  final text = error.toString();
+  return text.startsWith('Instance of') ? fallback : text;
+}

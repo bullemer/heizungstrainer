@@ -21,6 +21,45 @@ void main() {
     );
   }
 
+  group('SettingsScreen Beta write gate', () {
+    setUp(() => FlutterSecureStorage.setMockInitialValues({}));
+
+    testWidgets('Beta controller shows read-only card; enabling needs confirmation',
+        (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(1080, 5000);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+
+      final provider = ECLProvider(autoLoadDatabase: false);
+      await tester.pumpWidget(buildSettingsScreen(provider));
+      await tester.pumpAndSettle();
+
+      // Danfoss (verified): no gate card.
+      expect(find.byKey(const Key('betaWriteSwitch')), findsNothing);
+
+      await provider.setSelectedController('nibe_modbus');
+      await tester.pumpAndSettle();
+      expect(find.text('Beta-Treiber: Schreibzugriff'), findsOneWidget);
+      expect(find.text('Beta'), findsWidgets);
+
+      // Cancelling the warning keeps writes blocked.
+      await tester.ensureVisible(find.byKey(const Key('betaWriteSwitch')));
+      await tester.tap(find.byKey(const Key('betaWriteSwitch')));
+      await tester.pumpAndSettle();
+      expect(find.text('Verstanden, freigeben'), findsOneWidget);
+      await tester.tap(find.text('Abbrechen'));
+      await tester.pumpAndSettle();
+      expect(provider.betaWritesEnabled, isFalse);
+
+      // Confirming enables them.
+      await tester.tap(find.byKey(const Key('betaWriteSwitch')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Verstanden, freigeben'));
+      await tester.pumpAndSettle();
+      expect(provider.betaWritesEnabled, isTrue);
+    });
+  });
+
   group('SettingsScreen Multi-Controller & Billing Selection Tests', () {
     setUp(() {
       FlutterSecureStorage.setMockInitialValues({});
