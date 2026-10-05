@@ -138,6 +138,10 @@ class BrunataChart {
     return BrunataSeriesComparison(subject: series[0], reference: series[1], kind: BrunataComparisonKind.other);
   }
 
+  /// The portal's overview chart has cumulative columns ("bisher" and
+  /// "Gesamtjahr"), which must not be added up.
+  bool get isCumulativeOverview => source == 'index';
+
   /// Whether this chart concerns warm water (vs. heating).
   bool get isWarmWater {
     final t = title.toLowerCase();
@@ -204,6 +208,17 @@ class BrunataSeriesComparison {
     final ref = reference.values[i];
     if (ref <= 0) return null;
     return (subject.values[i] - ref) / ref * 100;
+  }
+
+  /// Sum of [s] over the rows where the subject is measured – the same rows
+  /// [totalPercent] compares, so the totals and the % always match.
+  double comparableTotal(BrunataChartSeries s) {
+    var sum = 0.0;
+    for (var i = 0; i < s.values.length; i++) {
+      if (i < subject.values.length && subject.isExtrapolatedAt(i)) continue;
+      sum += s.values[i];
+    }
+    return sum;
   }
 
   /// Percentage over all rows where both are measured (same months only, so a

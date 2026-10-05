@@ -419,7 +419,11 @@ class _SmartStatusBanner extends StatelessWidget {
     final outdoorTemp = isSensorDisconnected ? 0.0 : outdoorReading.displayValue;
     final shift = shiftReading?.displayValue ?? 0;
 
-    final isSummerMode = !isSensorDisconnected && outdoorTemp > 17.0;
+    // The controller's own "Sommer-Aus" if it reports one (e.g. 13 °C);
+    // 17 °C is only a fallback for controllers that don't.
+    final summerCutoff =
+        provider.getReading(ECLRegisters.summerCutoff)?.displayValue ?? 17.0;
+    final isSummerMode = !isSensorDisconnected && outdoorTemp > summerCutoff;
     final isHighConsumption = shift > 3;
 
     final bannerColor = isSensorDisconnected
@@ -439,13 +443,13 @@ class _SmartStatusBanner extends StatelessWidget {
     final title = isSensorDisconnected
         ? 'Außentemperaturfühler nicht verbunden'
         : (isSummerMode
-            ? '${outdoorTemp.toStringAsFixed(1)}°C draußen — Sommer-Sparbetrieb'
+            ? '${outdoorTemp.toStringAsFixed(1)}°C draußen — über der Heizgrenze (${summerCutoff.toStringAsFixed(0)} °C)'
             : '${outdoorTemp.toStringAsFixed(1)}°C draußen — Heizbetrieb aktiv');
 
     final subtitle = isSensorDisconnected
         ? 'Der ECL-Regler meldet einen Fühlerabriss (S1). Bitte Fühlerverkabelung prüfen.'
         : (isSummerMode
-            ? 'Die Raumheizung schläft automatisch, um Kosten zu senken.'
+            ? 'Der Regler heizt oberhalb seiner Heizgrenze nicht (Sommer-Aus).'
             : 'Die Heizung reguliert aktiv deine Raumtemperatur.');
 
     return Container(
@@ -769,7 +773,11 @@ class _HeatingComfortCardState extends State<_HeatingComfortCard> {
     );
     final flowDelta = flowTargetSelected - flowTargetCurrent;
 
-    final percentEnergy = (sliderValue * 6.0).round();
+    // ~6 % per °C room temperature. A flow-temperature shift changes the room
+    // temperature less (EnergieSchweiz: radiators 5 K flow ≈ 2.5 K room, floor
+    // heating 2 K ≈ 2 K) – assuming the shift step is 1 K of flow temperature.
+    final roomPerFlowK = widget.provider.isFloorHeating ? 1.0 : 0.5;
+    final percentEnergy = (sliderValue * roomPerFlowK * 6.0).round();
     final isOffline = !widget.provider.isConnected;
 
     final String energyText;

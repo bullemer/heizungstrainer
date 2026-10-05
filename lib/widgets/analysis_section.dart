@@ -293,8 +293,8 @@ class _BrunataCostCard extends StatelessWidget {
                   ),
                   child: Text(
                     meterData.isAboveCommunityAverage
-                        ? '⚠️ ${meterData.communityComparisonPercentage.toStringAsFixed(0)}% über Schnitt'
-                        : '🌱 ${meterData.communityComparisonPercentage.abs().toStringAsFixed(0)}% unter Schnitt',
+                        ? '⚠️ ${meterData.communityComparisonPercentage.toStringAsFixed(1)} % über Schnitt (je m²)'
+                        : '🌱 ${meterData.communityComparisonPercentage.abs().toStringAsFixed(1)} % unter Schnitt (je m²)',
                     style: TextStyle(
                       color: meterData.isAboveCommunityAverage
                           ? const Color(0xFFFFA726)

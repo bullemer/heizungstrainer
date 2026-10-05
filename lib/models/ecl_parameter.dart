@@ -155,6 +155,12 @@ abstract final class ECLRegisters {
     modbusAddress: 11177, multiplier: 1.0,
   );
 
+  /// "Sommer-Aus": outdoor temperature above which the circuit stops heating.
+  static const summerCutoff = ECLParameter(
+    id: 'summer_cutoff', name: 'Sommer-Aus', unit: '°C',
+    modbusAddress: 11178, multiplier: 1.0,
+  );
+
   /// Outdoor temperatures of the six curve points, in register order.
   static const List<double> curvePointOutdoorTemps = [-30, -15, -5, 0, 5, 15];
 
@@ -172,6 +178,7 @@ abstract final class ECLRegisters {
     curveSlope,
     curveMinFlow,
     curveMaxFlow,
+    summerCutoff,
     ...curvePoints,
   ];
 

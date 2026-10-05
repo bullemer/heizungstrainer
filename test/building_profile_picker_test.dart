@@ -20,7 +20,7 @@ void main() {
           home: Scaffold(
             body: ListenableBuilder(
               listenable: provider,
-              builder: (_, __) => BuildingProfileCard(provider: provider),
+              builder: (_, _) => BuildingProfileCard(provider: provider),
             ),
           ),
         );

@@ -8,6 +8,7 @@ import 'package:heizungstrainer/models/ecl_reading.dart';
 import 'package:heizungstrainer/services/curve_optimizer_service.dart';
 import 'package:heizungstrainer/services/heating_curve_model.dart';
 import 'package:heizungstrainer/widgets/analysis_section.dart';
+import 'package:heizungstrainer/widgets/brunata_chart_card.dart';
 
 /// Values read from a real ECL Comfort 310 on 2026-10-05.
 const realPoints = [40.0, 36.0, 32.0, 29.0, 26.0, 22.0];
@@ -334,6 +335,68 @@ void main() {
       expect(BuildingProfile.decode('floor1990to2010')!.system, HeatingSystem.floor);
       expect(BuildingProfile.decode('garbage'), isNull);
       expect(BuildingProfile.decode(null), isNull);
+    });
+  });
+
+  group('Brunata totals (no double counting)', () {
+    BrunataChartSeries ser(String name, List<double> v, [List<bool>? x]) =>
+        BrunataChartSeries(name: name, values: v, extrapolated: x ?? List.filled(v.length, false));
+
+    // Structure of the real overview chart (log 2026-10-06): cumulative columns.
+    final overview = BrunataChart(
+      source: 'index',
+      title: 'Heizung in kWh',
+      subtitle: '',
+      unit: 'Verbrauch in kWh',
+      categories: const ['bisher', 'Gesamtjahr'],
+      series: [
+        ser('Vorheriger Abrechnungszeitraum (2025)', [6924, 11264]),
+        ser('Aktueller Abrechnungszeitraum (2026)', [6434, 10694], [false, true]),
+      ],
+    );
+
+    test('overview: Δ % only on the measured column, flagged cumulative', () {
+      expect(overview.isCumulativeOverview, isTrue);
+      final cmp = overview.comparison!;
+      expect(cmp.percentAt(0), closeTo((6434 - 6924) / 6924 * 100, 1e-9)); // −7.1 %
+      expect(cmp.percentAt(1), isNull);
+      expect(cmp.totalPercent, closeTo(cmp.percentAt(0)!, 1e-9));
+    });
+
+    testWidgets('overview table shows no summed total (would be 18188 kWh)', (tester) async {
+      await tester.pumpWidget(MaterialApp(
+          home: Scaffold(body: SingleChildScrollView(child: BrunataChartCard(chart: overview, price: 0.125)))));
+      expect(find.textContaining('Summe ('), findsNothing);
+      expect(find.text('18188'), findsNothing);
+      expect(find.text('−7 %'), findsWidgets);
+    });
+
+    test('monthly: totals over the same months as the Δ %', () {
+      final c = BrunataChart(
+        source: 'month_heizung', title: 'Monatsvergleich Heizung', subtitle: '', unit: 'Verbrauch in kWh',
+        categories: const ['Jan', 'Feb', 'Mär'],
+        series: [
+          ser('Vorheriger Abrechnungszeitraum', [1000, 800, 600]),
+          ser('Ausgewählter Abrechnungszeitraum', [900, 880, 999], [false, false, true]),
+        ],
+      );
+      final cmp = c.comparison!;
+      expect(cmp.subject.name, 'Ausgewählter Abrechnungszeitraum');
+      expect(cmp.comparableTotal(cmp.reference), 1800); // Jan+Feb only
+      expect(cmp.comparableTotal(cmp.subject), 1780);
+      expect(cmp.totalPercent, closeTo((1780 - 1800) / 1800 * 100, 1e-9));
+    });
+
+    test('real Liegenschaft naming: series named after the person', () {
+      final c = BrunataChart(
+        source: 'liegenschaft_heizung', title: 'Liegenschaftsvergleich Heizung', subtitle: '',
+        unit: 'Verbrauch in kWh je m²', categories: const ['Jan', 'Feb'],
+        series: [ser('Durchschnitt der Liegenschaft', [10.2, 8.5]), ser('Max Mustermann', [6.9, 7.7])],
+      );
+      final cmp = c.comparison!;
+      expect(cmp.kind, BrunataComparisonKind.buildingAverage);
+      expect(cmp.subject.name, 'Max Mustermann');
+      expect(calculateCommunityComparisonPercentage([c]), closeTo((14.6 - 18.7) / 18.7 * 100, 1e-6));
     });
   });
 }

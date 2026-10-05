@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:heizungstrainer/widgets/brunata_chart_card.dart';
 import 'package:provider/provider.dart';
 
-import 'package:heizungstrainer/models/brunata_chart.dart';
 import 'package:heizungstrainer/models/brunata_meter_data.dart';
 import 'package:heizungstrainer/providers/ecl_provider.dart';
 import 'package:heizungstrainer/screens/settings_screen.dart';
@@ -282,8 +282,8 @@ class _CommunityScreenState extends State<CommunityScreen> {
     final explanationText = isNeutral
         ? 'Deine Wohnung liegt genau im Durchschnitt der Liegenschaft.'
         : (isBetter
-            ? 'Deine Wohnung verbraucht ${diff.abs().toStringAsFixed(1)}% weniger Wärmeenergie als der Liegenschafts-Durchschnitt.'
-            : 'Deine Wohnung liegt ${diff.toStringAsFixed(1)}% über dem Schnitt der Liegenschaft. Eine Absenkung der Heizkurve um 1–2 Stufen kann spürbar sparen.');
+            ? 'Deine Wohnung verbraucht je m² ${diff.abs().toStringAsFixed(1)} % weniger Wärmeenergie als der Liegenschafts-Durchschnitt (gemessene Monate des laufenden Zeitraums).'
+            : 'Deine Wohnung liegt je m² ${diff.toStringAsFixed(1)} % über dem Schnitt der Liegenschaft (gemessene Monate des laufenden Zeitraums).');
 
     return Container(
       padding: const EdgeInsets.all(18),
@@ -509,7 +509,7 @@ class _CommunityScreenState extends State<CommunityScreen> {
 
     return [
       for (final c in charts) ...[
-        _CommunityChartCard(chart: c, price: data.pricePerKwh),
+        BrunataChartCard(chart: c, price: data.pricePerKwh),
         const SizedBox(height: 14),
       ],
     ];
@@ -651,207 +651,6 @@ class _MediumSummaryCard extends StatelessWidget {
 }
 
 // ── Chart Breakdown Table Card ─────────────────────────────────────────────
-class _CommunityChartCard extends StatelessWidget {
-  const _CommunityChartCard({required this.chart, required this.price});
-
-  final BrunataChart chart;
-  final double price;
-
-  static const _card = Color(0xFF2A2A32);
-  static const _border = Color(0xFF3A3A44);
-  static const _textPrimary = Color(0xFFFFFFFF);
-  static const _textSecondary = Color(0xFFB0B0BC);
-
-  @override
-  Widget build(BuildContext context) {
-    final series = chart.series;
-    final rows = chart.categories.length;
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: _card,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: _border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            chart.title.isEmpty ? chart.source : chart.title,
-            style: const TextStyle(
-              fontWeight: FontWeight.w700,
-              fontSize: 15,
-              color: _textPrimary,
-            ),
-          ),
-          if (chart.subtitle.isNotEmpty) ...[
-            const SizedBox(height: 3),
-            Text(
-              chart.subtitle,
-              style: const TextStyle(fontSize: 11.5, color: _textSecondary),
-            ),
-          ],
-          const SizedBox(height: 4),
-          Text(
-            'Einheit: ${chart.unit}',
-            style: TextStyle(
-              fontSize: 11,
-              color: _textSecondary.withValues(alpha: 0.8),
-            ),
-          ),
-          const SizedBox(height: 12),
-
-          // Legend
-          Wrap(
-            spacing: 14,
-            runSpacing: 4,
-            children: [
-              for (var i = 0; i < series.length; i++)
-                _LegendDot(color: _seriesColor(i), label: series[i].name),
-            ],
-          ),
-          const SizedBox(height: 10),
-
-          // Header row
-          _TableRow(
-            label: '',
-            cells: [for (final s in series) s.name],
-            isHeader: true,
-            colorFor: _seriesColor,
-          ),
-          const Divider(height: 14, color: _border),
-
-          for (var r = 0; r < rows; r++)
-            _TableRow(
-              label: chart.categories[r],
-              cells: [
-                for (final s in series)
-                  r < s.values.length ? _valueCell(s, r) : '–',
-              ],
-            ),
-
-          const Divider(height: 16, color: _border),
-
-          // Totals
-          _TableRow(
-            label: 'Summe (Ist)',
-            cells: [for (final s in series) _fmtKwh(s.actualTotal)],
-            isTotal: true,
-          ),
-          if (chart.isKwh)
-            _TableRow(
-              label: 'Kosten (ca.)',
-              cells: [for (final s in series) _fmtEur(s.actualTotal * price)],
-              isTotal: true,
-            ),
-        ],
-      ),
-    );
-  }
-
-  String _valueCell(BrunataChartSeries s, int r) {
-    final v = _fmtKwh(s.values[r]);
-    return s.isExtrapolatedAt(r) ? '$v*' : v;
-  }
-
-  static Color _seriesColor(int i) {
-    const palette = [
-      Color(0xFFFFA726),
-      Color(0xFF42A5F5),
-      Color(0xFF66BB6A),
-      Color(0xFFAB47BC),
-    ];
-    return palette[i % palette.length];
-  }
-}
-
-class _LegendDot extends StatelessWidget {
-  const _LegendDot({required this.color, required this.label});
-  final Color color;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          width: 9,
-          height: 9,
-          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-        ),
-        const SizedBox(width: 5),
-        Text(
-          label,
-          style: const TextStyle(fontSize: 11.5, color: Color(0xFFB0B0BC)),
-        ),
-      ],
-    );
-  }
-}
-
-class _TableRow extends StatelessWidget {
-  const _TableRow({
-    required this.label,
-    required this.cells,
-    this.isHeader = false,
-    this.isTotal = false,
-    this.colorFor,
-  });
-
-  final String label;
-  final List<String> cells;
-  final bool isHeader;
-  final bool isTotal;
-  final Color Function(int)? colorFor;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2.5),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 72,
-            child: Text(
-              label,
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight:
-                    isHeader || isTotal ? FontWeight.bold : FontWeight.w500,
-                color: isHeader
-                    ? const Color(0xFFB0B0BC)
-                    : (isTotal
-                        ? const Color(0xFFFFFFFF)
-                        : const Color(0xFFB0B0BC)),
-              ),
-            ),
-          ),
-          for (var i = 0; i < cells.length; i++)
-            Expanded(
-              child: Text(
-                cells[i],
-                textAlign: TextAlign.right,
-                style: TextStyle(
-                  fontSize: 11.5,
-                  fontWeight:
-                      isHeader || isTotal ? FontWeight.bold : FontWeight.normal,
-                  color: isHeader
-                      ? (colorFor != null
-                          ? colorFor!(i)
-                          : const Color(0xFFB0B0BC))
-                      : (isTotal
-                          ? const Color(0xFFFFFFFF)
-                          : const Color(0xFFFFFFFF)),
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
 
 String _fmtKwh(double v) {
   if (v >= 100) return '${v.round()}';
