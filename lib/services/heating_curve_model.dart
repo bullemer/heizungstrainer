@@ -228,3 +228,44 @@ class BuildingProfile {
     };
   }
 }
+
+/// Estimated savings of a holiday/absence setback.
+///
+/// Every hour between [start] and the preheat start counts with the heating
+/// consumption of that day ([dailyHeatingKwh], seasonal if a monthly profile
+/// is known) times ~6 % per °C lower room temperature.
+class AbsenceSavings {
+  final double roomReductionKelvin;
+  final double percent;
+  final double? kwh;
+  final double? euro;
+
+  const AbsenceSavings({required this.roomReductionKelvin, required this.percent, this.kwh, this.euro});
+
+  factory AbsenceSavings.estimate({
+    required DateTime start,
+    required DateTime preheatStart,
+    required double roomReductionKelvin,
+    double? Function(DateTime day)? dailyHeatingKwh,
+    double? pricePerKwh,
+  }) {
+    final percent = (roomReductionKelvin * RoomTemperatureSavings.percentPerKelvin).clamp(0.0, 60.0);
+    double? kwh;
+    if (dailyHeatingKwh != null && preheatStart.isAfter(start)) {
+      var sum = 0.0;
+      var known = true;
+      for (var t = start; t.isBefore(preheatStart); t = t.add(const Duration(hours: 1))) {
+        final day = dailyHeatingKwh(t);
+        if (day == null) {
+          known = false;
+          break;
+        }
+        final hours = preheatStart.difference(t).inMinutes >= 60 ? 1.0 : preheatStart.difference(t).inMinutes / 60;
+        sum += day / 24 * hours * percent / 100;
+      }
+      kwh = known ? sum : null;
+    }
+    final euro = (kwh == null || pricePerKwh == null) ? null : kwh * pricePerKwh;
+    return AbsenceSavings(roomReductionKelvin: roomReductionKelvin, percent: percent.toDouble(), kwh: kwh, euro: euro);
+  }
+}

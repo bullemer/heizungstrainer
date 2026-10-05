@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:heizungstrainer/controllers/heating_controller.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 
@@ -8,6 +10,7 @@ import 'package:heizungstrainer/models/license_info.dart';
 import 'package:heizungstrainer/providers/ecl_provider.dart';
 import 'package:heizungstrainer/screens/holiday_screen.dart';
 import 'package:heizungstrainer/services/activity_log_service.dart';
+import 'package:heizungstrainer/services/heating_curve_model.dart';
 import 'package:heizungstrainer/services/holiday_service.dart';
 import 'package:heizungstrainer/services/license_service.dart';
 
@@ -134,20 +137,26 @@ void main() {
   });
 
   group('HolidayService Logic & Storage Tests', () {
-    test('calculateSavings returns sensible estimates and handles zero duration', () {
-      final service = HolidayService(inMemoryStorage: {});
+    test('absence savings: ~6 %/°C on the seasonal daily consumption, preheat excluded', () {
+      // January: 3100 kWh/month (31 days) = 100 kWh/day
+      double daily(DateTime d) => d.month == 1 ? 100 : 10;
+      final start = DateTime(2027, 1, 10, 0);
+      final s = AbsenceSavings.estimate(
+        start: start,
+        preheatStart: start.add(const Duration(days: 2)), // 48 h setback
+        roomReductionKelvin: 4,
+        dailyHeatingKwh: daily,
+        pricePerKwh: 0.125,
+      );
+      expect(s.percent, 24); // 4 °C × 6 %
+      expect(s.kwh, closeTo(2 * 100 * 0.24, 1e-6)); // 48 kWh
+      expect(s.euro, closeTo(6.0, 1e-6));
 
-      final zero = service.calculateSavings(duration: Duration.zero);
-      expect(zero['kwh'], 0.0);
-      expect(zero['euro'], 0.0);
-
-      final weekend = service.calculateSavings(duration: const Duration(hours: 60));
-      expect(weekend['kwh']!, greaterThan(0.0));
-      expect(weekend['euro']!, greaterThan(0.0));
-      // 60h * 2.5 kW * (5 * 0.06 = 0.30) = 45.0 kWh
-      expect(weekend['kwh'], 45.0);
-      // 45.0 kWh * 0.13 €/kWh = 5.85 €
-      expect(weekend['euro'], 5.85);
+      // without consumption data only the percentage is known
+      final pctOnly = AbsenceSavings.estimate(
+        start: start, preheatStart: start.add(const Duration(days: 2)), roomReductionKelvin: 4);
+      expect(pctOnly.kwh, isNull);
+      expect(pctOnly.euro, isNull);
     });
 
     test('saves, retrieves, and deletes plans via in-memory storage', () async {
@@ -496,4 +505,92 @@ void main() {
       expect(find.textContaining('Wochenend-Trip'), findsWidgets);
     });
   });
+
+  group('Holiday mode via comfort room setpoint (controller without curve shift)', () {
+    setUp(() => FlutterSecureStorage.setMockInitialValues({}));
+
+    Future<(ECLProvider, _RoomOnlyController)> roomOnlyProvider() async {
+      final fake = _RoomOnlyController(room: 22);
+      final provider = ECLProvider(
+        logService: ActivityLogService(enablePersistence: false, enableRemoteDispatch: false),
+        licenseService: LicenseService(inMemoryStorage: {}, initialTier: LicenseTier.pro),
+        autoLoadDatabase: false,
+      );
+      await provider.setSelectedController('nibe_modbus');
+      provider.useControllerForTesting(fake);
+      provider.setConnectedForTesting(ip: '192.168.178.60');
+      await provider.setBetaWritesEnabled(true);
+      await provider.refreshReadings();
+      return (provider, fake);
+    }
+
+    test('lowers the room setpoint by the chosen °C and restores it', () async {
+      final (provider, fake) = await roomOnlyProvider();
+      expect(provider.holidayControlMode, 'room');
+      final service = HolidayService(inMemoryStorage: {});
+      final now = DateTime(2026, 10, 6, 12);
+
+      final active = await service.activatePlan(
+        plan: HolidayPlan(
+          id: 'p_room', title: 'Urlaub', startDateTime: now,
+          endDateTime: now.add(const Duration(days: 7)), roomSetbackKelvin: 4, createdAt: now),
+        provider: provider,
+        now: now,
+      );
+      expect(active.controlMode, 'room');
+      expect(active.normalRoomTemp, 22);
+      expect(active.targetRoomTemp, 18);
+      expect(fake.room, 18);
+
+      await service.cancelOrFinishPlan(plan: active, provider: provider);
+      expect(fake.room, 22);
+    });
+
+    test('never goes below 15 °C', () async {
+      final (provider, fake) = await roomOnlyProvider();
+      final service = HolidayService(inMemoryStorage: {});
+      final now = DateTime(2026, 10, 6, 12);
+      final active = await service.activatePlan(
+        plan: HolidayPlan(
+          id: 'p_low', title: 'Lang', startDateTime: now,
+          endDateTime: now.add(const Duration(days: 14)), roomSetbackKelvin: 10, createdAt: now),
+        provider: provider,
+        now: now,
+      );
+      expect(active.targetRoomTemp, 15);
+      expect(fake.room, 15);
+    });
+  });
+}
+
+/// Like the user's ECL 310: comfort room setpoint, but no curve shift.
+class _RoomOnlyController implements HeatingController {
+  _RoomOnlyController({required this.room});
+  double room;
+
+  @override
+  String get id => 'nibe_modbus';
+  @override
+  String get brandName => 'Test';
+  @override
+  String get modelName => 'Room only';
+  @override
+  ConnectionProtocol get protocol => ConnectionProtocol.modbusTcp;
+  @override
+  HeatingCapabilities get capabilities => const HeatingCapabilities(supportsHeatingCurveShift: false);
+  @override
+  bool get isConnected => true;
+  @override
+  Stream<ControllerTelemetry> get telemetryStream => const Stream.empty();
+  @override
+  Future<void> connect({required String host, int? port, Map<String, dynamic>? extraConfig}) async {}
+  @override
+  Future<void> disconnect() async {}
+  @override
+  Future<ControllerTelemetry> readTelemetry() async =>
+      ControllerTelemetry(timestamp: DateTime.now(), flowTemp: 30, roomTarget: room);
+  @override
+  Future<void> setHeatingCurveShift(double shift) async => throw UnsupportedError('no shift');
+  @override
+  Future<void> setRoomTarget(double temperature) async => room = temperature;
 }

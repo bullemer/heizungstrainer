@@ -103,27 +103,6 @@ class HolidayService {
     changes.value++;
   }
 
-  /// Calculates estimated energy and cost savings for an absence period.
-  Map<String, double> calculateSavings({
-    required Duration duration,
-    double setbackDiff = 5.0, // e.g. 21°C -> 16°C
-    double pricePerKwh = 0.13, // average gas/heat price
-  }) {
-    final hours = duration.inHours.toDouble();
-    if (hours <= 0) return {'kwh': 0.0, 'euro': 0.0};
-
-    // Baseline heat load: ~2.5 kW for average residential unit during heating season
-    // ~6% savings per 1°C setback reduction
-    final savingsFactor = (setbackDiff * 0.06).clamp(0.05, 0.40);
-    final kwhSaved = hours * 2.5 * savingsFactor;
-    final euroSaved = kwhSaved * pricePerKwh;
-
-    return {
-      'kwh': double.parse(kwhSaved.toStringAsFixed(1)),
-      'euro': double.parse(euroSaved.toStringAsFixed(2)),
-    };
-  }
-
   /// Activates a holiday plan. If it starts now, the setback is written to the
   /// controller right away and the plan is only saved if that write is
   /// confirmed. A plan with a future start is saved "armed" and applied later
@@ -157,14 +136,26 @@ class HolidayService {
     return applied;
   }
 
-  /// Reads the current shift as the baseline to restore later, then writes the
-  /// setback. Throws [HolidayModeException] instead of guessing.
+  /// Lowest comfort setpoint holiday mode sets in room-setpoint mode.
+  static const double minHolidayRoomSetpoint = 15.0;
+
+  /// Reads the current value as the baseline to restore later, then writes the
+  /// setback – via the curve shift if the controller has one, else via the
+  /// comfort room setpoint. Throws [HolidayModeException] instead of guessing.
   Future<HolidayPlan> _applySetback(HolidayPlan plan, ECLProvider provider) async {
     if (!provider.isConnected) {
       throw const HolidayModeException(
         'Keine Verbindung zum Regler – die Absenkung wurde nicht aktiviert.',
       );
     }
+    final mode = provider.holidayControlMode;
+    if (mode == null) {
+      throw const HolidayModeException(
+        'Der Regler stellt weder Parallelverschiebung noch Raum-Sollwert bereit – '
+        'eine Absenkung ist nicht möglich.',
+      );
+    }
+    if (mode == 'room') return _applyRoomSetback(plan, provider);
     final currentShift =
         provider.getReading(ECLRegisters.heatingCurveShift)?.displayValue;
     if (currentShift == null) {
@@ -189,6 +180,7 @@ class HolidayService {
       normalShift: currentShift,
       normalRoomTemp: currentRoom ?? plan.normalRoomTemp,
       setbackApplied: true,
+      controlMode: 'shift',
     );
     await provider.logService.logWrite(
       controllerId: provider.selectedControllerId,
@@ -200,6 +192,48 @@ class HolidayService {
         'durationHours': plan.duration.inHours,
         'normalShift': currentShift,
         'setbackShift': plan.setbackShift,
+        'preheatStartTime': plan.preheatStartTime.toIso8601String(),
+      },
+    );
+    return applied;
+  }
+
+  Future<HolidayPlan> _applyRoomSetback(HolidayPlan plan, ECLProvider provider) async {
+    final current = provider.getReading(ECLRegisters.roomTargetTemp)?.displayValue;
+    if (current == null) {
+      throw const HolidayModeException(
+        'Der aktuelle Raum-Sollwert ist nicht bekannt – ohne ihn könnte der '
+        'Normalbetrieb später nicht korrekt wiederhergestellt werden.',
+      );
+    }
+    final target = ((current - plan.roomSetbackKelvin) * 2).round() / 2;
+    final clamped = target < minHolidayRoomSetpoint ? minHolidayRoomSetpoint : target;
+    if (clamped >= current) {
+      throw HolidayModeException(
+        'Der Raum-Sollwert steht schon bei ${current.toStringAsFixed(1)} °C – tiefer als '
+        '${minHolidayRoomSetpoint.toStringAsFixed(0)} °C senkt der Urlaubsmodus nicht.',
+      );
+    }
+    try {
+      await provider.writeParameter(ECLRegisters.roomTargetTemp, clamped);
+    } catch (e) {
+      throw HolidayModeException('Absenkung fehlgeschlagen: ${userFacingError(e)}');
+    }
+    final applied = plan.copyWith(
+      normalRoomTemp: current,
+      targetRoomTemp: clamped,
+      setbackApplied: true,
+      controlMode: 'room',
+    );
+    await provider.logService.logWrite(
+      controllerId: provider.selectedControllerId,
+      action: 'HOLIDAY_MODE_ACTIVATED',
+      message:
+          'Abwesenheitsmodus "${plan.title}" aktiv: Raum-Sollwert $current → $clamped °C.',
+      details: {
+        'planId': plan.id,
+        'normalRoomTemp': current,
+        'targetRoomTemp': clamped,
         'preheatStartTime': plan.preheatStartTime.toIso8601String(),
       },
     );
@@ -225,10 +259,11 @@ class HolidayService {
         );
       }
       try {
-        await provider.writeParameter(
-          ECLRegisters.heatingCurveShift,
-          plan.normalShift,
-        );
+        if (plan.controlMode == 'room') {
+          await provider.writeParameter(ECLRegisters.roomTargetTemp, plan.normalRoomTemp);
+        } else {
+          await provider.writeParameter(ECLRegisters.heatingCurveShift, plan.normalShift);
+        }
       } catch (e) {
         throw HolidayModeException(
           'Wiederherstellen fehlgeschlagen: ${userFacingError(e)} Der Plan bleibt aktiv.',
@@ -244,7 +279,9 @@ class HolidayService {
           ? 'HOLIDAY_MODE_DEACTIVATED'
           : 'HOLIDAY_MODE_CLOSED_WITHOUT_RESTORE',
       message: restored
-          ? 'Abwesenheitsmodus "${plan.title}" beendet. Parallelverschiebung zurück auf ${plan.normalShift}.'
+          ? (plan.controlMode == 'room'
+              ? 'Abwesenheitsmodus "${plan.title}" beendet. Raum-Sollwert zurück auf ${plan.normalRoomTemp} °C.'
+              : 'Abwesenheitsmodus "${plan.title}" beendet. Parallelverschiebung zurück auf ${plan.normalShift}.')
           : 'Abwesenheitsmodus "${plan.title}" geschlossen, Regler nicht verändert.',
       details: {
         'planId': plan.id,

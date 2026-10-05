@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import 'package:heizungstrainer/models/holiday_plan.dart';
+import 'package:heizungstrainer/services/heating_curve_model.dart';
+import 'package:heizungstrainer/models/ecl_parameter.dart';
 import 'package:heizungstrainer/providers/ecl_provider.dart';
 import 'package:heizungstrainer/services/holiday_service.dart';
 
@@ -52,6 +54,42 @@ class _HolidayScreenState extends State<HolidayScreen> {
     super.dispose();
   }
 
+  /// Preheat time: floor heating stores heat in the screed and needs much
+  /// longer to come back to temperature than radiators.
+  double _preheatFor(ECLProvider provider, double radiatorHours, Duration absence) {
+    if (!provider.isFloorHeating) return radiatorHours;
+    final floorHours = absence.inHours >= 72 ? 24.0 : 12.0;
+    final maxHours = absence.inHours / 2;
+    return floorHours > maxHours ? maxHours.floorToDouble() : floorHours;
+  }
+
+  AbsenceSavings _savingsFor(
+    ECLProvider provider, {
+    required DateTime start,
+    required DateTime end,
+    required double preheatHours,
+    required double setbackShift,
+    required double roomSetbackKelvin,
+  }) {
+    final mode = provider.holidayControlMode ?? 'shift';
+    return provider.estimateAbsenceSavings(
+      start: start,
+      preheatStart: end.subtract(Duration(minutes: (preheatHours * 60).round())),
+      roomReductionKelvin: provider.roomReductionKelvin(
+        mode: mode,
+        setbackShift: setbackShift,
+        roomSetbackKelvin: roomSetbackKelvin,
+      ),
+    );
+  }
+
+  static String _savingsText(AbsenceSavings s) {
+    final parts = <String>['ca. ${s.percent.toStringAsFixed(0)} % weniger Heizenergie während der Absenkung'];
+    if (s.kwh != null) parts.add('≈ ${s.kwh!.toStringAsFixed(0)} kWh');
+    if (s.euro != null) parts.add('≈ ${s.euro!.toStringAsFixed(2)} €');
+    return parts.join(' · ');
+  }
+
   void _showError(Object e) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -93,13 +131,15 @@ class _HolidayScreenState extends State<HolidayScreen> {
     required String title,
     required Duration duration,
     required double setbackShift,
+    required double roomSetbackKelvin,
     required double preheatHours,
   }) async {
     final provider = context.read<ECLProvider>();
     final now = DateTime.now();
     final end = now.add(duration);
-
-    final savings = _holidayService.calculateSavings(duration: duration);
+    final preheat = _preheatFor(provider, preheatHours, duration);
+    final savings = _savingsFor(provider,
+        start: now, end: end, preheatHours: preheat, setbackShift: setbackShift, roomSetbackKelvin: roomSetbackKelvin);
 
     final plan = HolidayPlan(
       id: 'plan_${now.millisecondsSinceEpoch}',
@@ -107,9 +147,10 @@ class _HolidayScreenState extends State<HolidayScreen> {
       startDateTime: now,
       endDateTime: end,
       setbackShift: setbackShift,
-      preheatHours: preheatHours,
-      estimatedSavingsKwh: savings['kwh'] ?? 0.0,
-      estimatedSavingsEuro: savings['euro'] ?? 0.0,
+      roomSetbackKelvin: roomSetbackKelvin,
+      preheatHours: preheat,
+      estimatedSavingsKwh: savings.kwh ?? 0.0,
+      estimatedSavingsEuro: savings.euro ?? 0.0,
       createdAt: now,
     );
 
@@ -121,7 +162,9 @@ class _HolidayScreenState extends State<HolidayScreen> {
         SnackBar(
           backgroundColor: _ecoGreen,
           content: Text(
-            '✓ $title aktiviert! Vorlauf um ${setbackShift.abs().toStringAsFixed(0)} Stufen abgesenkt.',
+            provider.holidayControlMode == 'room'
+                ? '✓ $title aktiviert! Raum-Sollwert um ${roomSetbackKelvin.toStringAsFixed(1)} °C abgesenkt.'
+                : '✓ $title aktiviert! Vorlauf um ${setbackShift.abs().toStringAsFixed(0)} Stufen abgesenkt.',
             style: const TextStyle(fontWeight: FontWeight.w600),
           ),
         ),
@@ -220,8 +263,9 @@ class _HolidayScreenState extends State<HolidayScreen> {
     DateTime endDate = now.add(const Duration(days: 3));
     TimeOfDay endTime = const TimeOfDay(hour: 18, minute: 0);
     double setbackShift = -3.0;
-    double preheatHours = 4.0;
+    double roomSetbackKelvin = 4.0;
     String title = 'Eigener Urlaub';
+    final roomMode = provider.holidayControlMode == 'room';
 
     await showModalBottomSheet<void>(
       context: context,
@@ -248,9 +292,13 @@ class _HolidayScreenState extends State<HolidayScreen> {
               endTime.minute,
             );
             final duration = endCombined.difference(startCombined);
-            final savings = _holidayService.calculateSavings(
-              duration: duration.isNegative ? Duration.zero : duration,
-            );
+            final preheatHours = _preheatFor(provider, 4.0, duration.isNegative ? Duration.zero : duration);
+            final savings = _savingsFor(provider,
+                start: startCombined,
+                end: endCombined,
+                preheatHours: preheatHours,
+                setbackShift: setbackShift,
+                roomSetbackKelvin: roomSetbackKelvin);
 
             return Padding(
               padding: EdgeInsets.only(
@@ -345,18 +393,39 @@ class _HolidayScreenState extends State<HolidayScreen> {
                     ),
                     const SizedBox(height: 16),
 
-                    // Shift slider
+                    // Setback amount
+                    if (roomMode) ...[
+                      Text(
+                        'Raumtemperatur absenken um ${roomSetbackKelvin.toStringAsFixed(1)} °C'
+                        '${provider.getReading(ECLRegisters.roomTargetTemp) != null ? ' (von ${provider.getReading(ECLRegisters.roomTargetTemp)!.displayValue.toStringAsFixed(1)} auf ${(provider.getReading(ECLRegisters.roomTargetTemp)!.displayValue - roomSetbackKelvin).clamp(HolidayService.minHolidayRoomSetpoint, 30).toStringAsFixed(1)} °C)' : ''}',
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      Slider(
+                        value: roomSetbackKelvin,
+                        min: 1.0,
+                        max: 6.0,
+                        divisions: 10,
+                        activeColor: _ecoGreen,
+                        onChanged: (v) => setModalState(() => roomSetbackKelvin = v),
+                      ),
+                    ] else ...[
+                      Text(
+                        'Spar-Absenkung: Parallelverschiebung ${setbackShift.toStringAsFixed(0)}',
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      Slider(
+                        value: setbackShift,
+                        min: -5.0,
+                        max: -1.0,
+                        divisions: 4,
+                        activeColor: _ecoGreen,
+                        onChanged: (v) => setModalState(() => setbackShift = v),
+                      ),
+                    ],
                     Text(
-                      'Spar-Absenkung: Shift ${setbackShift.toStringAsFixed(0)} (ca. -${(setbackShift.abs() * 5).toStringAsFixed(0)}°C Vorlauf)',
-                      style: const TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                    Slider(
-                      value: setbackShift,
-                      min: -5.0,
-                      max: -1.0,
-                      divisions: 4,
-                      activeColor: _ecoGreen,
-                      onChanged: (v) => setModalState(() => setbackShift = v),
+                      'Vorheizen ${preheatHours.toStringAsFixed(0)} Std. vor Rückkehr'
+                      '${provider.isFloorHeating ? ' – Fußbodenheizung braucht länger zum Aufheizen' : ''}.',
+                      style: const TextStyle(fontSize: 12, color: _textSecondary),
                     ),
                     const SizedBox(height: 12),
 
@@ -374,7 +443,7 @@ class _HolidayScreenState extends State<HolidayScreen> {
                           const SizedBox(width: 10),
                           Expanded(
                             child: Text(
-                              'Erwartete Ersparnis: ca. ${savings['euro']?.toStringAsFixed(2)} € (${savings['kwh']?.toStringAsFixed(0)} kWh)',
+                              _savingsText(savings),
                               style: const TextStyle(
                                 color: _ecoGreen,
                                 fontWeight: FontWeight.w700,
@@ -410,9 +479,10 @@ class _HolidayScreenState extends State<HolidayScreen> {
                             startDateTime: startCombined,
                             endDateTime: endCombined,
                             setbackShift: setbackShift,
+                            roomSetbackKelvin: roomSetbackKelvin,
                             preheatHours: preheatHours,
-                            estimatedSavingsKwh: savings['kwh'] ?? 0.0,
-                            estimatedSavingsEuro: savings['euro'] ?? 0.0,
+                            estimatedSavingsKwh: savings.kwh ?? 0.0,
+                            estimatedSavingsEuro: savings.euro ?? 0.0,
                             createdAt: now,
                           );
 
@@ -445,6 +515,8 @@ class _HolidayScreenState extends State<HolidayScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Rebuild when readings / consumption data change (preset savings, mode).
+    context.watch<ECLProvider>();
     return Scaffold(
       appBar: AppBar(
         title: const Text('🌴 Urlaub & Abwesenheit'),
@@ -614,7 +686,11 @@ class _HolidayScreenState extends State<HolidayScreen> {
               Expanded(
                 child: _buildMiniStat(
                   label: 'Absenkung',
-                  value: 'Shift ${plan.setbackShift.toStringAsFixed(0)}',
+                  value: plan.setbackApplied && plan.controlMode == 'room'
+                      ? 'auf ${plan.targetRoomTemp.toStringAsFixed(1)} °C'
+                      : (plan.controlMode == 'room' || context.read<ECLProvider>().holidayControlMode == 'room')
+                          ? '−${plan.roomSetbackKelvin.toStringAsFixed(1)} °C'
+                          : 'Shift ${plan.setbackShift.toStringAsFixed(0)}',
                   color: _ecoGreen,
                 ),
               ),
@@ -622,7 +698,9 @@ class _HolidayScreenState extends State<HolidayScreen> {
               Expanded(
                 child: _buildMiniStat(
                   label: 'Ersparnis ca.',
-                  value: '~${plan.estimatedSavingsEuro.toStringAsFixed(2)} €',
+                  value: plan.estimatedSavingsEuro > 0
+                      ? '~${plan.estimatedSavingsEuro.toStringAsFixed(2)} €'
+                      : '–',
                   color: _coolBlue,
                 ),
               ),
@@ -701,55 +779,55 @@ class _HolidayScreenState extends State<HolidayScreen> {
           ),
         ),
         const SizedBox(height: 10),
-        _buildPresetTile(
-          icon: Icons.backpack_outlined,
-          title: 'Wochenend-Trip (60 Std.)',
-          subtitle: 'Freitag 12:00 → Sonntag 24:00 Uhr · Ca. 16 € Ersparnis',
-          onTap: () => _activatePreset(
-            title: 'Wochenend-Trip',
-            duration: const Duration(hours: 60),
-            setbackShift: -3.0,
-            preheatHours: 4.0,
+        for (final p in _presets) ...[
+          _buildPresetTile(
+            icon: p.icon,
+            title: p.title,
+            subtitle: _presetSubtitle(p),
+            onTap: () => _activatePreset(
+              title: p.planTitle,
+              duration: p.duration,
+              setbackShift: p.setbackShift,
+              roomSetbackKelvin: p.roomSetbackKelvin,
+              preheatHours: p.preheatHours,
+            ),
           ),
-        ),
-        const SizedBox(height: 8),
-        _buildPresetTile(
-          icon: Icons.beach_access_outlined,
-          title: '1 Woche Urlaub (7 Tage)',
-          subtitle: '168 Std. Abwesenheit · Ca. 46 € Ersparnis',
-          onTap: () => _activatePreset(
-            title: '1 Woche Urlaub',
-            duration: const Duration(days: 7),
-            setbackShift: -3.0,
-            preheatHours: 5.0,
-          ),
-        ),
-        const SizedBox(height: 8),
-        _buildPresetTile(
-          icon: Icons.flight_takeoff_outlined,
-          title: '2 Wochen Reise (14 Tage)',
-          subtitle: '336 Std. Jahresurlaub · Ca. 92 € Ersparnis',
-          onTap: () => _activatePreset(
-            title: '2 Wochen Reise',
-            duration: const Duration(days: 14),
-            setbackShift: -3.0,
-            preheatHours: 6.0,
-          ),
-        ),
-        const SizedBox(height: 8),
-        _buildPresetTile(
-          icon: Icons.bolt_outlined,
-          title: 'Kurztrip / Tagesabwesenheit (12 Std.)',
-          subtitle: 'Ganztägig außer Haus · Ca. 3,50 € Ersparnis',
-          onTap: () => _activatePreset(
-            title: 'Kurztrip (12 Std.)',
-            duration: const Duration(hours: 12),
-            setbackShift: -2.0,
-            preheatHours: 2.0,
-          ),
-        ),
+          const SizedBox(height: 8),
+        ],
       ],
     );
+  }
+
+  static const _presets = [
+    _HolidayPreset(Icons.backpack_outlined, 'Wochenend-Trip (60 Std.)', 'Wochenend-Trip',
+        Duration(hours: 60), -3.0, 4.0, 4.0),
+    _HolidayPreset(Icons.beach_access_outlined, '1 Woche Urlaub (7 Tage)', '1 Woche Urlaub',
+        Duration(days: 7), -3.0, 4.0, 5.0),
+    _HolidayPreset(Icons.flight_takeoff_outlined, '2 Wochen Reise (14 Tage)', '2 Wochen Reise',
+        Duration(days: 14), -3.0, 4.0, 6.0),
+    _HolidayPreset(Icons.bolt_outlined, 'Kurztrip / Tagesabwesenheit (12 Std.)', 'Kurztrip (12 Std.)',
+        Duration(hours: 12), -2.0, 2.0, 2.0),
+  ];
+
+  /// Savings for starting the preset now, from the real consumption profile.
+  String _presetSubtitle(_HolidayPreset p) {
+    final provider = context.read<ECLProvider>();
+    final now = DateTime.now();
+    final roomMode = provider.holidayControlMode == 'room';
+    final preheat = _preheatFor(provider, p.preheatHours, p.duration);
+    final s = _savingsFor(provider,
+        start: now,
+        end: now.add(p.duration),
+        preheatHours: preheat,
+        setbackShift: p.setbackShift,
+        roomSetbackKelvin: p.roomSetbackKelvin);
+    final setback = roomMode
+        ? '−${p.roomSetbackKelvin.toStringAsFixed(0)} °C Raum'
+        : 'Shift ${p.setbackShift.toStringAsFixed(0)}';
+    final money = s.euro != null
+        ? '≈ ${s.euro!.toStringAsFixed(2)} € (${s.kwh!.toStringAsFixed(0)} kWh)'
+        : 'ca. ${s.percent.toStringAsFixed(0)} % weniger während der Absenkung';
+    return '$setback · Vorheizen ${preheat.toStringAsFixed(0)} Std. · $money';
   }
 
   Widget _buildPresetTile({
@@ -883,4 +961,18 @@ class _HolidayScreenState extends State<HolidayScreen> {
       ],
     );
   }
+}
+
+
+class _HolidayPreset {
+  final IconData icon;
+  final String title;
+  final String planTitle;
+  final Duration duration;
+  final double setbackShift;
+  final double roomSetbackKelvin;
+  final double preheatHours;
+
+  const _HolidayPreset(this.icon, this.title, this.planTitle, this.duration, this.setbackShift,
+      this.roomSetbackKelvin, this.preheatHours);
 }

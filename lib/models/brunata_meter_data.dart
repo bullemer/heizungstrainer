@@ -72,6 +72,21 @@ class BrunataMeterData {
   /// Whether detailed chart data is available for the drill-down view.
   bool get hasDetail => charts.isNotEmpty;
 
+  /// Share of the yearly heating consumption per month (Jan..Dec, sums to 1),
+  /// from the previous full period of the monthly chart. Null if unavailable.
+  List<double>? get heatingMonthlyProfile {
+    for (final c in charts) {
+      final title = c.title.toLowerCase();
+      if (c.isWarmWater || !c.isKwh || !(c.source == 'month_heizung' || title.contains('monat'))) continue;
+      final ref = c.comparison?.reference;
+      if (ref == null || ref.values.length != 12 || ref.extrapolated.any((e) => e)) return null;
+      final total = ref.total;
+      if (total <= 0) return null;
+      return [for (final v in ref.values) v / total];
+    }
+    return null;
+  }
+
   /// Heating consumption of the last 12 months in kWh, from the monthly
   /// comparison chart: the current period's real (not extrapolated) months
   /// plus the previous period's values for the remaining months. Null if the

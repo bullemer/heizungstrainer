@@ -225,6 +225,44 @@ class ECLProvider extends ChangeNotifier {
   /// EnergieSchweiz guide row for the curve chart, from [buildingProfile].
   BuildingReference? get buildingReference => _buildingProfile?.reference;
 
+  /// How holiday mode can lower the heating on this controller: 'shift'
+  /// (heating-curve shift), 'room' (comfort room setpoint), or null.
+  String? get holidayControlMode {
+    if (getReading(ECLRegisters.heatingCurveShift) != null) return 'shift';
+    if (getReading(ECLRegisters.roomTargetTemp) != null) return 'room';
+    return null;
+  }
+
+  /// Heating consumption on [day] in kWh: the yearly consumption distributed
+  /// by last year's monthly profile (if known), else evenly. Null without data.
+  double? dailyHeatingKwh(DateTime day) {
+    final annual = annualHeatingKwh;
+    if (annual == null) return null;
+    final profile = isSimulatedBilling ? null : _brunataData?.heatingMonthlyProfile;
+    if (profile == null) return annual / 365;
+    final daysInMonth = DateTime(day.year, day.month + 1, 0).day;
+    return annual * profile[day.month - 1] / daysInMonth;
+  }
+
+  /// Room-temperature reduction a setback causes: room mode directly; a curve
+  /// shift via the EnergieSchweiz rule (radiators ~0.5 K room per K flow,
+  /// floor heating ~1 K), assuming one shift step = 1 K flow temperature.
+  double roomReductionKelvin({required String mode, required double setbackShift, required double roomSetbackKelvin}) =>
+      mode == 'room' ? roomSetbackKelvin : setbackShift.abs() * (isFloorHeating ? 1.0 : 0.5);
+
+  AbsenceSavings estimateAbsenceSavings({
+    required DateTime start,
+    required DateTime preheatStart,
+    required double roomReductionKelvin,
+  }) =>
+      AbsenceSavings.estimate(
+        start: start,
+        preheatStart: preheatStart,
+        roomReductionKelvin: roomReductionKelvin,
+        dailyHeatingKwh: annualHeatingKwh == null ? null : dailyHeatingKwh,
+        pricePerKwh: _cachedPricePerKwh,
+      );
+
   /// Floor or mixed heating: slower reaction (optimisation assistant waits longer).
   bool get isFloorHeating => _buildingProfile?.isFloorHeating ?? false;
 

@@ -399,4 +399,25 @@ void main() {
       expect(calculateCommunityComparisonPercentage([c]), closeTo((14.6 - 18.7) / 18.7 * 100, 1e-6));
     });
   });
+
+  test('monthly heating profile from the previous full period', () {
+    final prev = BrunataChartSeries(
+        name: 'Vorheriger Abrechnungszeitraum',
+        values: const [2000, 1600, 1200, 700, 300, 50, 0, 0, 150, 700, 1400, 1900],
+        extrapolated: List.filled(12, false));
+    final cur = BrunataChartSeries(
+        name: 'Ausgewählter Abrechnungszeitraum',
+        values: const [1900, 1500, 1100, 600, 250, 40, 0, 0, 140, 999, 999, 999],
+        extrapolated: const [false, false, false, false, false, false, false, false, false, true, true, true]);
+    final data = BrunataMeterData(
+      currentBillingPeriodCost: 0, consumedKwh: 0, communityComparisonPercentage: 0,
+      periodStart: DateTime(2026), periodEnd: DateTime(2026, 12, 31), pricePerKwh: 0.125,
+      charts: [BrunataChart(source: 'month_heizung', title: 'Monatsvergleich Heizung', subtitle: '',
+          unit: 'Verbrauch in kWh', categories: const [], series: [prev, cur])],
+    );
+    final profile = data.heatingMonthlyProfile!;
+    expect(profile.reduce((a, b) => a + b), closeTo(1, 1e-9));
+    expect(profile[0], closeTo(2000 / 10000, 1e-9)); // January
+    expect(profile[6], 0); // July
+  });
 }

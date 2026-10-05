@@ -17,6 +17,11 @@ class HolidayPlan {
   /// Whether the setback has actually been written to the controller. An active
   /// plan with a future start stays "armed" (false) until the app applies it.
   final bool setbackApplied;
+  /// How the setback is applied: 'shift' (heating-curve shift) or 'room'
+  /// (comfort room setpoint, e.g. Danfoss ECL applications without a shift).
+  final String controlMode;
+  /// Room-setpoint mode: lower the comfort setpoint by this many °C.
+  final double roomSetbackKelvin;
   final double estimatedSavingsKwh;
   final double estimatedSavingsEuro;
   final DateTime createdAt;
@@ -35,6 +40,8 @@ class HolidayPlan {
     this.isActive = true,
     this.isCompleted = false,
     this.setbackApplied = false,
+    this.controlMode = 'shift',
+    this.roomSetbackKelvin = 4.0,
     this.estimatedSavingsKwh = 0.0,
     this.estimatedSavingsEuro = 0.0,
     required this.createdAt,
@@ -74,6 +81,8 @@ class HolidayPlan {
     bool? isActive,
     bool? isCompleted,
     bool? setbackApplied,
+    String? controlMode,
+    double? roomSetbackKelvin,
     double? estimatedSavingsKwh,
     double? estimatedSavingsEuro,
     DateTime? createdAt,
@@ -93,6 +102,8 @@ class HolidayPlan {
       isActive: isActive ?? this.isActive,
       isCompleted: isCompleted ?? this.isCompleted,
       setbackApplied: setbackApplied ?? this.setbackApplied,
+      controlMode: controlMode ?? this.controlMode,
+      roomSetbackKelvin: roomSetbackKelvin ?? this.roomSetbackKelvin,
       estimatedSavingsKwh: estimatedSavingsKwh ?? this.estimatedSavingsKwh,
       estimatedSavingsEuro: estimatedSavingsEuro ?? this.estimatedSavingsEuro,
       createdAt: createdAt ?? this.createdAt,
@@ -114,6 +125,8 @@ class HolidayPlan {
       'isActive': isActive,
       'isCompleted': isCompleted,
       'setbackApplied': setbackApplied,
+      'controlMode': controlMode,
+      'roomSetbackKelvin': roomSetbackKelvin,
       'estimatedSavingsKwh': estimatedSavingsKwh,
       'estimatedSavingsEuro': estimatedSavingsEuro,
       'createdAt': createdAt.toIso8601String(),
@@ -135,6 +148,8 @@ class HolidayPlan {
           (json['frostProtectionMinTemp'] as num?)?.toDouble() ?? 14.0,
       isActive: json['isActive'] as bool? ?? true,
       isCompleted: json['isCompleted'] as bool? ?? false,
+      controlMode: json['controlMode'] as String? ?? 'shift',
+      roomSetbackKelvin: (json['roomSetbackKelvin'] as num?)?.toDouble() ?? 4.0,
       // Plans saved by <= 1.1.0 lowered the heating on activation.
       setbackApplied: json['setbackApplied'] as bool? ??
           ((json['isActive'] as bool? ?? true) && !(json['isCompleted'] as bool? ?? false)),
