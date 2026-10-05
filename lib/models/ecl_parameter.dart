@@ -50,7 +50,11 @@ class ECLParameter {
 
 /// Static registry of all known ECL 310 controller parameters.
 ///
-/// Register addresses verified by live probing at 192.168.188.133.
+/// Addresses follow the Danfoss "ECL Comfort 210/296/310
+/// Kommunikationsbeschreibung" (AQ074886472234de): Modbus register address =
+/// parameter number (PNU) − 1. Circuit 1 shown; circuit 2 is PNU + 1000.
+/// Which sensor is flow/return depends on the application key – check the
+/// installation's manual when adding new parameters.
 abstract final class ECLRegisters {
   static const int sensorDisconnected = 19200;
 
@@ -104,25 +108,29 @@ abstract final class ECLRegisters {
 
   // ── Read/Write Setpoints (11xxx range) ─────────────────────────
 
-  /// Heating curve parallel shift. Addr 11112. Integer, no scaling.
-  /// Physical range: -15 to +15. UI-limited to -3 to +3.
+  /// Heating curve parallel shift ("Verschieben"), PNU 11176 → register 11175.
+  /// Integer, no scaling. UI-limited to -3 to +3.
+  ///
+  /// Up to 1.1.3 this pointed at register 11112 (= PNU 11113, the filter
+  /// constant of the flow/energy limitation), not the curve shift.
   static const heatingCurveShift = ECLParameter(
     id: 'heating_curve_shift',
     name: 'Heizkurven-Parallelverschiebung',
     unit: '',
-    modbusAddress: 11112,
+    modbusAddress: 11175,
     multiplier: 1.0,
     isWritable: true,
     minValue: -15,
     maxValue: 15,
   );
 
-  /// Room target temperature. Addr 11003. Raw×0.1 = °C.
+  /// Comfort room setpoint ("Komfort-Raumsollwert"), PNU 11180 → register
+  /// 11179. Raw×0.1 = °C. (Up to 1.1.3: register 11003 = PNU 11004 "Gew. Temp.".)
   static const roomTargetTemp = ECLParameter(
     id: 'room_target_temp',
     name: 'Raum-Solltemperatur',
     unit: '°C',
-    modbusAddress: 11003,
+    modbusAddress: 11179,
     multiplier: 0.1,
     isWritable: true,
     minValue: 5.0,

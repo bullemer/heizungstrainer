@@ -162,14 +162,14 @@ void main() {
       // 10203: Flow temp = 4850 (48.5 °C)
       // 10202: Return temp = 3900 (39.0 °C)
       // 10205: Hot water temp = 5200 (52.0 °C)
-      // 11112: Shift = 0 (0.0)
-      // 11003: Room target = 210 (21.0 °C)
+      // 11175 (PNU 11176 Verschieben): Shift = 0
+      // 11179 (PNU 11180 Komfort-Raumsollwert): 210 = 21.0 °C
       virtualDanfoss.holdingRegisters[10200] = 550;
       virtualDanfoss.holdingRegisters[10203] = 4850;
       virtualDanfoss.holdingRegisters[10202] = 3900;
       virtualDanfoss.holdingRegisters[10205] = 5200;
-      virtualDanfoss.holdingRegisters[11112] = 0;
-      virtualDanfoss.holdingRegisters[11003] = 210;
+      virtualDanfoss.holdingRegisters[11175] = 0;
+      virtualDanfoss.holdingRegisters[11179] = 210;
       await virtualDanfoss.start();
     });
 
@@ -195,13 +195,13 @@ void main() {
       expect(telemetry.spread, closeTo(9.5, 0.01));
       expect(telemetry.isOutdoorDisconnected, isFalse);
 
-      // Set Heating Curve Shift to -2.0 K -> register 11112 = -2
+      // Set Heating Curve Shift to -2.0 K -> register 11175 = -2
       await controller.setHeatingCurveShift(-2.0);
-      expect(virtualDanfoss.holdingRegisters[11112], -2);
+      expect(virtualDanfoss.holdingRegisters[11175], -2);
 
-      // Set Room Target to 22.5 °C -> register 11003 = 225
+      // Set Room Target to 22.5 °C -> register 11179 = 225
       await controller.setRoomTarget(22.5);
-      expect(virtualDanfoss.holdingRegisters[11003], 225);
+      expect(virtualDanfoss.holdingRegisters[11179], 225);
 
       // Re-read telemetry to confirm updated values
       final updated = await controller.readTelemetry();

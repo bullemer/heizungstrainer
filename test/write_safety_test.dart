@@ -85,6 +85,20 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => FlutterSecureStorage.setMockInitialValues({}));
 
+  group('Danfoss register map (register = PNU − 1, Danfoss Kommunikationsbeschreibung)', () {
+    test('writable parameters point at the curve shift and comfort setpoint', () {
+      expect(ECLRegisters.heatingCurveShift.modbusAddress, 11176 - 1); // Verschieben
+      expect(ECLRegisters.roomTargetTemp.modbusAddress, 11180 - 1); // Komfort-Raumsollwert
+      expect(ECLRegisters.roomTargetTemp.multiplier, 0.1); // scaling 10
+    });
+
+    test('never targets the flow/energy limiter or override setpoint again', () {
+      final addresses = ECLRegisters.all.map((p) => p.modbusAddress).toSet();
+      expect(addresses.contains(11112), isFalse); // PNU 11113 Filterkonstante
+      expect(addresses.contains(11003), isFalse); // PNU 11004 Gew. Temp.
+    });
+  });
+
   group('Beta write gate', () {
     test('unverified driver is read-only by default', () async {
       final fake = FakeController(shift: 0);
