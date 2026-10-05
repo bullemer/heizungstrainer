@@ -190,12 +190,15 @@ class ECLProvider extends ChangeNotifier {
   double? get pricePerKwhCached => _cachedPricePerKwh;
 
   /// Heating energy per year used for savings: the user's own value, else the
-  /// real billing projection (demo billing providers are ignored).
+  /// last 12 months from the billing portal, else its full-year projection
+  /// (demo billing providers are ignored).
   double? get annualHeatingKwh {
     if (_annualHeatingKwhManual != null && _annualHeatingKwhManual! > 0) {
       return _annualHeatingKwhManual;
     }
     if (isSimulatedBilling) return null;
+    final last12 = _brunataData?.heatingLast12MonthsKwh;
+    if (last12 != null) return last12;
     final projection = _brunataData?.heatingProjection;
     return (projection != null && projection > 0) ? projection : null;
   }
@@ -203,7 +206,11 @@ class ECLProvider extends ChangeNotifier {
   /// Where [annualHeatingKwh] comes from, for labels.
   String? get annualHeatingKwhSource {
     if (_annualHeatingKwhManual != null && _annualHeatingKwhManual! > 0) return 'eigener Wert';
-    return annualHeatingKwh == null ? null : 'Hochrechnung ${currentBillingDescriptor.name}';
+    if (annualHeatingKwh == null) return null;
+    final name = currentBillingDescriptor.name;
+    return _brunataData?.heatingLast12MonthsKwh != null
+        ? 'Verbrauch der letzten 12 Monate ($name)'
+        : 'Jahreshochrechnung ($name)';
   }
 
   double? get annualHeatingKwhManual => _annualHeatingKwhManual;

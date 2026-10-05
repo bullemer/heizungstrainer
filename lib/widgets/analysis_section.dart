@@ -43,6 +43,9 @@ class AnalysisSection extends StatelessWidget {
   final String? annualHeatingKwhSource;
   final double? pricePerKwh;
 
+  /// False when the screen shows the heating curve elsewhere.
+  final bool showHeatingCurve;
+
   const AnalysisSection({
     super.key,
     required this.currentOutdoorTemp,
@@ -61,6 +64,7 @@ class AnalysisSection extends StatelessWidget {
     this.annualHeatingKwh,
     this.annualHeatingKwhSource,
     this.pricePerKwh,
+    this.showHeatingCurve = true,
   });
 
   @override
@@ -132,8 +136,10 @@ class AnalysisSection extends StatelessWidget {
         const SizedBox(height: 12),
 
         // ── B. Heating Curve Chart ──────────────────────────
-        if (controllerCurve != null && roomSetpoint != null)
-          _ControllerCurveSection(
+        if (!showHeatingCurve)
+          const SizedBox.shrink()
+        else if (controllerCurve != null && roomSetpoint != null)
+          HeatingSimulationCard(
             curve: controllerCurve!,
             roomSetpoint: roomSetpoint!,
             previewSetpoint: previewSetpoint,
@@ -597,9 +603,10 @@ class _HeatingCurveSection extends StatelessWidget {
   }
 }
 
-/// Real controller curve with the live preview from the home slider, and what
-/// the previewed setpoint means per year in kWh and €.
-class _ControllerCurveSection extends StatelessWidget {
+/// Real controller curve with the live preview from the home slider, what the
+/// previewed setpoint means per year, and a fixed "what can I save" table –
+/// all based on the annual heating consumption (last 12 months if known).
+class HeatingSimulationCard extends StatelessWidget {
   final ControllerHeatingCurve curve;
   final double roomSetpoint;
   final double? previewSetpoint;
@@ -607,8 +614,11 @@ class _ControllerCurveSection extends StatelessWidget {
   final double? annualHeatingKwh;
   final String? annualHeatingKwhSource;
   final double? pricePerKwh;
+  final VoidCallback? onEditAnnualKwh;
+  final VoidCallback? onOpenAssistant;
 
-  const _ControllerCurveSection({
+  const HeatingSimulationCard({
+    super.key,
     required this.curve,
     required this.roomSetpoint,
     required this.previewSetpoint,
@@ -616,7 +626,53 @@ class _ControllerCurveSection extends StatelessWidget {
     required this.annualHeatingKwh,
     required this.annualHeatingKwhSource,
     required this.pricePerKwh,
+    this.onEditAnnualKwh,
+    this.onOpenAssistant,
   });
+
+  Widget _savingsTable() {
+    const style = TextStyle(fontSize: 12, color: Color(0xFFBDBDC7));
+    const head = TextStyle(fontSize: 11.5, color: Color(0xFF9E9EA8), fontWeight: FontWeight.w600);
+    final rows = <TableRow>[
+      const TableRow(children: [
+        Padding(padding: EdgeInsets.only(bottom: 6), child: Text('Raum-Soll', style: head)),
+        Padding(padding: EdgeInsets.only(bottom: 6), child: Text('Energie/Jahr', style: head)),
+        Padding(padding: EdgeInsets.only(bottom: 6), child: Text('Kosten/Jahr', style: head)),
+      ]),
+    ];
+    for (final delta in const [0.5, 1.0, 2.0]) {
+      final target = roomSetpoint - delta;
+      final s = RoomTemperatureSavings.estimate(
+        currentSetpoint: roomSetpoint,
+        newSetpoint: target,
+        annualHeatingKwh: annualHeatingKwh,
+        pricePerKwh: pricePerKwh,
+      );
+      rows.add(TableRow(children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 3),
+          child: Text('${target.toStringAsFixed(1)} °C (−${delta.toStringAsFixed(1)})', style: style),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 3),
+          child: Text(
+            s.kwhPerYear == null
+                ? '−${s.percent.toStringAsFixed(0)} %'
+                : '−${s.kwhPerYear!.toStringAsFixed(0)} kWh (${s.percent.toStringAsFixed(0)} %)',
+            style: style,
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 3),
+          child: Text(
+            s.euroPerYear == null ? '–' : '−${s.euroPerYear!.toStringAsFixed(0)} €',
+            style: const TextStyle(fontSize: 12, color: Color(0xFF66BB6A), fontWeight: FontWeight.w700),
+          ),
+        ),
+      ]));
+    }
+    return Table(columnWidths: const {0: FlexColumnWidth(1.2), 1: FlexColumnWidth(1.4), 2: FlexColumnWidth(1)}, children: rows);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -649,7 +705,7 @@ class _ControllerCurveSection extends StatelessWidget {
             const Icon(Icons.show_chart_rounded, color: Color(0xFFFFA726), size: 18),
             const SizedBox(width: 8),
             const Expanded(
-              child: Text('Heizkurve deines Reglers',
+              child: Text('Heizkurve & Sparpotenzial',
                   style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5, color: Color(0xFFECECF0))),
             ),
             Text('Raum-Soll ${roomSetpoint.toStringAsFixed(1)} °C',
@@ -678,6 +734,43 @@ class _ControllerCurveSection extends StatelessWidget {
             const SizedBox(height: 10),
             ControllerSavingsLine(savings: savings, source: annualHeatingKwhSource),
           ],
+          const SizedBox(height: 16),
+          const Text('Was kann ich sparen?',
+              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: Color(0xFFECECF0))),
+          const SizedBox(height: 8),
+          _savingsTable(),
+          const SizedBox(height: 8),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Text(
+                  annualHeatingKwh == null
+                      ? 'Für kWh und € fehlt dein Jahresverbrauch: Abrechnung synchronisieren oder eintragen.'
+                      : 'Basis: ${annualHeatingKwh!.toStringAsFixed(0)} kWh – ${annualHeatingKwhSource ?? 'Jahresverbrauch'}'
+                          '${pricePerKwh != null ? ', ${(pricePerKwh! * 100).toStringAsFixed(1)} ct/kWh' : ''}. '
+                          'Faustregel ~6 % je °C, Schätzung.',
+                  style: muted,
+                ),
+              ),
+              if (onEditAnnualKwh != null)
+                TextButton(
+                  key: const Key('editAnnualKwh'),
+                  onPressed: onEditAnnualKwh,
+                  child: Text(annualHeatingKwh == null ? 'Eintragen' : 'Ändern'),
+                ),
+            ],
+          ),
+          if (onOpenAssistant != null)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                key: const Key('openCurveSimulator'),
+                icon: const Icon(Icons.auto_graph_rounded, size: 18),
+                label: const Text('Optimierungs-Assistent: niedrigste angenehme Einstellung finden'),
+                onPressed: onOpenAssistant,
+              ),
+            ),
         ],
       ),
     );

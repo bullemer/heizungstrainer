@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:heizungstrainer/models/brunata_chart.dart';
+import 'package:heizungstrainer/models/brunata_meter_data.dart';
 import 'package:heizungstrainer/models/ecl_parameter.dart';
 import 'package:heizungstrainer/models/ecl_reading.dart';
 import 'package:heizungstrainer/services/curve_optimizer_service.dart';
@@ -137,5 +139,73 @@ void main() {
       expect(find.textContaining('28.5 → 27.3'), findsOneWidget);
       expect(find.textContaining('ca. 6 % weniger Heizenergie · ≈ 480 kWh/Jahr · ≈ 58 €/Jahr'), findsOneWidget);
     });
+  });
+
+  group('Last 12 months heating consumption (Brunata monthly chart)', () {
+    BrunataMeterData data(List<BrunataChart> charts) => BrunataMeterData(
+          currentBillingPeriodCost: 0,
+          consumedKwh: 0,
+          communityComparisonPercentage: 0,
+          periodStart: DateTime(2026),
+          periodEnd: DateTime(2026, 12, 31),
+          pricePerKwh: 0.12,
+          charts: charts,
+        );
+
+    BrunataChart monthly(List<BrunataChartSeries> series) => BrunataChart(
+          source: 'month_heizung',
+          title: 'Monatsvergleich Heizung',
+          subtitle: '',
+          unit: 'Verbrauch in kWh',
+          categories: const [],
+          series: series,
+        );
+
+    test('current real months + previous period for the rest', () {
+      // Jan–Sep 2026 measured, Oct–Dec extrapolated
+      final current = BrunataChartSeries(
+        name: '2026',
+        values: const [1000, 900, 700, 400, 200, 50, 0, 0, 100, 999, 999, 999],
+        extrapolated: const [false, false, false, false, false, false, false, false, false, true, true, true],
+      );
+      final previous = BrunataChartSeries(
+        name: '2025',
+        values: const [1100, 950, 750, 450, 250, 60, 10, 0, 120, 400, 700, 950],
+        extrapolated: const [false, false, false, false, false, false, false, false, false, false, false, false],
+      );
+      // 3350 (Jan–Sep 2026) + 400 + 700 + 950 (Oct–Dec 2025) = 5400
+      expect(data([monthly([current, previous])]).heatingLast12MonthsKwh, 5400);
+    });
+
+    test('null without a previous period (falls back to the projection)', () {
+      final current = BrunataChartSeries(
+        name: '2026', values: const [1000, 900], extrapolated: const [false, true]);
+      expect(data([monthly([current])]).heatingLast12MonthsKwh, isNull);
+      expect(data(const []).heatingLast12MonthsKwh, isNull);
+    });
+  });
+
+  testWidgets('savings table lists −0.5/−1/−2 °C with kWh and €', (tester) async {
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: SingleChildScrollView(
+          child: HeatingSimulationCard(
+            curve: ControllerHeatingCurve.fromReadings(readingsFrom(realController()))!,
+            roomSetpoint: 22,
+            previewSetpoint: null,
+            outdoorTemp: 5,
+            annualHeatingKwh: 10000,
+            annualHeatingKwhSource: 'Verbrauch der letzten 12 Monate (Brunata Hamburg)',
+            pricePerKwh: 0.12,
+          ),
+        ),
+      ),
+    ));
+    expect(find.text('Was kann ich sparen?'), findsOneWidget);
+    expect(find.text('21.0 °C (−1.0)'), findsOneWidget);
+    expect(find.text('−600 kWh (6 %)'), findsOneWidget);
+    expect(find.text('−72 €'), findsOneWidget);
+    expect(find.text('−1200 kWh (12 %)'), findsOneWidget);
+    expect(find.textContaining('letzten 12 Monate'), findsOneWidget);
   });
 }

@@ -20,6 +20,43 @@ import 'package:heizungstrainer/widgets/radial_indicator.dart';
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
 
+  static ControllerHeatingCurve? _controllerCurve(ECLProvider provider) =>
+      ControllerHeatingCurve.fromReadings(provider.getReading);
+
+  /// Lets the user enter/correct the annual heating consumption used for the
+  /// savings estimate (overrides the billing portal value).
+  static Future<void> _editAnnualKwh(BuildContext context, ECLProvider provider) async {
+    final controller = TextEditingController(
+      text: provider.annualHeatingKwhManual?.toStringAsFixed(0) ?? '',
+    );
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Heizenergie pro Jahr'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          keyboardType: TextInputType.number,
+          decoration: InputDecoration(
+            suffixText: 'kWh',
+            hintText: provider.annualHeatingKwh?.toStringAsFixed(0),
+            helperText: 'Steht auf deiner Heizkostenabrechnung. Leer lassen = Wert aus der Abrechnung.',
+            helperMaxLines: 2,
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Abbrechen')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, controller.text), child: const Text('Speichern')),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (result == null) return;
+    await provider.setAnnualHeatingKwh(
+      double.tryParse(result.trim().replaceAll('.', '').replaceAll(',', '.')),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -116,17 +153,28 @@ class HomeScreen extends StatelessWidget {
                 _SmartStatusBanner(provider: provider),
                 const SizedBox(height: 18),
 
-                // ── Zone 1: Raumheizung ─────────────────────
-                _HeatingComfortCard(provider: provider),
-                const SizedBox(height: 14),
-
-                // ── Zone 2: Warmwasser ──────────────────────
-                _HotWaterCard(provider: provider),
-                const SizedBox(height: 18),
-
-                // ── Metrics Grid ────────────────────────────
-                _SectionLabel(label: 'Systemwerte'),
+                // ── Heizung ─────────────────────────────────
+                _SectionLabel(label: 'Heizung'),
                 const SizedBox(height: 10),
+                _HeatingComfortCard(provider: provider),
+                if (_controllerCurve(provider) != null &&
+                    provider.getReading(ECLRegisters.roomTargetTemp) != null) ...[
+                  const SizedBox(height: 12),
+                  HeatingSimulationCard(
+                    curve: _controllerCurve(provider)!,
+                    roomSetpoint: provider.getReading(ECLRegisters.roomTargetTemp)!.displayValue,
+                    previewSetpoint: provider.comfortPreview,
+                    outdoorTemp: provider.getReading(ECLRegisters.outdoorTemp)?.displayValue ?? 0,
+                    annualHeatingKwh: provider.annualHeatingKwh,
+                    annualHeatingKwhSource: provider.annualHeatingKwhSource,
+                    pricePerKwh: provider.pricePerKwhCached,
+                    onEditAnnualKwh: () => _editAnnualKwh(context, provider),
+                    onOpenAssistant: () => Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const CurveSimulatorScreen()),
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 12),
                 Row(
                   children: [
                     Expanded(
@@ -153,12 +201,16 @@ class HomeScreen extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 10),
-
-                // ── Delta Chip ──────────────────────────────
                 _EfficiencyDeltaChip(provider: provider),
                 const SizedBox(height: 24),
 
-                // ── Analysis & Savings Section ──────────────
+                // ── Warmwasser ──────────────────────────────
+                _SectionLabel(label: 'Warmwasser'),
+                const SizedBox(height: 10),
+                _HotWaterCard(provider: provider),
+                const SizedBox(height: 24),
+
+                // ── Abrechnung & Analyse ────────────────────
                 AnalysisSection(
                   currentOutdoorTemp:
                       provider.getReading(ECLRegisters.outdoorTemp)?.displayValue ?? 0,
@@ -175,14 +227,8 @@ class HomeScreen extends StatelessWidget {
                   lastBillingSyncTime: provider.lastBillingSyncTime,
                   billingProviderName:
                       provider.currentBillingDescriptor.name,
-                  controllerCurve:
-                      ControllerHeatingCurve.fromReadings(provider.getReading),
-                  roomSetpoint:
-                      provider.getReading(ECLRegisters.roomTargetTemp)?.displayValue,
-                  previewSetpoint: provider.comfortPreview,
-                  annualHeatingKwh: provider.annualHeatingKwh,
-                  annualHeatingKwhSource: provider.annualHeatingKwhSource,
-                  pricePerKwh: provider.pricePerKwhCached,
+                  // The real curve is shown in the heating area above.
+                  showHeatingCurve: _controllerCurve(provider) == null,
                 ),
               ],
             ),
@@ -669,12 +715,6 @@ class _HeatingComfortCardState extends State<_HeatingComfortCard> {
         ),
       );
     }
-    final savings = RoomTemperatureSavings.estimate(
-      currentSetpoint: current,
-      newSetpoint: _sliderValue,
-      annualHeatingKwh: widget.provider.annualHeatingKwh,
-      pricePerKwh: widget.provider.pricePerKwhCached,
-    );
     return Padding(
       padding: const EdgeInsets.only(top: 12),
       child: Column(
@@ -691,7 +731,10 @@ class _HeatingComfortCardState extends State<_HeatingComfortCard> {
                 style: TextStyle(color: Colors.white.withValues(alpha: 0.75), fontSize: 11.5),
               ),
             ),
-          ControllerSavingsLine(savings: savings, source: widget.provider.annualHeatingKwhSource),
+          Text(
+            'Ersparnis in Energie und € siehe „Heizkurve & Sparpotenzial“ direkt darunter.',
+            style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 11),
+          ),
         ],
       ),
     );
@@ -960,19 +1003,6 @@ class _HeatingComfortCardState extends State<_HeatingComfortCard> {
 
           // Live physical impact preview
           _buildPhysicalImpactPreview(_sliderValue, accent),
-
-          if (ControllerHeatingCurve.fromReadings(widget.provider.getReading) != null)
-            Align(
-              alignment: Alignment.centerLeft,
-              child: TextButton.icon(
-                key: const Key('openCurveSimulator'),
-                icon: const Icon(Icons.show_chart_rounded, size: 18),
-                label: const Text('Heizkurve & Sparrechner'),
-                onPressed: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const CurveSimulatorScreen()),
-                ),
-              ),
-            ),
 
           // Save/Cancel buttons
           if (_isEditing) ...[

@@ -72,6 +72,44 @@ class BrunataMeterData {
   /// Whether detailed chart data is available for the drill-down view.
   bool get hasDetail => charts.isNotEmpty;
 
+  /// Heating consumption of the last 12 months in kWh, from the monthly
+  /// comparison chart: the current period's real (not extrapolated) months
+  /// plus the previous period's values for the remaining months. Null if the
+  /// chart doesn't have both periods.
+  double? get heatingLast12MonthsKwh {
+    BrunataChart? chart;
+    for (final c in charts) {
+      final title = c.title.toLowerCase();
+      if (!c.isWarmWater && c.isKwh && (c.source == 'month_heizung' || title.contains('monat'))) {
+        chart = c;
+        break;
+      }
+    }
+    if (chart == null || chart.series.length < 2) return null;
+
+    BrunataChartSeries? current;
+    for (final s in chart.series) {
+      if (s.extrapolated.any((e) => e)) {
+        current = s;
+        break;
+      }
+    }
+    if (current == null) return null;
+    BrunataChartSeries? previous;
+    for (final s in chart.series) {
+      if (identical(s, current) || s.values.length != current.values.length) continue;
+      if (s.extrapolated.any((e) => e)) continue;
+      if (previous == null || s.total > previous.total) previous = s;
+    }
+    if (previous == null) return null;
+
+    var sum = 0.0;
+    for (var i = 0; i < current.values.length; i++) {
+      sum += current.isExtrapolatedAt(i) ? previous.values[i] : current.values[i];
+    }
+    return sum > 0 ? sum : null;
+  }
+
   /// Returns a copy with cost fields recomputed for a new tariff.
   BrunataMeterData copyWithPrice(double newPrice) {
     return BrunataMeterData(
