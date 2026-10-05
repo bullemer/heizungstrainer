@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:heizungstrainer/app_version.dart';
 import 'package:heizungstrainer/models/activity_log_entry.dart';
 import 'package:heizungstrainer/services/database_service.dart';
 
@@ -292,7 +293,7 @@ class ActivityLogService extends ChangeNotifier {
       'platform': kIsWeb ? 'web' : Platform.operatingSystem,
       'app': {
         'name': 'Heizungstrainer',
-        'version': '2.1.0',
+        'version': appVersion,
       },
       'systemContext': {
         'controllerId': currentControllerId,

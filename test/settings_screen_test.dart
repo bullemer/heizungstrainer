@@ -3,6 +3,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 
+import 'package:heizungstrainer/app_version.dart';
 import 'package:heizungstrainer/providers/ecl_provider.dart';
 import 'package:heizungstrainer/screens/settings_screen.dart';
 
@@ -48,7 +49,7 @@ void main() {
       expect(find.text('Messdienstleister & Abrechnung'), findsOneWidget);
       expect(find.text('Tarif & Energiepreis'), findsOneWidget);
       expect(find.text('Datenpuffer & Offline-Betrieb'), findsOneWidget);
-      expect(find.text('Version 1.1.0 (Build 2)'), findsOneWidget);
+      expect(find.text('Version $appVersionLabel'), findsOneWidget);
 
       // Known Controllers
       expect(find.text('Danfoss'), findsWidgets);

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import 'package:heizungstrainer/app_version.dart';
 import 'package:heizungstrainer/billing/billing_provider.dart';
 import 'package:heizungstrainer/controllers/generic_modbus_controller.dart';
 import 'package:heizungstrainer/controllers/bosch_buderus_ems_controller.dart';
@@ -932,7 +933,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18),
             ),
             Text(
-              'Version 1.1.0 (Build 2)',
+              'Version $appVersionLabel',
               style: TextStyle(
                 fontSize: 11,
                 color: Color(0xFFFFA726),
@@ -1119,7 +1120,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         child: Column(
                           children: [
                             const Text(
-                              'Heizungstrainer v1.1.0 (Build 2)',
+                              'Heizungstrainer v$appVersionLabel',
                               style: TextStyle(
                                 fontSize: 12,
                                 fontWeight: FontWeight.w600,
