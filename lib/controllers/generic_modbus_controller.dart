@@ -348,6 +348,9 @@ class GenericModbusController implements HeatingController {
         message: 'Schreiben von $label fehlgeschlagen (Code $res).',
       );
     }
+    // The next read is the provider's read-back check; it must not be served
+    // from the throttle cache with the pre-write value.
+    _cachedTelemetry = null;
   }
 
   @override

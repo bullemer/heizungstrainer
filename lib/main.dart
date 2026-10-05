@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -9,6 +11,7 @@ import 'package:heizungstrainer/screens/holiday_screen.dart';
 import 'package:heizungstrainer/screens/community_screen.dart';
 import 'package:heizungstrainer/screens/backup_screen.dart';
 import 'package:heizungstrainer/screens/log_screen.dart';
+import 'package:heizungstrainer/services/holiday_service.dart';
 import 'package:heizungstrainer/widgets/app_top_status_bar.dart';
 
 void main() {
@@ -138,6 +141,66 @@ class MainShell extends StatefulWidget {
 
 class _MainShellState extends State<MainShell> {
   int _selectedIndex = 0;
+
+  // Holiday-mode scheduler: applies a planned setback and restores normal
+  // operation at the preheat time while the app runs. Also fires right after
+  // (re)connecting, so steps missed while the controller was unreachable are
+  // caught up.
+  static const _holidayCheckInterval = Duration(minutes: 1);
+  final HolidayService _holidayService = HolidayService();
+  Timer? _holidayTimer;
+  ECLProvider? _provider;
+  bool _wasConnected = false;
+  bool _holidayBusy = false;
+  String? _lastHolidayError;
+
+  @override
+  void initState() {
+    super.initState();
+    _provider = context.read<ECLProvider>()..addListener(_onProviderChanged);
+    _holidayTimer =
+        Timer.periodic(_holidayCheckInterval, (_) => _runHolidaySchedule());
+  }
+
+  @override
+  void dispose() {
+    _holidayTimer?.cancel();
+    _provider?.removeListener(_onProviderChanged);
+    super.dispose();
+  }
+
+  void _onProviderChanged() {
+    final connected = _provider?.isConnected ?? false;
+    if (connected && !_wasConnected) _runHolidaySchedule();
+    _wasConnected = connected;
+  }
+
+  Future<void> _runHolidaySchedule() async {
+    final provider = _provider;
+    if (_holidayBusy || provider == null || !provider.isConnected) return;
+    _holidayBusy = true;
+    try {
+      final changed = await _holidayService.runDueActions(provider: provider);
+      _lastHolidayError = null;
+      if (changed != null && mounted) {
+        final text = changed.isCompleted
+            ? 'Abwesenheit "${changed.title}" beendet – Heizung zurück im Normalbetrieb.'
+            : 'Abwesenheit "${changed.title}" gestartet – Heizung abgesenkt.';
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+      }
+    } catch (e) {
+      // Retried every minute; only surface a new error once.
+      final message = e.toString();
+      if (message != _lastHolidayError && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Abwesenheitsmodus: $message')),
+        );
+      }
+      _lastHolidayError = message;
+    } finally {
+      _holidayBusy = false;
+    }
+  }
 
   static const _screens = <Widget>[
     HomeScreen(),

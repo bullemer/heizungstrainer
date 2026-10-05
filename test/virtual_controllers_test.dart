@@ -635,7 +635,7 @@ void main() {
       virtualNibe.holdingRegisters[7] = 360; // 36.0 °C return
       virtualNibe.holdingRegisters[8] = 510; // 51.0 °C hot water
       virtualNibe.holdingRegisters[26] = 205; // 20.5 °C room target
-      virtualNibe.holdingRegisters[30] = 0; // 0.0 shift
+      virtualNibe.holdingRegisters[30] = 0; // offset 0 (whole steps, unscaled)
 
       final config = NibeModbusConfig(
         host: '127.0.0.1',
@@ -657,7 +657,7 @@ void main() {
 
       // Write shift & room target
       await controller.setHeatingCurveShift(2.0);
-      expect(virtualNibe.holdingRegisters[30], 20);
+      expect(virtualNibe.holdingRegisters[30], 2); // offset steps, not tenths
 
       await controller.setRoomTarget(21.5);
       expect(virtualNibe.holdingRegisters[26], 215);
@@ -671,8 +671,8 @@ void main() {
       virtualNibe.holdingRegisters[40008] = 450; // 45.0 °C flow
       virtualNibe.holdingRegisters[40012] = 365; // 36.5 °C return
       virtualNibe.holdingRegisters[40013] = 520; // 52.0 °C hot water
-      virtualNibe.holdingRegisters[47011] = 210; // 21.0 °C room target
-      virtualNibe.holdingRegisters[47007] = -10; // -1.0 shift
+      virtualNibe.holdingRegisters[47011] = -1; // Heat Offset S1 = -1
+      virtualNibe.holdingRegisters[47007] = 9; // heating curve slope: never touched
 
       final preset = NibeModbusConfig.presets.firstWhere((p) => p.id == 'nibe_f_series_modbus40');
       final config = NibeModbusConfig.fromPreset(preset).copyWith(
@@ -689,8 +689,12 @@ void main() {
       expect(telemetry.flowTemp, 45.0);
       expect(telemetry.returnTemp, 36.5);
       expect(telemetry.hotWaterTemp, 52.0);
-      expect(telemetry.roomTarget, 21.0);
+      expect(telemetry.roomTarget, isNull); // room setpoint register not mapped
       expect(telemetry.heatingCurveShift, -1.0);
+
+      await controller.setHeatingCurveShift(2.0);
+      expect(virtualNibe.holdingRegisters[47011], 2);
+      expect(virtualNibe.holdingRegisters[47007], 9); // slope unchanged
 
       await controller.disconnect();
       expect(controller.isConnected, isFalse);

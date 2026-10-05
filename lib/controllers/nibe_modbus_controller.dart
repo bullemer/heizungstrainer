@@ -173,7 +173,9 @@ class NibeModbusController implements HeatingController {
     final ret = _convertRaw(rawReturn);
     final hw = _convertRaw(rawHotWater);
     final room = _convertRaw(rawRoom);
-    final shift = _convertRaw(rawShift);
+    // NIBE offsets are whole steps (-10..10), not tenths like the temperatures.
+    final shift =
+        (rawShift == null || _isDisconnectedRaw(rawShift)) ? null : rawShift.toDouble();
 
     final telemetry = ControllerTelemetry(
       timestamp: DateTime.now(),
@@ -212,7 +214,7 @@ class NibeModbusController implements HeatingController {
       );
     }
 
-    final raw = (shift / _config.multiplier).round();
+    final raw = shift.round();
     final reg = ModbusInt16Register(
       name: 'shift_reg',
       type: ModbusElementType.holdingRegister,

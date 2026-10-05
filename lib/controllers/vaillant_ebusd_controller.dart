@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:heizungstrainer/controllers/heating_controller.dart';
 import 'package:heizungstrainer/exceptions/modbus_exceptions.dart';
 import 'package:heizungstrainer/models/vaillant_ebusd_config.dart';
+import 'package:heizungstrainer/services/tls_policy.dart';
 
 /// Heating controller adapter for Vaillant heating systems connected via
 /// an eBUSd daemon / gateway over HTTP REST JSON API.
@@ -68,7 +69,7 @@ class VaillantEbusdController implements HeatingController {
   HttpClient _getClient() {
     return _httpClient ??= HttpClient()
       ..connectionTimeout = Duration(seconds: _config.timeoutSeconds)
-      ..badCertificateCallback = (X509Certificate cert, String host, int port) => true;
+      ..badCertificateCallback = TlsPolicy.acceptSelfSignedOnLocalNetwork;
   }
 
   @override

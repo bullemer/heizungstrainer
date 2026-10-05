@@ -59,7 +59,7 @@ class NibeModbusConfig {
     NibeModbusPreset(
       id: 'nibe_s_series',
       name: 'NIBE S-Serie (S1155 / S1255 / S2125 / VVM S320)',
-      description: 'Natives Modbus TCP (Menü 7.5.9). BT1=Reg 1, BT2=Reg 5, BT3=Reg 7, BT6=Reg 8, Offset=Reg 30',
+      description: 'Natives Modbus TCP (Menü 7.5.9). BT1=Reg 1, BT2=Reg 5, BT3=Reg 7, BT6=Reg 8, Offset=Reg 30 (ganze Stufen)',
       defaultPort: 502,
       defaultUnitId: 1,
       outdoorRegister: 1,
@@ -74,15 +74,17 @@ class NibeModbusConfig {
     NibeModbusPreset(
       id: 'nibe_f_series_modbus40',
       name: 'NIBE F-Serie (F1155 / F1255 mit Modbus 40)',
-      description: 'NIBE Modbus 40 Gateway für F-Serie (BT1=40004, BT2=40008, BT3=40012, BT6=40013, Shift=47007)',
+      description: 'NIBE Modbus 40 Gateway für F-Serie (BT1=40004, BT2=40008, BT3=40012, BT6=40013, Offset S1=47011)',
       defaultPort: 502,
       defaultUnitId: 1,
       outdoorRegister: 40004,
       flowRegister: 40008,
       returnRegister: 40012,
       hotWaterRegister: 40013,
-      roomTargetRegister: 47011,
-      heatingCurveShiftRegister: 47007,
+      // 47011 = "Heat Offset S1" (whole steps). 47007 is the curve *slope* and must
+      // not be written as a shift. Room setpoint register not verified -> disabled.
+      roomTargetRegister: null,
+      heatingCurveShiftRegister: 47011,
       multiplier: 0.1,
       isHoldingRegister: true,
     ),
@@ -96,8 +98,10 @@ class NibeModbusConfig {
       flowRegister: 40008,
       returnRegister: 40012,
       hotWaterRegister: 40013,
-      roomTargetRegister: 47011,
-      heatingCurveShiftRegister: 47007,
+      // 47011 = "Heat Offset S1" (whole steps). 47007 is the curve *slope* and must
+      // not be written as a shift. Room setpoint register not verified -> disabled.
+      roomTargetRegister: null,
+      heatingCurveShiftRegister: 47011,
       multiplier: 0.1,
       isHoldingRegister: true,
     ),
@@ -204,7 +208,21 @@ class NibeModbusConfig {
         'presetName': presetName,
       };
 
+  /// Presets that shipped (<= 1.1.0) with shift=47007 (curve slope) and room=47011.
+  static const _legacyModbus40Presets = {'nibe_f_series_modbus40', 'nibe_smo40'};
+
+  static int? _optionalRegister(Map<String, dynamic> json, String key, int fallback) {
+    if (!json.containsKey(key)) return fallback;
+    return (json[key] as num?)?.toInt();
+  }
+
   factory NibeModbusConfig.fromJson(Map<String, dynamic> json) {
+    var roomTargetRegister = _optionalRegister(json, 'roomTargetRegister', 26);
+    var shiftRegister = _optionalRegister(json, 'heatingCurveShiftRegister', 30);
+    if (_legacyModbus40Presets.contains(json['presetId']) && shiftRegister == 47007) {
+      shiftRegister = 47011;
+      roomTargetRegister = null;
+    }
     return NibeModbusConfig(
       host: json['host'] as String? ?? '192.168.1.160',
       port: (json['port'] as num?)?.toInt() ?? 502,
@@ -213,9 +231,8 @@ class NibeModbusConfig {
       flowRegister: (json['flowRegister'] as num?)?.toInt() ?? 5,
       returnRegister: (json['returnRegister'] as num?)?.toInt() ?? 7,
       hotWaterRegister: (json['hotWaterRegister'] as num?)?.toInt() ?? 8,
-      roomTargetRegister: (json['roomTargetRegister'] as num?)?.toInt() ?? 26,
-      heatingCurveShiftRegister:
-          (json['heatingCurveShiftRegister'] as num?)?.toInt() ?? 30,
+      roomTargetRegister: roomTargetRegister,
+      heatingCurveShiftRegister: shiftRegister,
       multiplier: (json['multiplier'] as num?)?.toDouble() ?? 0.1,
       isHoldingRegister: json['isHoldingRegister'] as bool? ?? true,
       presetId: json['presetId'] as String? ?? 'nibe_s_series',

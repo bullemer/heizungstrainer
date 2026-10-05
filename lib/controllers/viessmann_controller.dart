@@ -71,8 +71,7 @@ class ViessmannController implements HeatingController {
 
   HttpClient _getClient() {
     return _httpClient ??= HttpClient()
-      ..connectionTimeout = Duration(seconds: _config.timeoutSeconds)
-      ..badCertificateCallback = (X509Certificate cert, String host, int port) => true;
+      ..connectionTimeout = Duration(seconds: _config.timeoutSeconds);
   }
 
   @override
@@ -224,6 +223,13 @@ class ViessmannController implements HeatingController {
   // Viessmann ViCare REST API (Cloud)
   // ──────────────────────────────────────────────────────────────────
 
+  /// After a write the next read must hit the API, otherwise the 55 s cache
+  /// returns the old value and the provider's read-back check fails.
+  void _invalidateVicareCache() {
+    _cachedVicareTelemetry = null;
+    _lastVicarePoll = null;
+  }
+
   Future<void> _probeVicareRest() async {
     final client = _getClient();
     final uri = Uri.parse('https://api.viessmann.com/iot/v1/equipment/installations');
@@ -237,7 +243,13 @@ class ViessmannController implements HeatingController {
       Duration(seconds: _config.timeoutSeconds),
     );
     await resp.drain<void>();
-    if (resp.statusCode != 200 && resp.statusCode != 401) {
+    if (resp.statusCode == 401 || resp.statusCode == 403) {
+      throw const ModbusCommunicationException(
+        message: 'ViCare hat den API-Token abgelehnt (abgelaufen oder ungültig). '
+            'Bitte in den Einstellungen einen neuen Token hinterlegen.',
+      );
+    }
+    if (resp.statusCode != 200) {
       throw ModbusCommunicationException(
         message: 'Viessmann ViCare API Server antwortet mit Status ${resp.statusCode}',
       );
@@ -443,6 +455,7 @@ class ViessmannController implements HeatingController {
           message: 'ViCare Cloud API Antwortfehler: Status ${resp.statusCode}',
         );
       }
+      _invalidateVicareCache();
     }
   }
 
@@ -480,6 +493,7 @@ class ViessmannController implements HeatingController {
           message: 'ViCare Cloud API Antwortfehler: Status ${resp.statusCode}',
         );
       }
+      _invalidateVicareCache();
     }
   }
 

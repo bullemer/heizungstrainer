@@ -2,11 +2,25 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 
+import 'package:heizungstrainer/models/ecl_parameter.dart';
 import 'package:heizungstrainer/models/holiday_plan.dart';
+import 'package:heizungstrainer/models/license_info.dart';
 import 'package:heizungstrainer/providers/ecl_provider.dart';
 import 'package:heizungstrainer/screens/holiday_screen.dart';
 import 'package:heizungstrainer/services/activity_log_service.dart';
 import 'package:heizungstrainer/services/holiday_service.dart';
+import 'package:heizungstrainer/services/license_service.dart';
+
+/// Provider connected to the simulated controller with Pro (write) access.
+Future<ECLProvider> connectedSimulation(ActivityLogService logService) async {
+  final provider = ECLProvider(
+    logService: logService,
+    licenseService: LicenseService(inMemoryStorage: {}, initialTier: LicenseTier.pro),
+    autoLoadDatabase: false,
+  );
+  await provider.startSimulation();
+  return provider;
+}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -188,7 +202,8 @@ void main() {
         enablePersistence: false,
         enableRemoteDispatch: false,
       );
-      final provider = ECLProvider(logService: logService);
+      final provider = await connectedSimulation(logService);
+      await provider.writeParameter(ECLRegisters.heatingCurveShift, 2.0);
 
       final initialPlan = HolidayPlan(
         id: 'p_dyn',
@@ -202,9 +217,13 @@ void main() {
       final activated = await service.activatePlan(
         plan: initialPlan,
         provider: provider,
+        now: DateTime(2026, 10, 1, 12),
       );
       expect(activated.isActive, true);
       expect(activated.isCompleted, false);
+      expect(activated.setbackApplied, true);
+      expect(activated.normalShift, 2.0); // real baseline, not a default
+      expect(provider.getReading(ECLRegisters.heatingCurveShift)!.displayValue, -3.0);
 
       final activeInDb = await service.getActivePlan();
       expect(activeInDb?.id, 'p_dyn');
@@ -220,6 +239,7 @@ void main() {
       );
       expect(cancelled.isActive, false);
       expect(cancelled.isCompleted, true);
+      expect(provider.getReading(ECLRegisters.heatingCurveShift)!.displayValue, 2.0);
 
       final activeAfterCancel = await service.getActivePlan();
       expect(activeAfterCancel, isNull);
@@ -228,6 +248,126 @@ void main() {
         logService.recentEntries.any((l) => l.action == 'HOLIDAY_MODE_DEACTIVATED'),
         true,
       );
+    });
+  });
+
+  group('HolidayService safety', () {
+    HolidayPlan plan({required DateTime start, required DateTime end}) => HolidayPlan(
+          id: 'p_safe',
+          title: 'Test',
+          startDateTime: start,
+          endDateTime: end,
+          setbackShift: -3.0,
+          preheatHours: 4.0,
+          createdAt: start,
+        );
+    ActivityLogService logs() =>
+        ActivityLogService(enablePersistence: false, enableRemoteDispatch: false);
+
+    test('activation without connection fails and saves nothing', () async {
+      final service = HolidayService(inMemoryStorage: {});
+      final provider = ECLProvider(logService: logs(), autoLoadDatabase: false);
+      final now = DateTime(2026, 10, 1, 12);
+
+      await expectLater(
+        service.activatePlan(
+          plan: plan(start: now, end: now.add(const Duration(days: 2))),
+          provider: provider,
+          now: now,
+        ),
+        throwsA(isA<HolidayModeException>()),
+      );
+      expect(await service.getActivePlan(), isNull);
+    });
+
+    test('failed write (free tier) does not leave an active plan', () async {
+      final service = HolidayService(inMemoryStorage: {});
+      final provider = ECLProvider(
+        logService: logs(),
+        licenseService: LicenseService(inMemoryStorage: {}, initialTier: LicenseTier.free),
+        autoLoadDatabase: false,
+      );
+      await provider.startSimulation();
+      final now = DateTime(2026, 10, 1, 12);
+
+      await expectLater(
+        service.activatePlan(
+          plan: plan(start: now, end: now.add(const Duration(days: 2))),
+          provider: provider,
+          now: now,
+        ),
+        throwsA(isA<HolidayModeException>()),
+      );
+      expect(await service.getActivePlan(), isNull);
+    });
+
+    test('future plan is armed, then applied and restored by runDueActions', () async {
+      final service = HolidayService(inMemoryStorage: {});
+      final provider = await connectedSimulation(logs());
+      await provider.writeParameter(ECLRegisters.heatingCurveShift, 1.0);
+      final start = DateTime(2026, 10, 2, 8);
+      final end = DateTime(2026, 10, 4, 18);
+
+      final armed = await service.activatePlan(
+        plan: plan(start: start, end: end),
+        provider: provider,
+        now: DateTime(2026, 10, 1, 12),
+      );
+      expect(armed.setbackApplied, false);
+      expect(provider.getReading(ECLRegisters.heatingCurveShift)!.displayValue, 1.0);
+
+      // Before start: nothing to do.
+      expect(await service.runDueActions(provider: provider, now: DateTime(2026, 10, 2, 7)), isNull);
+
+      final lowered = await service.runDueActions(provider: provider, now: DateTime(2026, 10, 2, 9));
+      expect(lowered!.setbackApplied, true);
+      expect(lowered.normalShift, 1.0);
+      expect(provider.getReading(ECLRegisters.heatingCurveShift)!.displayValue, -3.0);
+
+      // Preheat starts 4 h before return (14:00).
+      final restored = await service.runDueActions(provider: provider, now: DateTime(2026, 10, 4, 14, 1));
+      expect(restored!.isCompleted, true);
+      expect(provider.getReading(ECLRegisters.heatingCurveShift)!.displayValue, 1.0);
+      expect(await service.getActivePlan(), isNull);
+    });
+
+    test('restore fails while disconnected and the plan stays active', () async {
+      final service = HolidayService(inMemoryStorage: {});
+      final provider = await connectedSimulation(logs());
+      await provider.writeParameter(ECLRegisters.heatingCurveShift, 0.0);
+      final now = DateTime(2026, 10, 1, 12);
+      final active = await service.activatePlan(
+        plan: plan(start: now, end: now.add(const Duration(days: 2))),
+        provider: provider,
+        now: now,
+      );
+
+      provider.disconnect();
+      await expectLater(
+        service.cancelOrFinishPlan(plan: active, provider: provider),
+        throwsA(isA<HolidayModeException>()),
+      );
+      expect((await service.getActivePlan())?.id, active.id);
+
+      // Explicitly closing without restore is allowed.
+      final closed = await service.cancelOrFinishPlan(
+        plan: active,
+        provider: provider,
+        restore: false,
+      );
+      expect(closed.isCompleted, true);
+    });
+
+    test('unreadable storage is not overwritten by savePlan', () async {
+      final storage = <String, String>{'ecl_holiday_plans': 'not json'};
+      final service = HolidayService(inMemoryStorage: storage);
+      final now = DateTime(2026, 10, 1, 12);
+
+      await expectLater(
+        service.savePlan(plan(start: now, end: now.add(const Duration(days: 1)))),
+        throwsA(anything),
+      );
+      expect(storage['ecl_holiday_plans'], 'not json');
     });
   });
 
@@ -295,6 +435,7 @@ void main() {
         createdAt: now.subtract(const Duration(hours: 5)),
         isActive: true,
         isCompleted: false,
+        setbackApplied: true,
       );
       await service.savePlan(activePlan);
 
@@ -324,7 +465,8 @@ void main() {
         enablePersistence: false,
         enableRemoteDispatch: false,
       );
-      final provider = ECLProvider(logService: logService);
+      final provider = (await tester.runAsync(() => connectedSimulation(logService)))!;
+      addTearDown(provider.disconnect);
 
       await tester.pumpWidget(
         ChangeNotifierProvider.value(
@@ -340,9 +482,13 @@ void main() {
 
       expect(find.text('Normalbetrieb aktiv'), findsOneWidget);
 
-      // Tap on 'Wochenend-Trip' preset card
+      // Tap on 'Wochenend-Trip' preset card. The write mixes a settle delay
+      // (fake clock) with real SQLite I/O, so advance both until it's done.
       await tester.tap(find.textContaining('Wochenend-Trip'));
-      await tester.pumpAndSettle();
+      for (var i = 0; i < 20 && find.byType(SnackBar).evaluate().isEmpty; i++) {
+        await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
+        await tester.pump(const Duration(milliseconds: 100));
+      }
 
       // Should now show SnackBar and active plan
       expect(find.byType(SnackBar), findsOneWidget);

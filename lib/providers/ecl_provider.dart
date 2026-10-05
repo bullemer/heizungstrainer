@@ -5,6 +5,7 @@ library;
 
 import 'dart:async';
 import 'dart:collection';
+import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -197,6 +198,11 @@ class ECLProvider extends ChangeNotifier {
   }
 
   @visibleForTesting
+  void useControllerForTesting(HeatingController controller) {
+    _activeController = controller;
+  }
+
+  @visibleForTesting
   void setBrunataDataForTesting(BrunataMeterData? data) {
     _brunataData = data;
     notifyListeners();
@@ -313,7 +319,8 @@ class ECLProvider extends ChangeNotifier {
   /// Sets the active heating controller hardware or simulation.
   Future<void> setSelectedController(String id) async {
     if (_selectedControllerId == id) return;
-    if (isConnected) {
+    // Also from the error state: the old driver may still hold a socket/timer.
+    if (_connectionState != ECLConnectionState.disconnected) {
       disconnect();
     }
     _selectedControllerId = id;
@@ -344,9 +351,11 @@ class ECLProvider extends ChangeNotifier {
 
   /// Updates and persists the Generic Modbus TCP configuration.
   Future<void> updateGenericModbusConfig(GenericModbusConfig config) async {
+    final changed = !_sameConfig(_genericModbusConfig.toJson(), config.toJson());
     _genericModbusConfig = config;
     await config.save(_secureStorage);
     if (_selectedControllerId == 'generic_modbus') {
+      _disconnectBeforeReconfigure(changed);
       if (_activeController is GenericModbusController) {
         (_activeController as GenericModbusController).updateConfig(config);
       } else {
@@ -367,9 +376,11 @@ class ECLProvider extends ChangeNotifier {
 
   /// Updates and persists the Bosch / Buderus EMS-ESP configuration.
   Future<void> updateBoschBuderusConfig(BoschBuderusEmsConfig config) async {
+    final changed = !_sameConfig(_boschBuderusConfig.toJson(), config.toJson());
     _boschBuderusConfig = config;
     await config.save(_secureStorage);
     if (_selectedControllerId == 'bosch_buderus_ems') {
+      _disconnectBeforeReconfigure(changed);
       if (_activeController is BoschBuderusEmsController) {
         (_activeController as BoschBuderusEmsController).updateConfig(config);
       } else {
@@ -390,9 +401,11 @@ class ECLProvider extends ChangeNotifier {
 
   /// Updates and persists the Viessmann configuration.
   Future<void> updateViessmannConfig(ViessmannConfig config) async {
+    final changed = !_sameConfig(_viessmannConfig.toJson(), config.toJson());
     _viessmannConfig = config;
     await config.save(_secureStorage);
     if (_selectedControllerId == 'viessmann_vicare') {
+      _disconnectBeforeReconfigure(changed);
       if (_activeController is ViessmannController) {
         (_activeController as ViessmannController).updateConfig(config);
       } else {
@@ -413,9 +426,11 @@ class ECLProvider extends ChangeNotifier {
 
   /// Updates and persists the Vaillant eBUSd configuration.
   Future<void> updateVaillantConfig(VaillantEbusdConfig config) async {
+    final changed = !_sameConfig(_vaillantConfig.toJson(), config.toJson());
     _vaillantConfig = config;
     await config.save(_secureStorage);
     if (_selectedControllerId == 'vaillant_ebusd') {
+      _disconnectBeforeReconfigure(changed);
       if (_activeController is VaillantEbusdController) {
         (_activeController as VaillantEbusdController).updateConfig(config);
       } else {
@@ -436,9 +451,11 @@ class ECLProvider extends ChangeNotifier {
 
   /// Updates and persists the Weishaupt WEM configuration.
   Future<void> updateWeishauptConfig(WeishauptWemConfig config) async {
+    final changed = !_sameConfig(_weishauptConfig.toJson(), config.toJson());
     _weishauptConfig = config;
     await config.save(_secureStorage);
     if (_selectedControllerId == 'weishaupt_wem') {
+      _disconnectBeforeReconfigure(changed);
       if (_activeController is WeishauptWemController) {
         (_activeController as WeishauptWemController).updateConfig(config);
       } else {
@@ -459,9 +476,11 @@ class ECLProvider extends ChangeNotifier {
 
   /// Updates and persists the NIBE Modbus configuration.
   Future<void> updateNibeConfig(NibeModbusConfig config) async {
+    final changed = !_sameConfig(_nibeConfig.toJson(), config.toJson());
     _nibeConfig = config;
     await config.save(_secureStorage);
     if (_selectedControllerId == 'nibe_modbus') {
+      _disconnectBeforeReconfigure(changed);
       if (_activeController is NibeModbusController) {
         (_activeController as NibeModbusController).updateConfig(config);
       } else {
@@ -887,42 +906,7 @@ class ECLProvider extends ChangeNotifier {
         _selectedControllerId != 'danfoss_ecl_310') {
       try {
         final telemetry = await _activeController.readTelemetry();
-        _readings[ECLRegisters.outdoorTemp.id] = ECLReading(
-          parameter: ECLRegisters.outdoorTemp,
-          rawValue: ECLRegisters.outdoorTemp
-              .displayToRaw(telemetry.outdoorTemp ?? 7.5),
-          timestamp: telemetry.timestamp,
-        );
-        _readings[ECLRegisters.flowTemp.id] = ECLReading(
-          parameter: ECLRegisters.flowTemp,
-          rawValue: ECLRegisters.flowTemp
-              .displayToRaw(telemetry.flowTemp ?? 46.0),
-          timestamp: telemetry.timestamp,
-        );
-        _readings[ECLRegisters.returnTemp.id] = ECLReading(
-          parameter: ECLRegisters.returnTemp,
-          rawValue: ECLRegisters.returnTemp
-              .displayToRaw(telemetry.returnTemp ?? 36.0),
-          timestamp: telemetry.timestamp,
-        );
-        _readings[ECLRegisters.hotWaterTemp.id] = ECLReading(
-          parameter: ECLRegisters.hotWaterTemp,
-          rawValue: ECLRegisters.hotWaterTemp
-              .displayToRaw(telemetry.hotWaterTemp ?? 52.0),
-          timestamp: telemetry.timestamp,
-        );
-        _readings[ECLRegisters.heatingCurveShift.id] = ECLReading(
-          parameter: ECLRegisters.heatingCurveShift,
-          rawValue: ECLRegisters.heatingCurveShift
-              .displayToRaw(telemetry.heatingCurveShift ?? 0.0),
-          timestamp: telemetry.timestamp,
-        );
-        _readings[ECLRegisters.roomTargetTemp.id] = ECLReading(
-          parameter: ECLRegisters.roomTargetTemp,
-          rawValue: ECLRegisters.roomTargetTemp
-              .displayToRaw(telemetry.roomTarget ?? 20.0),
-          timestamp: telemetry.timestamp,
-        );
+        _applyTelemetry(telemetry);
         _consecutivePollErrors = 0;
         _isReconnecting = false;
         _lastSuccessfulPoll = telemetry.timestamp;
@@ -992,6 +976,7 @@ class ECLProvider extends ChangeNotifier {
             notifyListeners();
           } else {
             _stopPolling();
+            _releaseDriver();
             _isReconnecting = false;
             _setError('Fehler beim Auslesen des Reglers: $e');
           }
@@ -1073,10 +1058,36 @@ class ECLProvider extends ChangeNotifier {
       } else {
         // Exceeded retry limit: stop polling and transition to error
         _stopPolling();
+        _releaseDriver();
         _isReconnecting = false;
         _setError(e.message);
       }
     }
+  }
+
+  /// Copies a driver snapshot into [_readings]. A value the driver could not read
+  /// is removed rather than replaced by a default, so the UI shows "—" and no
+  /// made-up number reaches history, holiday baselines or backups.
+  void _applyTelemetry(ControllerTelemetry telemetry) {
+    final values = <ECLParameter, double?>{
+      ECLRegisters.outdoorTemp: telemetry.outdoorTemp,
+      ECLRegisters.flowTemp: telemetry.flowTemp,
+      ECLRegisters.returnTemp: telemetry.returnTemp,
+      ECLRegisters.hotWaterTemp: telemetry.hotWaterTemp,
+      ECLRegisters.heatingCurveShift: telemetry.heatingCurveShift,
+      ECLRegisters.roomTargetTemp: telemetry.roomTarget,
+    };
+    values.forEach((parameter, value) {
+      if (value == null) {
+        _readings.remove(parameter.id);
+      } else {
+        _readings[parameter.id] = ECLReading(
+          parameter: parameter,
+          rawValue: parameter.displayToRaw(value),
+          timestamp: telemetry.timestamp,
+        );
+      }
+    });
   }
 
   Future<void> _persistReadings(Map<String, ECLReading> currentReadings) async {
@@ -1191,7 +1202,20 @@ class ECLProvider extends ChangeNotifier {
       );
       throw ModbusCommunicationException(message: validationError);
     }
-    final rawTarget = parameter.displayToRaw(value);
+    final capabilityError = _capabilityError(parameter, value);
+    if (capabilityError != null) {
+      await _logService.logSecurityGate(
+        controllerId: _selectedControllerId,
+        message: 'Sicherheitsverriegelung ausgelöst: $capabilityError',
+        details: {
+          'parameterId': parameter.id,
+          'parameterName': parameter.name,
+          'targetValue': value,
+        },
+        errorCode: 'WRITE_OUT_OF_BOUNDS',
+      );
+      throw ModbusCommunicationException(message: capabilityError);
+    }
 
     try {
       if (_selectedControllerId != 'danfoss_ecl_310' ||
@@ -1202,18 +1226,18 @@ class ECLProvider extends ChangeNotifier {
         } else if (parameter.id == ECLRegisters.roomTargetTemp.id) {
           await _activeController.setRoomTarget(value);
         }
-        final reading = ECLReading(
-          parameter: parameter,
-          rawValue: rawTarget,
-          timestamp: DateTime.now(),
-        );
-        _readings[parameter.id] = reading;
-        await _databaseService.cacheControllerReadings(_readings);
+
+        await Future.delayed(_writeSettleDelay);
+        final telemetry = await _activeController.readTelemetry();
+        _applyTelemetry(telemetry);
+        final reading = _readings[parameter.id];
+        await _cacheReadingsQuietly();
+        await _ensureWriteConfirmed(parameter, value, reading);
 
         await _logService.logWrite(
           controllerId: _selectedControllerId,
-          action: 'WRITE_PARAMETER_SUCCESS',
-          message: '${parameter.name} erfolgreich auf $value ${parameter.unit} gesetzt.',
+          action: 'WRITE_PARAMETER_VERIFIED',
+          message: '${parameter.name} auf $value ${parameter.unit} gesetzt und vom Regler bestätigt.',
           details: {
             'parameterId': parameter.id,
             'parameterName': parameter.name,
@@ -1225,12 +1249,13 @@ class ECLProvider extends ChangeNotifier {
         );
 
         notifyListeners();
-        return reading;
+        return reading!;
       }
 
       final reading = await _modbusService.writeAndVerify(parameter, value);
       _readings[parameter.id] = reading;
-      await _databaseService.cacheControllerReadings(_readings);
+      await _cacheReadingsQuietly();
+      await _ensureWriteConfirmed(parameter, value, reading);
 
       await _logService.logWrite(
         controllerId: _selectedControllerId,
@@ -1267,6 +1292,75 @@ class ECLProvider extends ChangeNotifier {
     }
   }
 
+  /// The SQLite reading cache is a convenience; failing to update it must not
+  /// turn a write the controller accepted into a reported failure.
+  Future<void> _cacheReadingsQuietly() async {
+    try {
+      await _databaseService.cacheControllerReadings(_readings);
+    } catch (e) {
+      debugPrint('[Provider] Could not cache readings: $e');
+    }
+  }
+
+  /// Time the controller gets to apply a write before it is read back.
+  static const Duration _writeSettleDelay = Duration(milliseconds: 300);
+
+  /// The active controller's own limits (e.g. NIBE/Bosch ±10) on top of the
+  /// generic parameter bounds; null if the write is allowed.
+  String? _capabilityError(ECLParameter parameter, double value) {
+    final caps = _activeController.capabilities;
+    final brand = _activeController.brandName;
+    if (parameter.id == ECLRegisters.heatingCurveShift.id) {
+      if (!caps.supportsHeatingCurveShift) {
+        return '$brand: Parallelverschiebung ist für diesen Regler nicht schreibbar.';
+      }
+      if (value < caps.minShift || value > caps.maxShift) {
+        return '$brand erlaubt eine Parallelverschiebung von ${caps.minShift} bis ${caps.maxShift}, nicht $value.';
+      }
+    } else if (parameter.id == ECLRegisters.roomTargetTemp.id) {
+      if (!caps.supportsRoomTarget) {
+        return '$brand: Raum-Sollwert ist für diesen Regler nicht schreibbar.';
+      }
+      if (value < caps.minRoomTarget || value > caps.maxRoomTarget) {
+        return '$brand erlaubt einen Raum-Sollwert von ${caps.minRoomTarget} bis ${caps.maxRoomTarget} °C, nicht $value.';
+      }
+    }
+    return null;
+  }
+
+  /// Throws unless the value read back from the controller matches [requested]
+  /// (within half a step, since controllers round to their own resolution).
+  Future<void> _ensureWriteConfirmed(
+    ECLParameter parameter,
+    double requested,
+    ECLReading? readBack,
+  ) async {
+    final tolerance =
+        parameter.id == ECLRegisters.heatingCurveShift.id ? 0.5 : 0.25;
+    final actual = readBack?.displayValue;
+    if (actual != null && (actual - requested).abs() <= tolerance) return;
+
+    final message = actual == null
+        ? '${parameter.name}: Der Regler hat den Wert nicht zurückgemeldet – '
+            'Übernahme von $requested ${parameter.unit} ist nicht bestätigt.'
+        : '${parameter.name}: Der Regler meldet $actual ${parameter.unit} statt '
+            '$requested ${parameter.unit} – der Wert wurde nicht übernommen.';
+    await _logService.logWrite(
+      controllerId: _selectedControllerId,
+      action: 'WRITE_NOT_CONFIRMED',
+      message: message,
+      details: {
+        'parameterId': parameter.id,
+        'requested': requested,
+        'readBack': actual,
+      },
+      success: false,
+      errorCode: 'WRITE_NOT_CONFIRMED',
+    );
+    notifyListeners();
+    throw ModbusCommunicationException(message: message);
+  }
+
   // ──────────────────────────────────────────────────────────────────
   // Polling
   // ──────────────────────────────────────────────────────────────────
@@ -1280,6 +1374,30 @@ class ECLProvider extends ChangeNotifier {
     _pollingTimer?.cancel();
     _pollingTimer = null;
   }
+
+  /// Closes the active driver's socket and its own polling timer (REST/eBUS/
+  /// generic drivers poll independently of [_pollingTimer]).
+  void _releaseDriver() {
+    if (_selectedControllerId == 'danfoss_ecl_310') {
+      _modbusService.disconnect();
+      return;
+    }
+    _activeController.disconnect().catchError((Object e) {
+      debugPrint('[Provider] Driver disconnect failed: $e');
+    });
+  }
+
+  /// A changed host/unit id/register map must not be swapped under a live
+  /// connection; the user reconnects with the new settings. Unchanged configs
+  /// (settings saved for billing only) keep the connection.
+  void _disconnectBeforeReconfigure(bool changed) {
+    if (changed && _connectionState != ECLConnectionState.disconnected) {
+      disconnect();
+    }
+  }
+
+  static bool _sameConfig(Map<String, dynamic> a, Map<String, dynamic> b) =>
+      jsonEncode(a) == jsonEncode(b);
 
   // ──────────────────────────────────────────────────────────────────
   // Error Handling
@@ -1537,7 +1655,7 @@ class ECLProvider extends ChangeNotifier {
   @override
   void dispose() {
     _stopPolling();
-    _modbusService.disconnect();
+    _releaseDriver();
     super.dispose();
   }
 }

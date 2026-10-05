@@ -132,8 +132,25 @@ void main() {
       expect(config.flowRegister, 40008);
       expect(config.returnRegister, 40012);
       expect(config.hotWaterRegister, 40013);
-      expect(config.roomTargetRegister, 47011);
-      expect(config.heatingCurveShiftRegister, 47007);
+      // 47011 = Heat Offset S1; 47007 (curve slope) must not be used as shift.
+      expect(config.roomTargetRegister, isNull);
+      expect(config.heatingCurveShiftRegister, 47011);
+    });
+
+    test('legacy F-Series config (shift=47007) is repaired on load', () {
+      final legacy = NibeModbusConfig.fromJson({
+        'presetId': 'nibe_f_series_modbus40',
+        'roomTargetRegister': 47011,
+        'heatingCurveShiftRegister': 47007,
+      });
+      expect(legacy.heatingCurveShiftRegister, 47011);
+      expect(legacy.roomTargetRegister, isNull);
+    });
+
+    test('explicitly disabled room register stays disabled after reload', () {
+      const cfg = NibeModbusConfig(roomTargetRegister: null);
+      final restored = NibeModbusConfig.fromJson(cfg.toJson());
+      expect(restored.roomTargetRegister, isNull);
     });
 
     test('toJson and fromJson preserves all fields', () {

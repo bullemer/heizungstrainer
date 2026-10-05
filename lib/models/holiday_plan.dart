@@ -14,6 +14,9 @@ class HolidayPlan {
   final double frostProtectionMinTemp; // minimum safety floor, e.g. 14.0 °C
   final bool isActive;
   final bool isCompleted;
+  /// Whether the setback has actually been written to the controller. An active
+  /// plan with a future start stays "armed" (false) until the app applies it.
+  final bool setbackApplied;
   final double estimatedSavingsKwh;
   final double estimatedSavingsEuro;
   final DateTime createdAt;
@@ -31,6 +34,7 @@ class HolidayPlan {
     this.frostProtectionMinTemp = 14.0,
     this.isActive = true,
     this.isCompleted = false,
+    this.setbackApplied = false,
     this.estimatedSavingsKwh = 0.0,
     this.estimatedSavingsEuro = 0.0,
     required this.createdAt,
@@ -69,6 +73,7 @@ class HolidayPlan {
     double? frostProtectionMinTemp,
     bool? isActive,
     bool? isCompleted,
+    bool? setbackApplied,
     double? estimatedSavingsKwh,
     double? estimatedSavingsEuro,
     DateTime? createdAt,
@@ -87,6 +92,7 @@ class HolidayPlan {
           frostProtectionMinTemp ?? this.frostProtectionMinTemp,
       isActive: isActive ?? this.isActive,
       isCompleted: isCompleted ?? this.isCompleted,
+      setbackApplied: setbackApplied ?? this.setbackApplied,
       estimatedSavingsKwh: estimatedSavingsKwh ?? this.estimatedSavingsKwh,
       estimatedSavingsEuro: estimatedSavingsEuro ?? this.estimatedSavingsEuro,
       createdAt: createdAt ?? this.createdAt,
@@ -107,6 +113,7 @@ class HolidayPlan {
       'frostProtectionMinTemp': frostProtectionMinTemp,
       'isActive': isActive,
       'isCompleted': isCompleted,
+      'setbackApplied': setbackApplied,
       'estimatedSavingsKwh': estimatedSavingsKwh,
       'estimatedSavingsEuro': estimatedSavingsEuro,
       'createdAt': createdAt.toIso8601String(),
@@ -128,6 +135,9 @@ class HolidayPlan {
           (json['frostProtectionMinTemp'] as num?)?.toDouble() ?? 14.0,
       isActive: json['isActive'] as bool? ?? true,
       isCompleted: json['isCompleted'] as bool? ?? false,
+      // Plans saved by <= 1.1.0 lowered the heating on activation.
+      setbackApplied: json['setbackApplied'] as bool? ??
+          ((json['isActive'] as bool? ?? true) && !(json['isCompleted'] as bool? ?? false)),
       estimatedSavingsKwh:
           (json['estimatedSavingsKwh'] as num?)?.toDouble() ?? 0.0,
       estimatedSavingsEuro:

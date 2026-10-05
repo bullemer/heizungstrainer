@@ -22,6 +22,13 @@ class _HolidayScreenState extends State<HolidayScreen> {
   List<HolidayPlan> _allPlans = [];
   bool _isLoading = true;
 
+  static const String _schedulingNote =
+      'Absenken und Vorheizen führt die App aus, solange sie geöffnet ist und den '
+      'Regler erreicht – zu Hause im WLAN oder unterwegs per WireGuard. Ist er zum '
+      'geplanten Zeitpunkt nicht erreichbar, holt die App den Schritt beim nächsten '
+      'Verbinden nach. Für pünktliches Vorheizen die App also rechtzeitig verbinden '
+      'oder den Plan von unterwegs beenden.';
+
   // ── Theme Palette ────────────────────────────────────────────────────────
   static const Color _card = Color(0xFF2A2A32);
   static const Color _border = Color(0xFF3A3A44);
@@ -35,7 +42,39 @@ class _HolidayScreenState extends State<HolidayScreen> {
   void initState() {
     super.initState();
     _holidayService = widget.holidayService ?? HolidayService();
+    HolidayService.changes.addListener(_loadState);
     _loadState();
+  }
+
+  @override
+  void dispose() {
+    HolidayService.changes.removeListener(_loadState);
+    super.dispose();
+  }
+
+  void _showError(Object e) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        backgroundColor: Colors.red.shade700,
+        content: Text(e.toString()),
+      ),
+    );
+  }
+
+  /// Activates [plan]; returns false (after showing why) if the controller
+  /// could not be changed.
+  Future<bool> _activate(HolidayPlan plan, ECLProvider provider) async {
+    setState(() => _isLoading = true);
+    try {
+      await _holidayService.activatePlan(plan: plan, provider: provider);
+      return true;
+    } catch (e) {
+      _showError(e);
+      return false;
+    } finally {
+      await _loadState();
+    }
   }
 
   Future<void> _loadState() async {
@@ -75,10 +114,7 @@ class _HolidayScreenState extends State<HolidayScreen> {
     );
 
     HapticFeedback.mediumImpact();
-    setState(() => _isLoading = true);
-
-    await _holidayService.activatePlan(plan: plan, provider: provider);
-    await _loadState();
+    if (!await _activate(plan, provider)) return;
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -122,18 +158,54 @@ class _HolidayScreenState extends State<HolidayScreen> {
     if (confirm != true) return;
 
     HapticFeedback.mediumImpact();
+    final plan = _activePlan!;
     setState(() => _isLoading = true);
 
-    await _holidayService.cancelOrFinishPlan(
-      plan: _activePlan!,
-      provider: provider,
-    );
+    try {
+      await _holidayService.cancelOrFinishPlan(plan: plan, provider: provider);
+    } catch (e) {
+      await _loadState();
+      if (!mounted) return;
+      final closeAnyway = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: _card,
+          title: const Text('Normalbetrieb nicht wiederhergestellt'),
+          content: Text(
+            '$e\n\nDu kannst es erneut versuchen, sobald der Regler erreichbar ist. '
+            'Oder den Plan ohne Änderung am Regler schließen – dann stell die '
+            'Parallelverschiebung bitte selbst auf ${plan.normalShift.toStringAsFixed(0)} zurück.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Plan aktiv lassen'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Ohne Zurücksetzen schließen'),
+            ),
+          ],
+        ),
+      );
+      if (closeAnyway == true) {
+        await _holidayService.cancelOrFinishPlan(
+          plan: plan,
+          provider: provider,
+          restore: false,
+        );
+        await _loadState();
+      }
+      return;
+    }
     await _loadState();
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('✓ Normalbetrieb wiederhergestellt.'),
+        SnackBar(
+          content: Text(plan.setbackApplied
+              ? '✓ Normalbetrieb wiederhergestellt.'
+              : '✓ Geplante Abwesenheit verworfen.'),
         ),
       );
     }
@@ -344,16 +416,13 @@ class _HolidayScreenState extends State<HolidayScreen> {
                             createdAt: now,
                           );
 
-                          setState(() => _isLoading = true);
-                          await _holidayService.activatePlan(
-                            plan: plan,
-                            provider: provider,
-                          );
-                          await _loadState();
+                          await _activate(plan, provider);
                         },
-                        child: const Text(
-                          'Timer scharfschalten',
-                          style: TextStyle(
+                        child: Text(
+                          startCombined.isAfter(DateTime.now())
+                              ? 'Abwesenheit planen'
+                              : 'Jetzt absenken',
+                          style: const TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w700,
                             color: Colors.black,
@@ -361,6 +430,9 @@ class _HolidayScreenState extends State<HolidayScreen> {
                         ),
                       ),
                     ),
+                    const SizedBox(height: 12),
+                    const Text(_schedulingNote,
+                        style: TextStyle(fontSize: 12, color: _textSecondary)),
                   ],
                 ),
               ),
@@ -454,6 +526,7 @@ class _HolidayScreenState extends State<HolidayScreen> {
     }
 
     final isPreheating = plan.isPreheatingActive(now);
+    final isArmed = !plan.setbackApplied;
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -496,7 +569,11 @@ class _HolidayScreenState extends State<HolidayScreen> {
                     ),
                     const SizedBox(width: 4),
                     Text(
-                      isPreheating ? 'Automatisches Vorheizen' : 'Sparbetrieb aktiv',
+                      isArmed
+                          ? 'Geplant ab ${plan.startDateTime.day}.${plan.startDateTime.month}. ${plan.startDateTime.hour.toString().padLeft(2, '0')}:${plan.startDateTime.minute.toString().padLeft(2, '0')}'
+                          : isPreheating
+                              ? 'Vorheizen fällig'
+                              : 'Sparbetrieb aktiv',
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
@@ -509,7 +586,7 @@ class _HolidayScreenState extends State<HolidayScreen> {
               IconButton(
                 icon: const Icon(Icons.cancel_outlined, color: Colors.redAccent),
                 onPressed: _cancelActivePlan,
-                tooltip: 'Timer beenden',
+                tooltip: 'Plan beenden',
               ),
             ],
           ),
@@ -569,9 +646,14 @@ class _HolidayScreenState extends State<HolidayScreen> {
                 foregroundColor: Colors.redAccent,
               ),
               onPressed: _cancelActivePlan,
-              child: const Text('Vorzeitig beenden & Heizung hochfahren'),
+              child: Text(isArmed
+                  ? 'Geplante Abwesenheit verwerfen'
+                  : 'Vorzeitig beenden & Heizung hochfahren'),
             ),
           ),
+          const SizedBox(height: 10),
+          const Text(_schedulingNote,
+              style: TextStyle(fontSize: 11.5, color: _textSecondary)),
         ],
       ),
     );

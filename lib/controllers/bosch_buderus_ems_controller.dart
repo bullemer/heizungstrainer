@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:heizungstrainer/controllers/heating_controller.dart';
 import 'package:heizungstrainer/exceptions/modbus_exceptions.dart';
 import 'package:heizungstrainer/models/bosch_buderus_ems_config.dart';
+import 'package:heizungstrainer/services/tls_policy.dart';
 
 /// Representation of a discovered EMS-ESP / BBQKees gateway on the local network.
 class DiscoveredEmsGateway {
@@ -86,7 +87,7 @@ class BoschBuderusEmsController implements HeatingController {
   HttpClient _getClient() {
     return _httpClient ??= HttpClient()
       ..connectionTimeout = Duration(seconds: _config.timeoutSeconds)
-      ..badCertificateCallback = (X509Certificate cert, String host, int port) => true;
+      ..badCertificateCallback = TlsPolicy.acceptSelfSignedOnLocalNetwork;
   }
 
   @override

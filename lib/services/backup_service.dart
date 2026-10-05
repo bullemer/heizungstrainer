@@ -1,3 +1,6 @@
+import 'dart:convert';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:heizungstrainer/models/configuration_backup.dart';
 
@@ -16,35 +19,41 @@ class BackupService {
             : (storage ?? const FlutterSecureStorage()),
         _inMemory = inMemoryStorage;
 
-  /// Retrieves all user-created backups from storage, sorted newest first.
-  Future<List<ConfigurationBackup>> getBackups() async {
+  /// Reads all backups. Throws if storage can't be read or decoded, so a
+  /// slow keystore or one bad entry never looks like "no backups" to
+  /// [saveBackup]/[deleteBackup], which would then overwrite all of them.
+  Future<List<ConfigurationBackup>> _readBackups() async {
+    final String? raw;
     final inMem = _inMemory;
     if (inMem != null) {
-      final raw = inMem[_storageKey];
-      if (raw == null || raw.isEmpty) return [];
-      final list = ConfigurationBackup.decodeList(raw);
-      list.sort((a, b) => b.timestamp.compareTo(a.timestamp));
-      return list;
-    }
-
-    try {
-      final raw = await _storage!
+      raw = inMem[_storageKey];
+    } else {
+      raw = await _storage!
           .read(key: _storageKey)
-          .timeout(const Duration(milliseconds: 1500), onTimeout: () => null);
-      if (raw == null || raw.isEmpty) {
-        return [];
-      }
-      final list = ConfigurationBackup.decodeList(raw);
-      list.sort((a, b) => b.timestamp.compareTo(a.timestamp));
-      return list;
-    } catch (_) {
+          .timeout(const Duration(seconds: 5));
+    }
+    if (raw == null || raw.isEmpty) return [];
+    final list = (jsonDecode(raw) as List<dynamic>)
+        .map((item) => ConfigurationBackup.fromJson(item as Map<String, dynamic>))
+        .toList();
+    list.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+    return list;
+  }
+
+  /// Retrieves all user-created backups from storage, sorted newest first.
+  /// For display only: returns an empty list if storage can't be read.
+  Future<List<ConfigurationBackup>> getBackups() async {
+    try {
+      return await _readBackups();
+    } catch (e) {
+      debugPrint('[BackupService] Could not read backups: $e');
       return [];
     }
   }
 
   /// Saves a new backup to storage.
   Future<void> saveBackup(ConfigurationBackup backup) async {
-    final existing = await getBackups();
+    final existing = await _readBackups();
     final updated = [backup, ...existing.where((b) => b.id != backup.id)];
     final encoded = ConfigurationBackup.encodeList(updated);
 
@@ -58,7 +67,7 @@ class BackupService {
 
   /// Deletes a backup by its ID.
   Future<void> deleteBackup(String id) async {
-    final existing = await getBackups();
+    final existing = await _readBackups();
     final updated = existing.where((b) => b.id != id).toList();
     final encoded = ConfigurationBackup.encodeList(updated);
 
