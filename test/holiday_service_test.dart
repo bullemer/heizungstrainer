@@ -5,6 +5,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 
 import 'package:heizungstrainer/models/ecl_parameter.dart';
+import 'package:heizungstrainer/models/brunata_chart.dart';
+import 'package:heizungstrainer/models/brunata_meter_data.dart';
 import 'package:heizungstrainer/models/holiday_plan.dart';
 import 'package:heizungstrainer/models/license_info.dart';
 import 'package:heizungstrainer/providers/ecl_provider.dart';
@@ -411,7 +413,8 @@ void main() {
 
       // Presets
       expect(find.textContaining('Wochenend-Trip'), findsOneWidget);
-      expect(find.textContaining('1 Woche Urlaub'), findsOneWidget);
+      expect(find.text('1 Woche Urlaub (7 Tage)'), findsOneWidget);
+      expect(find.byKey(const Key('seasonalSavings')), findsOneWidget);
       expect(find.textContaining('2 Wochen Reise'), findsOneWidget);
       expect(find.textContaining('Kurztrip'), findsOneWidget);
 
@@ -613,6 +616,45 @@ void main() {
     }
     expect(fake.room, 22);
     expect(find.byKey(const Key('activeHolidayCard')), findsNothing);
+  });
+
+  test('a week in December saves more than a week in August (same month of last period)', () async {
+    FlutterSecureStorage.setMockInitialValues({});
+    final provider = ECLProvider(
+      logService: ActivityLogService(enablePersistence: false, enableRemoteDispatch: false),
+      autoLoadDatabase: false,
+    );
+    // previous period: winter-heavy, almost nothing in summer (floor heating)
+    final prev = BrunataChartSeries(
+      name: 'Vorheriger Abrechnungszeitraum',
+      values: const [2000, 1600, 1200, 700, 300, 50, 0, 20, 150, 700, 1400, 1900],
+      extrapolated: List.filled(12, false),
+    );
+    final cur = BrunataChartSeries(
+      name: 'Ausgewählter Abrechnungszeitraum',
+      values: const [1900, 1500, 1100, 600, 250, 40, 0, 0, 140, 999, 999, 999],
+      extrapolated: const [false, false, false, false, false, false, false, false, false, true, true, true],
+    );
+    provider.setBrunataDataForTesting(BrunataMeterData(
+      currentBillingPeriodCost: 0, consumedKwh: 0, communityComparisonPercentage: 0,
+      periodStart: DateTime(2026), periodEnd: DateTime(2026, 12, 31), pricePerKwh: 0.125,
+      charts: [BrunataChart(source: 'month_heizung', title: 'Monatsvergleich Heizung', subtitle: '',
+          unit: 'Verbrauch in kWh', categories: const [], series: [prev, cur])],
+    ));
+    expect(provider.heatingMonthlyProfile, isNotNull);
+    expect(provider.annualHeatingKwh, isNotNull);
+
+    double week(int month) => provider
+        .estimateAbsenceSavings(
+          start: DateTime(2026, month, 10),
+          preheatStart: DateTime(2026, month, 16),
+          roomReductionKelvin: 4,
+        )
+        .kwh!;
+    expect(week(12), greaterThan(week(8) * 20));
+    // December: 1900/31 kWh/day × 6 days × 24 % ≈ 88 kWh (annual = last 12 months here)
+    final annual = provider.annualHeatingKwh!;
+    expect(week(12), closeTo(annual * 1900 / 10020 / 31 * 6 * 0.24, 0.5));
   });
 }
 

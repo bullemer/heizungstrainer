@@ -463,6 +463,8 @@ class _HolidayScreenState extends State<HolidayScreen> {
                 const SizedBox(height: 20),
                 _buildPresetsSection(),
                 const SizedBox(height: 20),
+                _buildSeasonalSavings(),
+                const SizedBox(height: 20),
                 _buildLocalFirstNotice(),
                 const SizedBox(height: 20),
                 _buildHistorySection(),
@@ -706,6 +708,94 @@ class _HolidayScreenState extends State<HolidayScreen> {
     );
   }
 
+  /// What one week away saves depending on the month – based on the same
+  /// month of the comparable previous billing period.
+  Widget _buildSeasonalSavings() {
+    final provider = context.read<ECLProvider>();
+    const preset = _HolidayPreset(Icons.beach_access_outlined, '', '1 Woche Urlaub', Duration(days: 7), -3.0, 4.0, 5.0);
+    final roomMode = provider.holidayControlMode == 'room';
+    final now = DateTime.now();
+    const months = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'];
+    const muted = TextStyle(fontSize: 12, color: _textSecondary);
+    final hasProfile = provider.heatingMonthlyProfile != null;
+    final hasAnnual = provider.annualHeatingKwh != null;
+
+    final rows = <TableRow>[
+      const TableRow(children: [
+        Padding(padding: EdgeInsets.only(bottom: 6), child: Text('Start im', style: muted)),
+        Padding(padding: EdgeInsets.only(bottom: 6), child: Text('Energie', style: muted)),
+        Padding(padding: EdgeInsets.only(bottom: 6), child: Text('Kosten', style: muted)),
+      ]),
+    ];
+    for (var m = 1; m <= 12; m++) {
+      final year = m < now.month ? now.year + 1 : now.year;
+      final start = DateTime(year, m, 10, 8);
+      final end = start.add(preset.duration);
+      final s = _savingsFor(provider,
+          start: start,
+          end: end,
+          preheatHours: _preheatFor(provider, preset.preheatHours, preset.duration),
+          setbackShift: preset.setbackShift,
+          roomSetbackKelvin: preset.roomSetbackKelvin);
+      const cell = TextStyle(fontSize: 12.5, color: _textPrimary);
+      rows.add(TableRow(children: [
+        Padding(padding: const EdgeInsets.symmetric(vertical: 2), child: Text('${months[m - 1]} $year', style: cell)),
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 2),
+          child: Text(s.kwh == null ? '–' : '−${s.kwh!.toStringAsFixed(0)} kWh', style: cell),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 2),
+          child: Text(s.euro == null ? '–' : '−${s.euro!.toStringAsFixed(2)} €',
+              style: const TextStyle(fontSize: 12.5, color: _ecoGreen, fontWeight: FontWeight.w700)),
+        ),
+      ]));
+    }
+
+    return Container(
+      key: const Key('seasonalSavings'),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: _card,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: _border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Was spart 1 Woche Urlaub – nach Monat',
+              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: _textPrimary)),
+          const SizedBox(height: 4),
+          Text(
+            roomMode
+                ? 'Raum-Sollwert −${preset.roomSetbackKelvin.toStringAsFixed(0)} °C, 7 Tage, Vorheizen eingerechnet.'
+                : 'Parallelverschiebung ${preset.setbackShift.toStringAsFixed(0)}, 7 Tage, Vorheizen eingerechnet.',
+            style: muted,
+          ),
+          const SizedBox(height: 10),
+          if (!hasAnnual)
+            const Text(
+              'Für kWh und € fehlt dein Jahresverbrauch: Abrechnung (Brunata) synchronisieren oder '
+              'auf der Startseite unter „Heizkurve & Sparpotenzial“ eintragen.',
+              style: muted,
+            )
+          else ...[
+            Table(columnWidths: const {0: FlexColumnWidth(1.1), 1: FlexColumnWidth(1), 2: FlexColumnWidth(1)}, children: rows),
+            const SizedBox(height: 8),
+            Text(
+              hasProfile
+                  ? 'Basis: Verbrauch des jeweiligen Monats im vergleichbaren Vorjahres-Abrechnungszeitraum '
+                      '(Brunata), skaliert auf ${provider.annualHeatingKwh!.toStringAsFixed(0)} kWh/Jahr; ~6 % je °C.'
+                  : 'Kein Monatsprofil aus der Abrechnung – Jahresverbrauch gleichmäßig verteilt. Mit Brunata-'
+                      'Synchronisation wird es saisonal (Winter spart deutlich mehr als Sommer).',
+              style: muted,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   Widget _buildPresetsSection() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -797,7 +887,7 @@ class _HolidayScreenState extends State<HolidayScreen> {
     final money = s.euro != null
         ? '≈ ${s.euro!.toStringAsFixed(2)} € (${s.kwh!.toStringAsFixed(0)} kWh)'
         : 'ca. ${s.percent.toStringAsFixed(0)} % weniger während der Absenkung';
-    return '$setback · Vorheizen ${preheat.toStringAsFixed(0)} Std. · $money';
+    return '$setback · Vorheizen ${preheat.toStringAsFixed(0)} Std. · bei Start jetzt $money';
   }
 
   Widget _buildPresetTile({

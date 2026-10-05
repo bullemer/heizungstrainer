@@ -190,6 +190,14 @@ class ECLProvider extends ChangeNotifier {
   /// Last known price per kWh (tariff / billing), for savings in €.
   double? get pricePerKwhCached => _cachedPricePerKwh;
 
+  /// Only Brunata Hamburg delivers real portal data; the other billing
+  /// providers return fixed demo numbers and must never feed calculations.
+  bool get hasRealBillingData => _selectedBillingId == 'brunata_hamburg' && _brunataData != null;
+
+  /// Last year's monthly heating profile (shares Jan..Dec) if known.
+  List<double>? get heatingMonthlyProfile =>
+      hasRealBillingData ? _brunataData!.heatingMonthlyProfile : null;
+
   /// Heating energy per year used for savings: the user's own value, else the
   /// last 12 months from the billing portal, else its full-year projection
   /// (demo billing providers are ignored).
@@ -197,7 +205,7 @@ class ECLProvider extends ChangeNotifier {
     if (_annualHeatingKwhManual != null && _annualHeatingKwhManual! > 0) {
       return _annualHeatingKwhManual;
     }
-    if (isSimulatedBilling) return null;
+    if (!hasRealBillingData) return null;
     final last12 = _brunataData?.heatingLast12MonthsKwh;
     if (last12 != null) return last12;
     final projection = _brunataData?.heatingProjection;
@@ -238,7 +246,7 @@ class ECLProvider extends ChangeNotifier {
   double? dailyHeatingKwh(DateTime day) {
     final annual = annualHeatingKwh;
     if (annual == null) return null;
-    final profile = isSimulatedBilling ? null : _brunataData?.heatingMonthlyProfile;
+    final profile = heatingMonthlyProfile;
     if (profile == null) return annual / 365;
     final daysInMonth = DateTime(day.year, day.month + 1, 0).day;
     return annual * profile[day.month - 1] / daysInMonth;
