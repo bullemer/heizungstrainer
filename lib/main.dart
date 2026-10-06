@@ -25,10 +25,45 @@ void main() {
 
   runApp(
     ChangeNotifierProvider(
-      create: (_) => ECLProvider(),
+      create: (_) => ECLProvider()..locationRationale = _showLocationRationale,
       child: const HeizungstrainerApp(),
     ),
   );
+}
+
+final _navigatorKey = GlobalKey<NavigatorState>();
+
+/// Explains the location permission before Android asks for it.
+Future<bool> _showLocationRationale() async {
+  final context = _navigatorKey.currentContext;
+  if (context == null) return true;
+  final ok = await showDialog<bool>(
+    context: context,
+    barrierDismissible: false,
+    builder: (ctx) => AlertDialog(
+      icon: const Icon(Icons.wifi_find_rounded),
+      title: const Text('Regler im WLAN finden'),
+      content: const Text(
+        'Um deinen Heizungsregler automatisch im Heimnetz zu finden, muss die App '
+        'die WLAN-Adresse deines Telefons lesen. Android erlaubt das nur mit der '
+        'Standortberechtigung.\n\n'
+        'Heizungstrainer nutzt deinen Standort nicht und speichert oder überträgt ihn '
+        'nicht. Ohne die Berechtigung kannst du die IP-Adresse des Reglers über '
+        '„IP manuell eingeben“ eintragen.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx, false),
+          child: const Text('Nicht jetzt'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(ctx, true),
+          child: const Text('Weiter'),
+        ),
+      ],
+    ),
+  );
+  return ok ?? false;
 }
 
 class HeizungstrainerApp extends StatelessWidget {
@@ -37,6 +72,7 @@ class HeizungstrainerApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      navigatorKey: _navigatorKey,
       title: 'Heizungstrainer',
       debugShowCheckedModeBanner: false,
       theme: _buildDarkTheme(),

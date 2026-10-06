@@ -2,10 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:heizungstrainer/providers/ecl_provider.dart';
+import 'package:heizungstrainer/models/license_info.dart';
 import 'package:heizungstrainer/services/license_service.dart';
+import 'package:heizungstrainer/services/play_store.dart';
 
-/// Modal bottom sheet that explains Pro benefits and unlocks Pro with an
-/// offline licence key.
+/// Modal bottom sheet that explains Pro benefits and unlocks Pro – through
+/// Google Play Billing in the Play build, with an offline licence key in the
+/// website APK.
 class ProUpgradeDialog extends StatefulWidget {
   final String? featureHint;
 
@@ -32,10 +35,39 @@ class _ProUpgradeDialogState extends State<ProUpgradeDialog> {
   final _keyController = TextEditingController();
   bool _isVerifying = false;
   String? _errorMessage;
+  Future<StoreProduct?>? _playProduct;
+  bool _isRestoring = false;
+  String? _restoreMessage;
 
   static const _accentOrange = Color(0xFFFFA726);
   static const _ecoGreen = Color(0xFF66BB6A);
   static const _cardBg = Color(0xFF2A2A34);
+
+  @override
+  void initState() {
+    super.initState();
+    final licenseService = context.read<ECLProvider>().licenseService;
+    if (licenseService.usesPlayBilling) {
+      _playProduct = licenseService.loadProProduct();
+    }
+  }
+
+  Future<void> _restorePurchases(LicenseService licenseService) async {
+    setState(() {
+      _isRestoring = true;
+      _restoreMessage = null;
+    });
+    final reached = await licenseService.syncWithStore();
+    if (!mounted) return;
+    setState(() {
+      _isRestoring = false;
+      _restoreMessage = !reached
+          ? 'Google Play ist gerade nicht erreichbar. Bitte später erneut versuchen.'
+          : licenseService.isPro
+          ? null
+          : 'Für dieses Google-Konto wurde kein Pro-Kauf gefunden.';
+    });
+  }
 
   @override
   void dispose() {
@@ -74,7 +106,8 @@ class _ProUpgradeDialogState extends State<ProUpgradeDialog> {
       Navigator.pop(context, true);
     } else {
       setState(() {
-        _errorMessage = 'Ungültiger Lizenzschlüssel. Bitte den vollständigen Schlüssel '
+        _errorMessage =
+            'Ungültiger Lizenzschlüssel. Bitte den vollständigen Schlüssel '
             '(beginnt mit HT2-) aus der E-Mail kopieren und einfügen.';
       });
     }
@@ -137,11 +170,7 @@ class _ProUpgradeDialogState extends State<ProUpgradeDialog> {
             // Main Title
             const Text(
               'Heizungstrainer Pro',
-              style: TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.w800,
-                color: Color(0xFFECECF0),
-              ),
+              style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Color(0xFFECECF0)),
             ),
             const SizedBox(height: 4),
             Text(
@@ -168,25 +197,23 @@ class _ProUpgradeDialogState extends State<ProUpgradeDialog> {
                     const SizedBox(height: 8),
                     const Text(
                       'Du nutzt bereits Heizungstrainer Pro!',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 15,
-                        color: _ecoGreen,
-                      ),
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: _ecoGreen),
                     ),
                     const SizedBox(height: 4),
                     Text(
                       'Quelle: ${licenseService.currentInfo.note ?? licenseService.currentInfo.source.name}',
                       style: const TextStyle(fontSize: 12, color: Colors.white70),
                     ),
-                    const SizedBox(height: 12),
-                    OutlinedButton(
-                      onPressed: () async {
-                        await licenseService.revokeLicense();
-                        if (mounted) setState(() {});
-                      },
-                      child: const Text('Lizenz von diesem Gerät entfernen'),
-                    ),
+                    if (licenseService.currentInfo.source != LicenseSource.inAppPurchase) ...[
+                      const SizedBox(height: 12),
+                      OutlinedButton(
+                        onPressed: () async {
+                          await licenseService.revokeLicense();
+                          if (mounted) setState(() {});
+                        },
+                        child: const Text('Lizenz von diesem Gerät entfernen'),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -233,75 +260,159 @@ class _ProUpgradeDialogState extends State<ProUpgradeDialog> {
               ),
               const SizedBox(height: 20),
 
-              // Offline licence key
-              const Text(
-                'Lizenzschlüssel eingeben',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                  color: Color(0xFFECECF0),
-                ),
-              ),
-              const SizedBox(height: 8),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _keyController,
-                      textCapitalization: TextCapitalization.characters,
-                      minLines: 1,
-                      maxLines: 4,
-                      decoration: InputDecoration(
-                        hintText: 'HT2-XXXXX-XXXXX-…',
-                        errorMaxLines: 3,
-                        hintStyle: const TextStyle(color: Colors.white24, fontSize: 13),
-                        filled: true,
-                        fillColor: const Color(0xFF1E1E24),
-                        errorText: _errorMessage,
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
-                          borderSide: const BorderSide(color: Color(0xFF3A3A44)),
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  FilledButton(
-                    style: FilledButton.styleFrom(
-                      backgroundColor: _accentOrange,
-                      foregroundColor: Colors.black,
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                    ),
-                    onPressed: _isVerifying ? null : () => _activateKey(licenseService),
-                    child: _isVerifying
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black),
-                          )
-                        : const Text('Aktivieren', style: TextStyle(fontWeight: FontWeight.bold)),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-
-              const Text(
-                'Noch keinen Schlüssel? Pro (19,99 € einmalig) kannst du über das '
-                'Kontaktformular auf heizungstrainer.de/kontakt.html anfragen – du '
-                'bekommst den Lizenzschlüssel per E-Mail. Die Aktivierung funktioniert '
-                'offline, ohne Konto.',
-                style: TextStyle(fontSize: 12.5, color: Color(0xFF9E9EA8), height: 1.4),
-              ),
+              if (licenseService.usesPlayBilling)
+                _buildPlayPurchase(licenseService)
+              else
+                ..._buildKeyActivation(licenseService),
             ],
           ],
         ),
       ),
     );
+  }
+
+  Widget _buildPlayPurchase(LicenseService licenseService) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        FutureBuilder<StoreProduct?>(
+          future: _playProduct,
+          builder: (context, snapshot) {
+            final loading = snapshot.connectionState != ConnectionState.done;
+            final product = snapshot.data;
+            if (!loading && product == null) {
+              return const Text(
+                'Google Play ist gerade nicht erreichbar. Bitte prüfe die '
+                'Internetverbindung und öffne diesen Dialog erneut.',
+                style: TextStyle(fontSize: 12.5, color: Color(0xFFEF9A9A), height: 1.4),
+              );
+            }
+            final busy = loading || licenseService.purchasePending;
+            return FilledButton.icon(
+              style: FilledButton.styleFrom(
+                backgroundColor: _accentOrange,
+                foregroundColor: Colors.black,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              onPressed: busy
+                  ? null
+                  : () {
+                      HapticFeedback.mediumImpact();
+                      licenseService.buyPro();
+                    },
+              icon: loading
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black),
+                    )
+                  : const Icon(Icons.shopping_bag_outlined),
+              label: Text(
+                loading ? 'Preis wird geladen …' : 'Pro kaufen – ${product!.price} einmalig',
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+            );
+          },
+        ),
+        if (licenseService.purchasePending) ...[
+          const SizedBox(height: 10),
+          const Text(
+            'Dein Kauf wartet noch auf die Zahlung. Pro wird freigeschaltet, '
+            'sobald Google Play die Zahlung bestätigt.',
+            style: TextStyle(fontSize: 12.5, color: Color(0xFF9E9EA8), height: 1.4),
+          ),
+        ],
+        if (licenseService.purchaseError != null) ...[
+          const SizedBox(height: 10),
+          Text(
+            licenseService.purchaseError!,
+            style: const TextStyle(fontSize: 12.5, color: Color(0xFFEF9A9A), height: 1.4),
+          ),
+        ],
+        const SizedBox(height: 8),
+        TextButton(
+          onPressed: _isRestoring ? null : () => _restorePurchases(licenseService),
+          child: Text(_isRestoring ? 'Suche Käufe …' : 'Käufe wiederherstellen'),
+        ),
+        if (_restoreMessage != null)
+          Text(
+            _restoreMessage!,
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 12.5, color: Color(0xFF9E9EA8), height: 1.4),
+          ),
+        const SizedBox(height: 4),
+        const Text(
+          'Einmalkauf über Google Play, kein Abo. Pro gilt für alle Geräte mit '
+          'demselben Google-Konto.',
+          textAlign: TextAlign.center,
+          style: TextStyle(fontSize: 12, color: Color(0xFF9E9EA8), height: 1.4),
+        ),
+      ],
+    );
+  }
+
+  List<Widget> _buildKeyActivation(LicenseService licenseService) {
+    return [
+      // Offline licence key
+      const Text(
+        'Lizenzschlüssel eingeben',
+        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFFECECF0)),
+      ),
+      const SizedBox(height: 8),
+      Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: TextField(
+              controller: _keyController,
+              textCapitalization: TextCapitalization.characters,
+              minLines: 1,
+              maxLines: 4,
+              decoration: InputDecoration(
+                hintText: 'HT2-XXXXX-XXXXX-…',
+                errorMaxLines: 3,
+                hintStyle: const TextStyle(color: Colors.white24, fontSize: 13),
+                filled: true,
+                fillColor: const Color(0xFF1E1E24),
+                errorText: _errorMessage,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: const BorderSide(color: Color(0xFF3A3A44)),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: _accentOrange,
+              foregroundColor: Colors.black,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            onPressed: _isVerifying ? null : () => _activateKey(licenseService),
+            child: _isVerifying
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black),
+                  )
+                : const Text('Aktivieren', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+      const SizedBox(height: 16),
+
+      const Text(
+        'Noch keinen Schlüssel? Pro (19,99 € einmalig) kannst du über das '
+        'Kontaktformular auf heizungstrainer.de/kontakt.html anfragen – du '
+        'bekommst den Lizenzschlüssel per E-Mail. Die Aktivierung funktioniert '
+        'offline, ohne Konto.',
+        style: TextStyle(fontSize: 12.5, color: Color(0xFF9E9EA8), height: 1.4),
+      ),
+    ];
   }
 }
 
@@ -325,10 +436,7 @@ class _FeatureRow extends StatelessWidget {
         Icon(icon, size: 18, color: iconColor),
         const SizedBox(width: 10),
         Expanded(
-          child: Text(
-            title,
-            style: const TextStyle(fontSize: 13, color: Color(0xFFECECF0)),
-          ),
+          child: Text(title, style: const TextStyle(fontSize: 13, color: Color(0xFFECECF0))),
         ),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),

@@ -97,3 +97,14 @@ flutter test
 
 Entwickelt für das Projekt [heizungstrainer.de](https://heizungstrainer.de).  
 Alle Rechte vorbehalten.
+
+## Builds
+
+Two Android flavors share the app id `com.heizungstrainer.heizungstrainer`:
+
+| Flavor | Command | Output | Pro unlock | Signing |
+|---|---|---|---|---|
+| `direct` (default) | `flutter build apk --release` | `build/app/outputs/flutter-apk/app-direct-release.apk` | offline HT2 licence key | debug key (keeps website installs updatable) |
+| `play` | `flutter build appbundle --release --flavor play` | `build/app/outputs/bundle/playRelease/app-play-release.aab` | Google Play Billing, product `heizungstrainer_pro` | upload key from `android/key.properties` (gitignored; keystore in `~/.config/heizungstrainer/`) |
+
+Because the signatures differ, the Play version can't be installed over the website APK; users switching have to uninstall first.

@@ -63,6 +63,22 @@ class LicenseInfo {
     );
   }
 
+  /// Pro bought through Google Play Billing (Play build).
+  factory LicenseInfo.proPlay({
+    String? purchaseId,
+    String? productId,
+    DateTime? activatedAt,
+  }) {
+    return LicenseInfo(
+      tier: LicenseTier.pro,
+      source: LicenseSource.inAppPurchase,
+      purchaseId: purchaseId,
+      productId: productId,
+      activatedAt: activatedAt ?? DateTime.now(),
+      note: 'Google Play',
+    );
+  }
+
   /// Test or debug override for development.
   factory LicenseInfo.proTest({String note = 'Entwickler-Override'}) {
     return LicenseInfo(

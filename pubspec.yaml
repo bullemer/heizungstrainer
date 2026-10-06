@@ -48,6 +48,8 @@ dependencies:
   encrypt: ^5.0.3
   crypto: ^3.0.7
   cryptography: ^2.9.0
+  in_app_purchase: ^3.3.1
+  in_app_purchase_android: ^0.5.0
 
 dev_dependencies:
   flutter_test:
@@ -65,6 +67,8 @@ dev_dependencies:
 
 # The following section is specific to Flutter packages.
 flutter:
+  # Website APK; the Play bundle is built with --flavor play.
+  default-flavor: direct
 
   # The following line ensures that the Material Icons font is
   # included with your application, so that you can use the icons in

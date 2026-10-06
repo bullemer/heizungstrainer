@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("kotlin-android")
@@ -30,11 +32,35 @@ android {
         versionName = flutter.versionName
     }
 
-    buildTypes {
-        release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
+    // Upload key for Google Play (Play re-signs with the app signing key).
+    // android/key.properties is gitignored; the keystore lives in
+    // ~/.config/heizungstrainer/.
+    val keystoreProperties = Properties()
+    val keystoreFile = rootProject.file("key.properties")
+    if (keystoreFile.exists()) keystoreFile.inputStream().use { keystoreProperties.load(it) }
+
+    signingConfigs {
+        if (keystoreFile.exists()) {
+            create("upload") {
+                storeFile = file(keystoreProperties.getProperty("storeFile"))
+                storePassword = keystoreProperties.getProperty("storePassword")
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+            }
+        }
+    }
+
+    flavorDimensions += "store"
+    productFlavors {
+        // Website APK: keeps the debug key so existing installs keep updating.
+        create("direct") {
+            dimension = "store"
             signingConfig = signingConfigs.getByName("debug")
+        }
+        // Google Play bundle: Pro via Play Billing, signed with the upload key.
+        create("play") {
+            dimension = "store"
+            signingConfig = signingConfigs.findByName("upload")
         }
     }
 }

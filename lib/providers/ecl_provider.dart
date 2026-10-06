@@ -42,6 +42,7 @@ import 'package:heizungstrainer/services/heating_curve_model.dart';
 import 'package:heizungstrainer/exceptions/license_exception.dart';
 import 'package:heizungstrainer/models/license_info.dart';
 import 'package:heizungstrainer/services/license_service.dart';
+import 'package:heizungstrainer/services/play_store.dart';
 import 'package:heizungstrainer/services/modbus_service.dart';
 
 /// Connection lifecycle states for the ECL 310 controller.
@@ -454,7 +455,10 @@ class ECLProvider extends ChangeNotifier {
             ),
         _licenseService = licenseService ??
             (autoLoadDatabase
-                ? LicenseService(secureStorage: secureStorage ?? const FlutterSecureStorage())
+                ? LicenseService(
+                    secureStorage: secureStorage ?? const FlutterSecureStorage(),
+                    store: isPlayBuild ? InAppPurchaseGateway() : null,
+                  )
                 : LicenseService(initialTier: LicenseTier.pro)) {
     _activeController = DeviceRegistry.createController(
       _selectedControllerId,
@@ -858,10 +862,16 @@ class ECLProvider extends ChangeNotifier {
   // Permissions
   // ──────────────────────────────────────────────────────────────────
 
+  /// Shown before Android's location prompt to say why the app asks for it
+  /// (required by Google Play). Returns false if the user declines.
+  Future<bool> Function()? locationRationale;
+
   Future<bool> _ensureLocationPermission() async {
     var status = await Permission.location.status;
     debugPrint('[Provider] Location permission status: $status');
     if (status.isGranted) return true;
+    final rationale = locationRationale;
+    if (rationale != null && !await rationale()) return false;
     status = await Permission.location.request();
     debugPrint('[Provider] Location permission after request: $status');
     return status.isGranted;
