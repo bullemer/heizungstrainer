@@ -613,6 +613,15 @@ class _HolidayScreenState extends State<HolidayScreen> {
             'Rückkehr: ${plan.endDateTime.day}.${plan.endDateTime.month}.${plan.endDateTime.year} um ${plan.endDateTime.hour.toString().padLeft(2, '0')}:${plan.endDateTime.minute.toString().padLeft(2, '0')} Uhr',
             style: const TextStyle(fontSize: 13, color: _textSecondary),
           ),
+          if (plan.runsInController)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(
+                'Im Regler gespeichert (Urlaubsprogramm P${plan.controllerSlot}) – läuft auch ohne App.',
+                key: const Key('planInController'),
+                style: const TextStyle(fontSize: 12.5, color: _ecoGreen, fontWeight: FontWeight.w600),
+              ),
+            ),
           const SizedBox(height: 16),
 
           // Metrics grid
@@ -621,7 +630,7 @@ class _HolidayScreenState extends State<HolidayScreen> {
               Expanded(
                 child: _buildMiniStat(
                   label: 'Absenkung',
-                  value: plan.setbackApplied && plan.controlMode == 'room'
+                  value: plan.runsInController || (plan.setbackApplied && plan.controlMode == 'room')
                       ? 'auf ${plan.targetRoomTemp.fixed(1)} °C'
                       : (plan.controlMode == 'room' || context.read<ECLProvider>().holidayControlMode == 'room')
                           ? '−${plan.roomSetbackKelvin.fixed(1)} °C'
@@ -840,16 +849,20 @@ class _HolidayScreenState extends State<HolidayScreen> {
     final provider = context.read<ECLProvider>();
     final roomMode = provider.holidayControlMode == 'room';
     final current = provider.getReading(ECLRegisters.roomTargetTemp)?.displayValue;
-    final change = roomMode && current != null
-        ? 'Raum-Sollwert ${current.fixed(1)} → '
-            '${(current - p.roomSetbackKelvin).clamp(HolidayService.minHolidayRoomSetpoint, 30).fixed(1)} °C'
-        : 'Parallelverschiebung ${p.setbackShift.fixed(0)}';
+    final saving = provider.getReading(ECLRegisters.savingRoomTemp)?.displayValue;
+    final change = provider.supportsControllerHoliday
+        ? 'Wird im Urlaubsprogramm des Reglers gespeichert (tageweise 00:00–00:00, '
+            'Spar-Sollwert ${saving?.fixed(1) ?? '?'} °C) – läuft auch, wenn das Handy aus ist.'
+        : roomMode && current != null
+            ? 'Raum-Sollwert ${current.fixed(1)} → '
+                '${(current - p.roomSetbackKelvin).clamp(HolidayService.minHolidayRoomSetpoint, 30).fixed(1)} °C ab sofort.'
+            : 'Parallelverschiebung ${p.setbackShift.fixed(0)} ab sofort.';
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: _card,
         title: Text('${p.planTitle} starten?'),
-        content: Text('$change ab sofort.\n${_presetSubtitle(p)}'),
+        content: Text('$change\n${_presetSubtitle(p)}'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Abbrechen')),
           FilledButton(

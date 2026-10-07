@@ -22,6 +22,9 @@ class HolidayPlan {
   final String controlMode;
   /// Room-setpoint mode: lower the comfort setpoint by this many °C.
   final double roomSetbackKelvin;
+  /// controlMode 'controller': the controller's holiday schedule (P1–P12)
+  /// that holds this absence; the controller runs it without the app.
+  final int? controllerSlot;
   final double estimatedSavingsKwh;
   final double estimatedSavingsEuro;
   final DateTime createdAt;
@@ -42,6 +45,7 @@ class HolidayPlan {
     this.setbackApplied = false,
     this.controlMode = 'shift',
     this.roomSetbackKelvin = 4.0,
+    this.controllerSlot,
     this.estimatedSavingsKwh = 0.0,
     this.estimatedSavingsEuro = 0.0,
     required this.createdAt,
@@ -67,6 +71,8 @@ class HolidayPlan {
   }
 
   /// Returns a copy of this plan with modified fields.
+  bool get runsInController => controlMode == 'controller';
+
   HolidayPlan copyWith({
     String? id,
     String? title,
@@ -83,6 +89,7 @@ class HolidayPlan {
     bool? setbackApplied,
     String? controlMode,
     double? roomSetbackKelvin,
+    int? controllerSlot,
     double? estimatedSavingsKwh,
     double? estimatedSavingsEuro,
     DateTime? createdAt,
@@ -104,6 +111,7 @@ class HolidayPlan {
       setbackApplied: setbackApplied ?? this.setbackApplied,
       controlMode: controlMode ?? this.controlMode,
       roomSetbackKelvin: roomSetbackKelvin ?? this.roomSetbackKelvin,
+      controllerSlot: controllerSlot ?? this.controllerSlot,
       estimatedSavingsKwh: estimatedSavingsKwh ?? this.estimatedSavingsKwh,
       estimatedSavingsEuro: estimatedSavingsEuro ?? this.estimatedSavingsEuro,
       createdAt: createdAt ?? this.createdAt,
@@ -127,6 +135,7 @@ class HolidayPlan {
       'setbackApplied': setbackApplied,
       'controlMode': controlMode,
       'roomSetbackKelvin': roomSetbackKelvin,
+      'controllerSlot': controllerSlot,
       'estimatedSavingsKwh': estimatedSavingsKwh,
       'estimatedSavingsEuro': estimatedSavingsEuro,
       'createdAt': createdAt.toIso8601String(),
@@ -150,6 +159,7 @@ class HolidayPlan {
       isCompleted: json['isCompleted'] as bool? ?? false,
       controlMode: json['controlMode'] as String? ?? 'shift',
       roomSetbackKelvin: (json['roomSetbackKelvin'] as num?)?.toDouble() ?? 4.0,
+      controllerSlot: json['controllerSlot'] as int?,
       // Plans saved by <= 1.1.0 lowered the heating on activation.
       setbackApplied: json['setbackApplied'] as bool? ??
           ((json['isActive'] as bool? ?? true) && !(json['isCompleted'] as bool? ?? false)),

@@ -13,6 +13,7 @@ import 'package:modbus_client_tcp/modbus_client_tcp.dart';
 
 import 'package:heizungstrainer/exceptions/modbus_exceptions.dart';
 import 'package:heizungstrainer/models/ecl_parameter.dart';
+import 'package:heizungstrainer/models/controller_holiday.dart';
 import 'package:heizungstrainer/models/live_snapshot.dart';
 import 'package:heizungstrainer/models/week_schedule.dart';
 import 'package:heizungstrainer/models/ecl_reading.dart';
@@ -221,6 +222,52 @@ class ModbusService {
       limiter: [for (final v in limiter) v & 0xFFFF],
       controllerTime: time,
     );
+  }
+
+  /// All holiday schedules (P1–P12) of the controller; stops at the first
+  /// schedule the application doesn't have.
+  Future<List<ControllerHolidayEntry>> readHolidaySchedules({int max = 12}) async {
+    final out = <ControllerHolidayEntry>[];
+    for (var slot = 1; slot <= max; slot++) {
+      try {
+        out.add(ControllerHolidayEntry.fromRaw(slot, await _readRaw(ControllerHolidayEntry.address(slot, 0), 7)));
+      } catch (_) {
+        break;
+      }
+    }
+    return out;
+  }
+
+  /// Writes one holiday schedule: dates first (year, month, day – a day
+  /// value is always valid for the old month), the mode last, as the Danfoss
+  /// description requires. Returns the schedule read back.
+  Future<ControllerHolidayEntry> writeHolidaySchedule(
+    int slot, {
+    required ControllerHolidayMode mode,
+    required DateTime start,
+    required DateTime end,
+  }) async {
+    _ensureConnected();
+    Future<void> write(int index, int value) async {
+      final address = ControllerHolidayEntry.address(slot, index);
+      final register = ModbusInt16Register(name: 'h$address', type: ModbusElementType.holdingRegister, address: address);
+      final response = await _client!.send(register.getWriteRequest(value)).timeout(_requestTimeout);
+      if (response != ModbusResponseCode.requestSucceed) {
+        throw ModbusCommunicationException(message: 'Schreibfehler Urlaubsprogramm P$slot (Register $address): Modbus-Code $response');
+      }
+    }
+
+    if (mode != ControllerHolidayMode.off) {
+      await write(3, start.year);
+      await write(2, start.month);
+      await write(1, start.day);
+      await write(6, end.year);
+      await write(5, end.month);
+      await write(4, end.day);
+    }
+    await write(0, mode.code);
+    await Future.delayed(const Duration(milliseconds: 200));
+    return ControllerHolidayEntry.fromRaw(slot, await _readRaw(ControllerHolidayEntry.address(slot, 0), 7));
   }
 
   /// ECL alarm bitmask as one 32-bit value (bit 0 = alarm 1 … bit 31 =

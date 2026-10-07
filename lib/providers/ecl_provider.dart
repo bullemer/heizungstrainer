@@ -5,6 +5,7 @@ library;
 
 import 'package:heizungstrainer/utils/number_format.dart';
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:collection';
 import 'dart:convert';
 
@@ -36,6 +37,7 @@ import 'package:heizungstrainer/models/telemetry_sample.dart';
 import 'package:heizungstrainer/services/activity_log_service.dart';
 import 'package:heizungstrainer/services/brunata_local_scraper_service.dart';
 import 'package:heizungstrainer/services/database_service.dart';
+import 'package:heizungstrainer/models/controller_holiday.dart';
 import 'package:heizungstrainer/models/live_snapshot.dart';
 import 'package:heizungstrainer/models/week_schedule.dart';
 import 'package:heizungstrainer/services/alert_center.dart';
@@ -802,6 +804,104 @@ class ECLProvider extends ChangeNotifier {
       controllerTime: DateTime.now(),
       simulated: true,
     );
+  }
+
+  // ── Holiday programs in the controller ──────────────────────────
+
+  List<int>? get _heatingHolidaySlots =>
+      _isSimulationActive ? null : ControllerHolidayLayout.heatingSlotsFor(_controllerApplication);
+
+  /// The controller runs holidays itself (Danfoss, verified slot layout).
+  bool get supportsControllerHoliday => supportsControllerSchedule && _heatingHolidaySlots != null;
+
+  /// The heating circuit's holiday schedules as stored in the controller.
+  Future<List<ControllerHolidayEntry>> readControllerHolidays() async {
+    if (!supportsControllerHoliday) return const [];
+    final slots = _heatingHolidaySlots!;
+    final all = await _modbusService.readHolidaySchedules(max: slots.reduce(math.max));
+    return all.where((e) => slots.contains(e.slot)).toList();
+  }
+
+  /// Stores a holiday in a free heating schedule of the controller, reads it
+  /// back and logs it. Throws if no schedule is free or it isn't confirmed.
+  Future<ControllerHolidayEntry> writeControllerHoliday({
+    required DateTime start,
+    required DateTime end,
+    required ControllerHolidayMode mode,
+  }) async {
+    await _checkControllerHolidayWrite('holiday');
+    final now = DateTime.now();
+    final free = (await readControllerHolidays()).where((e) => !e.isPendingOrRunning(now)).firstOrNull;
+    if (free == null) {
+      throw ModbusCommunicationException(
+          message: 'Alle Urlaubsprogramme des Heizkreises im Regler sind belegt – bitte eines im Regler löschen.');
+    }
+    return _writeHolidaySlot(free.slot, mode, start, end);
+  }
+
+  /// Switches a controller holiday schedule off (mode "scheduled operation").
+  Future<void> clearControllerHoliday(int slot) async {
+    await _checkControllerHolidayWrite('holiday_clear');
+    final now = DateTime.now();
+    await _writeHolidaySlot(slot, ControllerHolidayMode.off, now, now);
+  }
+
+  Future<void> _checkControllerHolidayWrite(String what) async {
+    if (!supportsControllerHoliday) {
+      throw ModbusCommunicationException(message: 'Urlaubsprogramme im Regler sind für diesen Regler nicht verfügbar.');
+    }
+    if (!_licenseService.canWriteParameters) {
+      await _logService.logSecurityGate(
+        controllerId: _selectedControllerId,
+        message: 'Schreibbefehl blockiert: Heizungstrainer Pro erforderlich.',
+        details: {'parameterId': what, 'tier': _licenseService.currentTier.name},
+        errorCode: 'LICENSE_PRO_REQUIRED',
+      );
+      throw const LicenseRequiredException(
+        message: 'Das Verändern von Regler-Parametern erfordert Heizungstrainer Pro.',
+        featureName: 'Parametrierung schreiben',
+      );
+    }
+  }
+
+  Future<ControllerHolidayEntry> _writeHolidaySlot(
+      int slot, ControllerHolidayMode mode, DateTime start, DateTime end) async {
+    final wanted = ControllerHolidayEntry(slot: slot, mode: mode, start: start, end: end);
+    _writeInProgress = true;
+    try {
+      final back = await _modbusService.writeHolidaySchedule(slot, mode: mode, start: start, end: end);
+      final ok = back.mode == mode &&
+          (mode == ControllerHolidayMode.off || (back.start == start && back.end == end));
+      if (!ok) {
+        final message = 'Urlaubsprogramm P$slot: Regler meldet „${back.describe()}“ statt „${wanted.describe()}“ – nicht übernommen.';
+        await _logService.logWrite(
+          controllerId: _selectedControllerId,
+          action: 'WRITE_NOT_CONFIRMED',
+          message: message,
+          details: {'slot': slot, 'wanted': wanted.describe(), 'controller': back.describe()},
+          success: false,
+          errorCode: 'WRITE_NOT_CONFIRMED',
+        );
+        await alerts.raise(
+          key: 'write_holiday_${slot}_${DateTime.now().millisecondsSinceEpoch}',
+          severity: AlertSeverity.error,
+          title: 'Schreiben nicht bestätigt',
+          message: message,
+        );
+        throw ModbusCommunicationException(message: 'Der Regler hat das Urlaubsprogramm nicht übernommen.');
+      }
+      await _logService.logWrite(
+        controllerId: _selectedControllerId,
+        action: mode == ControllerHolidayMode.off ? 'WRITE_HOLIDAY_CLEARED' : 'WRITE_HOLIDAY_VERIFIED',
+        message: mode == ControllerHolidayMode.off
+            ? 'Urlaubsprogramm P$slot im Regler ausgeschaltet – zurückgelesen.'
+            : 'Urlaubsprogramm im Regler: ${back.describe()} – geschrieben und zurückgelesen.',
+        details: {'slot': slot, 'controller': back.describe()},
+      );
+      return back;
+    } finally {
+      _writeInProgress = false;
+    }
   }
 
   bool _sensorMappingChecked = false;
