@@ -1,3 +1,4 @@
+import 'package:heizungstrainer/utils/number_format.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:heizungstrainer/exceptions/modbus_exceptions.dart';
@@ -210,8 +211,8 @@ class HolidayService {
     final clamped = target < minHolidayRoomSetpoint ? minHolidayRoomSetpoint : target;
     if (clamped >= current) {
       throw HolidayModeException(
-        'Der Raum-Sollwert steht schon bei ${current.toStringAsFixed(1)} °C – tiefer als '
-        '${minHolidayRoomSetpoint.toStringAsFixed(0)} °C senkt der Urlaubsmodus nicht.',
+        'Der Raum-Sollwert steht schon bei ${current.fixed(1)} °C – tiefer als '
+        '${minHolidayRoomSetpoint.fixed(0)} °C senkt der Urlaubsmodus nicht.',
       );
     }
     try {

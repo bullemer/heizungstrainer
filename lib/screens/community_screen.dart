@@ -1,3 +1,4 @@
+import 'package:heizungstrainer/utils/number_format.dart';
 import 'package:flutter/material.dart';
 import 'package:heizungstrainer/widgets/brunata_chart_card.dart';
 import 'package:provider/provider.dart';
@@ -270,8 +271,8 @@ class _CommunityScreenState extends State<CommunityScreen> {
     final diffText = isNeutral
         ? '0.0%'
         : (isBetter
-            ? '${diff.abs().toStringAsFixed(1)}%'
-            : '+${diff.toStringAsFixed(1)}%');
+            ? '${diff.abs().fixed(1)}%'
+            : '+${diff.fixed(1)}%');
 
     final comparisonText = isNeutral
         ? 'im Liegenschafts-Durchschnitt'
@@ -282,8 +283,8 @@ class _CommunityScreenState extends State<CommunityScreen> {
     final explanationText = isNeutral
         ? 'Deine Wohnung liegt genau im Durchschnitt der Liegenschaft.'
         : (isBetter
-            ? 'Deine Wohnung verbraucht je m² ${diff.abs().toStringAsFixed(1)} % weniger Wärmeenergie als der Liegenschafts-Durchschnitt (gemessene Monate des laufenden Zeitraums).'
-            : 'Deine Wohnung liegt je m² ${diff.toStringAsFixed(1)} % über dem Schnitt der Liegenschaft (gemessene Monate des laufenden Zeitraums).');
+            ? 'Deine Wohnung verbraucht je m² ${diff.abs().fixed(1)} % weniger Wärmeenergie als der Liegenschafts-Durchschnitt (gemessene Monate des laufenden Zeitraums).'
+            : 'Deine Wohnung liegt je m² ${diff.fixed(1)} % über dem Schnitt der Liegenschaft (gemessene Monate des laufenden Zeitraums).');
 
     return Container(
       padding: const EdgeInsets.all(18),
@@ -654,7 +655,7 @@ class _MediumSummaryCard extends StatelessWidget {
 
 String _fmtKwh(double v) {
   if (v >= 100) return '${v.round()}';
-  return v.toStringAsFixed(v == v.roundToDouble() ? 0 : 1);
+  return v.fixed(v == v.roundToDouble() ? 0 : 1);
 }
 
-String _fmtEur(double v) => '${v.toStringAsFixed(2)} €';
+String _fmtEur(double v) => '${v.fixed(2)} €';

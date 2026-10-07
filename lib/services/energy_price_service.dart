@@ -1,3 +1,4 @@
+import 'package:heizungstrainer/utils/number_format.dart';
 import 'dart:async';
 import 'dart:io';
 
@@ -176,7 +177,7 @@ class EnergyPriceService {
     bool isCustom = true,
   }) async {
     try {
-      final formatted = price.toStringAsFixed(4);
+      final formatted = price.fixed(4);
       await _secureStorage.write(
         key: storageKeyPrice,
         value: formatted,

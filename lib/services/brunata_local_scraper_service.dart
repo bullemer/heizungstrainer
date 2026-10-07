@@ -5,6 +5,7 @@
 /// All processing happens client-side on the device — no data leaves the phone.
 library;
 
+import 'package:heizungstrainer/utils/number_format.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:ui';
@@ -873,7 +874,7 @@ class BrunataLocalScraperService {
       for (final c in charts) {
         debugPrint('[Brunata] Chart source=${c.source} title="${c.title}" unit="${c.unit}" '
             'categories=${c.categories.length} series=[${c.series.map((s) => '"${s.name}" n=${s.values.length} '
-                'extrap=${s.extrapolated.where((e) => e).length} sum=${s.total.toStringAsFixed(0)}').join('; ')}]');
+                'extrap=${s.extrapolated.where((e) => e).length} sum=${s.total.fixed(0)}').join('; ')}]');
       }
       final communityDiff =
           calculateCommunityComparisonPercentage(charts) ?? 0.0;

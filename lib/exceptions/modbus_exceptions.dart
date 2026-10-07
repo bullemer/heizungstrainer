@@ -4,6 +4,7 @@
 /// for Modbus communication failures, safety violations, and discovery issues.
 library;
 
+import 'package:heizungstrainer/utils/number_format.dart';
 import 'package:heizungstrainer/models/ecl_parameter.dart';
 
 /// Thrown when a write value violates a parameter's hardcoded safety bounds.
@@ -27,10 +28,10 @@ class ParameterBoundsException implements Exception {
     final min = parameter.minValue;
     final max = parameter.maxValue;
     final unit = parameter.unit.isNotEmpty ? ' ${parameter.unit}' : '';
-    return 'Wert ${attemptedValue.toStringAsFixed(parameter.displayPrecision)}$unit '
+    return 'Wert ${attemptedValue.fixed(parameter.displayPrecision)}$unit '
         'liegt außerhalb des erlaubten Bereichs '
-        '[${min?.toStringAsFixed(parameter.displayPrecision) ?? '−∞'}, '
-        '${max?.toStringAsFixed(parameter.displayPrecision) ?? '+∞'}] '
+        '[${min?.fixed(parameter.displayPrecision) ?? '−∞'}, '
+        '${max?.fixed(parameter.displayPrecision) ?? '+∞'}] '
         'für ${parameter.name}.';
   }
 

@@ -1,3 +1,4 @@
+import 'package:heizungstrainer/utils/number_format.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -399,7 +400,7 @@ class VaillantEbusdController implements HeatingController {
 
     if (!success) {
       throw ModbusCommunicationException(
-        message: 'eBUSd Raum-Solltemperatur (${temperature.toStringAsFixed(1)} °C) '
+        message: 'eBUSd Raum-Solltemperatur (${temperature.fixed(1)} °C) '
             'konnte nicht gesetzt werden.',
       );
     }

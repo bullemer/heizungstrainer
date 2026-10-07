@@ -1,3 +1,4 @@
+import 'package:heizungstrainer/utils/number_format.dart';
 import 'package:flutter/material.dart';
 
 import 'package:heizungstrainer/models/ecl_parameter.dart';
@@ -18,7 +19,7 @@ class ControllerScheduleCard extends StatelessWidget {
   static const _text = Color(0xFFECECF0);
   static const _muted = Color(0xFF9E9EA8);
 
-  static String _t(double? v) => v == null ? '–' : '${v.toStringAsFixed(v == v.roundToDouble() ? 0 : 1)} °C';
+  static String _t(double? v) => v == null ? '–' : '${v.fixed(v == v.roundToDouble() ? 0 : 1)} °C';
 
   @override
   Widget build(BuildContext context) {

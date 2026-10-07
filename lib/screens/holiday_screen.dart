@@ -1,3 +1,4 @@
+import 'package:heizungstrainer/utils/number_format.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -85,9 +86,9 @@ class _HolidayScreenState extends State<HolidayScreen> {
   }
 
   static String _savingsText(AbsenceSavings s) {
-    final parts = <String>['ca. ${s.percent.toStringAsFixed(0)} % weniger Heizenergie während der Absenkung'];
-    if (s.kwh != null) parts.add('≈ ${s.kwh!.toStringAsFixed(0)} kWh');
-    if (s.euro != null) parts.add('≈ ${s.euro!.toStringAsFixed(2)} €');
+    final parts = <String>['ca. ${s.percent.fixed(0)} % weniger Heizenergie während der Absenkung'];
+    if (s.kwh != null) parts.add('≈ ${s.kwh!.fixed(0)} kWh');
+    if (s.euro != null) parts.add('≈ ${s.euro!.fixed(2)} €');
     return parts.join(' · ');
   }
 
@@ -164,8 +165,8 @@ class _HolidayScreenState extends State<HolidayScreen> {
           backgroundColor: _ecoGreen,
           content: Text(
             provider.holidayControlMode == 'room'
-                ? '✓ $title aktiviert! Raum-Sollwert um ${roomSetbackKelvin.toStringAsFixed(1)} °C abgesenkt.'
-                : '✓ $title aktiviert! Vorlauf um ${setbackShift.abs().toStringAsFixed(0)} Stufen abgesenkt.',
+                ? '✓ $title aktiviert! Raum-Sollwert um ${roomSetbackKelvin.fixed(1)} °C abgesenkt.'
+                : '✓ $title aktiviert! Vorlauf um ${setbackShift.abs().fixed(0)} Stufen abgesenkt.',
             style: const TextStyle(fontWeight: FontWeight.w600),
           ),
         ),
@@ -328,8 +329,8 @@ class _HolidayScreenState extends State<HolidayScreen> {
                     // Setback amount
                     if (roomMode) ...[
                       Text(
-                        'Raumtemperatur absenken um ${roomSetbackKelvin.toStringAsFixed(1)} °C'
-                        '${provider.getReading(ECLRegisters.roomTargetTemp) != null ? ' (von ${provider.getReading(ECLRegisters.roomTargetTemp)!.displayValue.toStringAsFixed(1)} auf ${(provider.getReading(ECLRegisters.roomTargetTemp)!.displayValue - roomSetbackKelvin).clamp(HolidayService.minHolidayRoomSetpoint, 30).toStringAsFixed(1)} °C)' : ''}',
+                        'Raumtemperatur absenken um ${roomSetbackKelvin.fixed(1)} °C'
+                        '${provider.getReading(ECLRegisters.roomTargetTemp) != null ? ' (von ${provider.getReading(ECLRegisters.roomTargetTemp)!.displayValue.fixed(1)} auf ${(provider.getReading(ECLRegisters.roomTargetTemp)!.displayValue - roomSetbackKelvin).clamp(HolidayService.minHolidayRoomSetpoint, 30).fixed(1)} °C)' : ''}',
                         style: const TextStyle(fontWeight: FontWeight.w600),
                       ),
                       Slider(
@@ -342,7 +343,7 @@ class _HolidayScreenState extends State<HolidayScreen> {
                       ),
                     ] else ...[
                       Text(
-                        'Spar-Absenkung: Parallelverschiebung ${setbackShift.toStringAsFixed(0)}',
+                        'Spar-Absenkung: Parallelverschiebung ${setbackShift.fixed(0)}',
                         style: const TextStyle(fontWeight: FontWeight.w600),
                       ),
                       Slider(
@@ -355,7 +356,7 @@ class _HolidayScreenState extends State<HolidayScreen> {
                       ),
                     ],
                     Text(
-                      'Vorheizen ${preheatHours.toStringAsFixed(0)} Std. vor Rückkehr'
+                      'Vorheizen ${preheatHours.fixed(0)} Std. vor Rückkehr'
                       '${provider.isFloorHeating ? ' – Fußbodenheizung braucht länger zum Aufheizen' : ''}.',
                       style: const TextStyle(fontSize: 12, color: _textSecondary),
                     ),
@@ -621,10 +622,10 @@ class _HolidayScreenState extends State<HolidayScreen> {
                 child: _buildMiniStat(
                   label: 'Absenkung',
                   value: plan.setbackApplied && plan.controlMode == 'room'
-                      ? 'auf ${plan.targetRoomTemp.toStringAsFixed(1)} °C'
+                      ? 'auf ${plan.targetRoomTemp.fixed(1)} °C'
                       : (plan.controlMode == 'room' || context.read<ECLProvider>().holidayControlMode == 'room')
-                          ? '−${plan.roomSetbackKelvin.toStringAsFixed(1)} °C'
-                          : 'Shift ${plan.setbackShift.toStringAsFixed(0)}',
+                          ? '−${plan.roomSetbackKelvin.fixed(1)} °C'
+                          : 'Shift ${plan.setbackShift.fixed(0)}',
                   color: _ecoGreen,
                 ),
               ),
@@ -633,7 +634,7 @@ class _HolidayScreenState extends State<HolidayScreen> {
                 child: _buildMiniStat(
                   label: 'Ersparnis ca.',
                   value: plan.estimatedSavingsEuro > 0
-                      ? '~${plan.estimatedSavingsEuro.toStringAsFixed(2)} €'
+                      ? '~${plan.estimatedSavingsEuro.fixed(2)} €'
                       : '–',
                   color: _coolBlue,
                 ),
@@ -742,11 +743,11 @@ class _HolidayScreenState extends State<HolidayScreen> {
         Padding(padding: const EdgeInsets.symmetric(vertical: 2), child: Text('${months[m - 1]} $year', style: cell)),
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 2),
-          child: Text(s.kwh == null ? '–' : '−${s.kwh!.toStringAsFixed(0)} kWh', style: cell),
+          child: Text(s.kwh == null ? '–' : '−${s.kwh!.fixed(0)} kWh', style: cell),
         ),
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 2),
-          child: Text(s.euro == null ? '–' : '−${s.euro!.toStringAsFixed(2)} €',
+          child: Text(s.euro == null ? '–' : '−${s.euro!.fixed(2)} €',
               style: const TextStyle(fontSize: 12.5, color: _ecoGreen, fontWeight: FontWeight.w700)),
         ),
       ]));
@@ -768,8 +769,8 @@ class _HolidayScreenState extends State<HolidayScreen> {
           const SizedBox(height: 4),
           Text(
             roomMode
-                ? 'Raum-Sollwert −${preset.roomSetbackKelvin.toStringAsFixed(0)} °C, 7 Tage, Vorheizen eingerechnet.'
-                : 'Parallelverschiebung ${preset.setbackShift.toStringAsFixed(0)}, 7 Tage, Vorheizen eingerechnet.',
+                ? 'Raum-Sollwert −${preset.roomSetbackKelvin.fixed(0)} °C, 7 Tage, Vorheizen eingerechnet.'
+                : 'Parallelverschiebung ${preset.setbackShift.fixed(0)}, 7 Tage, Vorheizen eingerechnet.',
             style: muted,
           ),
           const SizedBox(height: 10),
@@ -785,7 +786,7 @@ class _HolidayScreenState extends State<HolidayScreen> {
             Text(
               hasProfile
                   ? 'Basis: Verbrauch des jeweiligen Monats im vergleichbaren Vorjahres-Abrechnungszeitraum '
-                      '(Brunata), skaliert auf ${provider.annualHeatingKwh!.toStringAsFixed(0)} kWh/Jahr; ~6 % je °C.'
+                      '(Brunata), skaliert auf ${provider.annualHeatingKwh!.fixed(0)} kWh/Jahr; ~6 % je °C.'
                   : 'Kein Monatsprofil aus der Abrechnung – Jahresverbrauch gleichmäßig verteilt. Mit Brunata-'
                       'Synchronisation wird es saisonal (Winter spart deutlich mehr als Sommer).',
               style: muted,
@@ -840,9 +841,9 @@ class _HolidayScreenState extends State<HolidayScreen> {
     final roomMode = provider.holidayControlMode == 'room';
     final current = provider.getReading(ECLRegisters.roomTargetTemp)?.displayValue;
     final change = roomMode && current != null
-        ? 'Raum-Sollwert ${current.toStringAsFixed(1)} → '
-            '${(current - p.roomSetbackKelvin).clamp(HolidayService.minHolidayRoomSetpoint, 30).toStringAsFixed(1)} °C'
-        : 'Parallelverschiebung ${p.setbackShift.toStringAsFixed(0)}';
+        ? 'Raum-Sollwert ${current.fixed(1)} → '
+            '${(current - p.roomSetbackKelvin).clamp(HolidayService.minHolidayRoomSetpoint, 30).fixed(1)} °C'
+        : 'Parallelverschiebung ${p.setbackShift.fixed(0)}';
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -882,12 +883,12 @@ class _HolidayScreenState extends State<HolidayScreen> {
         setbackShift: p.setbackShift,
         roomSetbackKelvin: p.roomSetbackKelvin);
     final setback = roomMode
-        ? '−${p.roomSetbackKelvin.toStringAsFixed(0)} °C Raum'
-        : 'Shift ${p.setbackShift.toStringAsFixed(0)}';
+        ? '−${p.roomSetbackKelvin.fixed(0)} °C Raum'
+        : 'Shift ${p.setbackShift.fixed(0)}';
     final money = s.euro != null
-        ? '≈ ${s.euro!.toStringAsFixed(2)} € (${s.kwh!.toStringAsFixed(0)} kWh)'
-        : 'ca. ${s.percent.toStringAsFixed(0)} % weniger während der Absenkung';
-    return '$setback · Vorheizen ${preheat.toStringAsFixed(0)} Std. · bei Start jetzt $money';
+        ? '≈ ${s.euro!.fixed(2)} € (${s.kwh!.fixed(0)} kWh)'
+        : 'ca. ${s.percent.fixed(0)} % weniger während der Absenkung';
+    return '$setback · Vorheizen ${preheat.fixed(0)} Std. · bei Start jetzt $money';
   }
 
   Widget _buildPresetTile({
@@ -1007,7 +1008,7 @@ class _HolidayScreenState extends State<HolidayScreen> {
                   ],
                 ),
                 Text(
-                  '~${p.estimatedSavingsEuro.toStringAsFixed(2)} €',
+                  '~${p.estimatedSavingsEuro.fixed(2)} €',
                   style: const TextStyle(
                     fontWeight: FontWeight.w700,
                     color: _ecoGreen,

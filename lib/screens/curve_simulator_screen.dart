@@ -1,3 +1,4 @@
+import 'package:heizungstrainer/utils/number_format.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -55,7 +56,7 @@ class _CurveSimulatorScreenState extends State<CurveSimulatorScreen> {
     setState(() {
       _opt = opt;
       final manual = provider.annualHeatingKwhManual;
-      if (manual != null) _annualController.text = manual.toStringAsFixed(0);
+      if (manual != null) _annualController.text = manual.fixed(0);
     });
   }
 
@@ -165,9 +166,9 @@ class _CurveSimulatorScreenState extends State<CurveSimulatorScreen> {
       children: [
         _section(
           title: 'Deine Heizkurve',
-          subtitle: 'Gelesen aus dem Regler: Neigung ${curve.slope.toStringAsFixed(1)}, '
-              'Komfort-Raumsollwert ${room.toStringAsFixed(1)} °C'
-              '${curve.minFlow != null ? ', Vorlauf ${curve.minFlow!.toStringAsFixed(0)}–${curve.maxFlow?.toStringAsFixed(0) ?? '?'} °C' : ''}.',
+          subtitle: 'Gelesen aus dem Regler: Neigung ${curve.slope.fixed(1)}, '
+              'Komfort-Raumsollwert ${room.fixed(1)} °C'
+              '${curve.minFlow != null ? ', Vorlauf ${curve.minFlow!.fixed(0)}–${curve.maxFlow?.fixed(0) ?? '?'} °C' : ''}.',
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -176,8 +177,8 @@ class _CurveSimulatorScreenState extends State<CurveSimulatorScreen> {
               Wrap(spacing: 16, children: [
                 _legend(ControllerCurveChart.currentColor, 'Heizkurve im Regler'),
                 if ((room - 20).abs() >= 0.25)
-                  _legend(ControllerCurveChart.currentColor.withValues(alpha: 0.7), 'Wirksam bei ${room.toStringAsFixed(1)} °C'),
-                if ((sim - room).abs() >= 0.25) _legend(ControllerCurveChart.simulatedColor, 'Simuliert (${sim.toStringAsFixed(1)} °C)'),
+                  _legend(ControllerCurveChart.currentColor.withValues(alpha: 0.7), 'Wirksam bei ${room.fixed(1)} °C'),
+                if ((sim - room).abs() >= 0.25) _legend(ControllerCurveChart.simulatedColor, 'Simuliert (${sim.fixed(1)} °C)'),
               ]),
             ],
           ),
@@ -194,14 +195,14 @@ class _CurveSimulatorScreenState extends State<CurveSimulatorScreen> {
                 min: 16,
                 max: 26,
                 divisions: 20,
-                label: '${sim.toStringAsFixed(1)} °C',
+                label: '${sim.fixed(1)} °C',
                 onChanged: (v) => setState(() => _simSetpoint = v),
               ),
               Text(
                 outdoorTemp == null
-                    ? 'Vorlauf bei 0 °C außen: ${flowNow.toStringAsFixed(1)} → ${flowSim.toStringAsFixed(1)} °C'
-                    : 'Vorlauf jetzt (${outdoorTemp.toStringAsFixed(1)} °C außen): '
-                        '${flowNow.toStringAsFixed(1)} → ${flowSim.toStringAsFixed(1)} °C',
+                    ? 'Vorlauf bei 0 °C außen: ${flowNow.fixed(1)} → ${flowSim.fixed(1)} °C'
+                    : 'Vorlauf jetzt (${outdoorTemp.fixed(1)} °C außen): '
+                        '${flowNow.fixed(1)} → ${flowSim.fixed(1)} °C',
                 style: const TextStyle(fontSize: 13),
               ),
               const SizedBox(height: 12),
@@ -213,7 +214,7 @@ class _CurveSimulatorScreenState extends State<CurveSimulatorScreen> {
                 decoration: InputDecoration(
                   labelText: 'Heizenergie pro Jahr (kWh)',
                   helperText: provider.annualHeatingKwhManual == null && _annualKwh != null
-                      ? '${provider.annualHeatingKwhSource}: ${_annualKwh!.toStringAsFixed(0)} kWh – oder eigenen Wert eintragen'
+                      ? '${provider.annualHeatingKwhSource}: ${_annualKwh!.fixed(0)} kWh – oder eigenen Wert eintragen'
                       : 'Steht auf deiner Heizkostenabrechnung',
                   border: const OutlineInputBorder(),
                 ),
@@ -231,7 +232,7 @@ class _CurveSimulatorScreenState extends State<CurveSimulatorScreen> {
                             setState(() => _simSetpoint = null);
                           }
                         },
-                  child: Text('${sim.toStringAsFixed(1)} °C übernehmen'),
+                  child: Text('${sim.fixed(1)} °C übernehmen'),
                 ),
               ),
             ],
@@ -251,10 +252,10 @@ class _CurveSimulatorScreenState extends State<CurveSimulatorScreen> {
     }
     final saving = s.percent > 0;
     final color = saving ? _green : const Color(0xFFFF7043);
-    final pct = s.percent.abs().toStringAsFixed(0);
+    final pct = s.percent.abs().fixed(0);
     final parts = <String>[saving ? 'ca. $pct % weniger Heizenergie' : 'ca. $pct % mehr Heizenergie'];
-    if (s.kwhPerYear != null) parts.add('≈ ${s.kwhPerYear!.abs().toStringAsFixed(0)} kWh/Jahr');
-    if (s.euroPerYear != null) parts.add('≈ ${s.euroPerYear!.abs().toStringAsFixed(0)} €/Jahr');
+    if (s.kwhPerYear != null) parts.add('≈ ${s.kwhPerYear!.abs().fixed(0)} kWh/Jahr');
+    if (s.euroPerYear != null) parts.add('≈ ${s.euroPerYear!.abs().fixed(0)} €/Jahr');
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -295,24 +296,24 @@ class _CurveSimulatorScreenState extends State<CurveSimulatorScreen> {
             'zurück – das ist dann deine passende Kurve.';
         actions.add(FilledButton(
           onPressed: (connected && first != null) ? () => _startAssistant(room) : null,
-          child: Text(first == null ? 'Untergrenze erreicht' : 'Starten: ${first.toStringAsFixed(1)} °C'),
+          child: Text(first == null ? 'Untergrenze erreicht' : 'Starten: ${first.fixed(1)} °C'),
         ));
       case OptimizerPhase.waiting:
         final left = wait - DateTime.now().difference(_opt.stepStartedAt!);
-        text = 'Test läuft: ${_opt.currentSetpoint!.toStringAsFixed(1)} °C. Beobachte den kältesten Raum. '
+        text = 'Test läuft: ${_opt.currentSetpoint!.fixed(1)} °C. Beobachte den kältesten Raum. '
             'Rückmeldung in ca. ${left.inHours} Std. – wird es vorher zu kalt, melde es gleich.';
         actions.add(OutlinedButton(onPressed: connected ? _feedbackTooCold : null, child: const Text('Zu kalt')));
       case OptimizerPhase.readyForFeedback:
         final next = CurveOptimizerService.nextStep(_opt.currentSetpoint!);
-        text = 'Wie war es die letzten ${floor ? 'vier' : 'zwei'} Tage bei ${_opt.currentSetpoint!.toStringAsFixed(1)} °C?';
+        text = 'Wie war es die letzten ${floor ? 'vier' : 'zwei'} Tage bei ${_opt.currentSetpoint!.fixed(1)} °C?';
         actions.addAll([
           FilledButton(
             onPressed: connected ? _feedbackComfortable : null,
-            child: Text(next == null ? 'Angenehm – fertig' : 'Angenehm → ${next.toStringAsFixed(1)} °C'),
+            child: Text(next == null ? 'Angenehm – fertig' : 'Angenehm → ${next.fixed(1)} °C'),
           ),
           OutlinedButton(
             onPressed: connected ? _feedbackTooCold : null,
-            child: Text('Zu kalt → ${_opt.previousSetpoint!.toStringAsFixed(1)} °C'),
+            child: Text('Zu kalt → ${_opt.previousSetpoint!.fixed(1)} °C'),
           ),
         ]);
       case OptimizerPhase.finished:
@@ -323,8 +324,8 @@ class _CurveSimulatorScreenState extends State<CurveSimulatorScreen> {
           annualHeatingKwh: _annualKwh,
           pricePerKwh: _price,
         );
-        text = 'Ergebnis: ${result.toStringAsFixed(1)} °C ist für dein Gebäude passend'
-            '${_opt.startSetpoint != null ? ' (vorher ${_opt.startSetpoint!.toStringAsFixed(1)} °C, grob ca. ${s.percent.toStringAsFixed(0)} % weniger Heizenergie)' : ''}. '
+        text = 'Ergebnis: ${result.fixed(1)} °C ist für dein Gebäude passend'
+            '${_opt.startSetpoint != null ? ' (vorher ${_opt.startSetpoint!.fixed(1)} °C, grob ca. ${s.percent.fixed(0)} % weniger Heizenergie)' : ''}. '
             'Bei deutlich kälterem Wetter lohnt eine erneute Prüfung.';
         actions.add(OutlinedButton(onPressed: _resetAssistant, child: const Text('Neu starten')));
     }

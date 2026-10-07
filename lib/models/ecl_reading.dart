@@ -1,6 +1,7 @@
 /// Immutable snapshot of a single parameter reading from the ECL 310 controller.
 library;
 
+import 'package:heizungstrainer/utils/number_format.dart';
 import 'package:heizungstrainer/models/ecl_parameter.dart';
 
 /// Represents a single point-in-time reading of an [ECLParameter].
@@ -36,7 +37,7 @@ class ECLReading {
   /// Example: '21.5 °C' or '-3' (for dimensionless parameters).
   String get formattedValue {
     if (isSensorDisconnected) return 'Fühler getrennt';
-    final valueStr = displayValue.toStringAsFixed(parameter.displayPrecision);
+    final valueStr = displayValue.fixed(parameter.displayPrecision);
     return parameter.unit.isNotEmpty ? '$valueStr ${parameter.unit}' : valueStr;
   }
 

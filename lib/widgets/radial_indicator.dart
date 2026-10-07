@@ -1,3 +1,4 @@
+import 'package:heizungstrainer/utils/number_format.dart';
 import 'dart:math';
 import 'package:flutter/material.dart';
 
@@ -38,7 +39,7 @@ class RadialTemperatureIndicator extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                isDisconnected ? '—' : currentTemp.toStringAsFixed(1),
+                isDisconnected ? '—' : currentTemp.fixed(1),
                 style: TextStyle(
                   color: isDisconnected ? const Color(0xFF9E9EA8) : Colors.white,
                   fontSize: size * 0.22,

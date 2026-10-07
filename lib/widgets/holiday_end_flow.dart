@@ -1,3 +1,4 @@
+import 'package:heizungstrainer/utils/number_format.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -25,7 +26,7 @@ Future<bool> endHolidayPlanWithConfirmation(
       title: Text(plan.setbackApplied ? 'Abwesenheitsmodus beenden?' : 'Geplante Abwesenheit verwerfen?'),
       content: Text(plan.setbackApplied
           ? (plan.controlMode == 'room'
-              ? 'Der Raum-Sollwert geht sofort zurück auf ${plan.normalRoomTemp.toStringAsFixed(1)} °C.'
+              ? 'Der Raum-Sollwert geht sofort zurück auf ${plan.normalRoomTemp.fixed(1)} °C.'
               : 'Die Heizung schaltet sofort wieder auf die normalen Komfort-Einstellungen um.')
           : 'Die Heizung wurde noch nicht abgesenkt; der Plan wird verworfen.'),
       actions: [
@@ -47,8 +48,8 @@ Future<bool> endHolidayPlanWithConfirmation(
   } catch (e) {
     if (!context.mounted) return false;
     final manual = plan.controlMode == 'room'
-        ? 'den Raum-Sollwert bitte selbst auf ${plan.normalRoomTemp.toStringAsFixed(1)} °C'
-        : 'die Parallelverschiebung bitte selbst auf ${plan.normalShift.toStringAsFixed(0)}';
+        ? 'den Raum-Sollwert bitte selbst auf ${plan.normalRoomTemp.fixed(1)} °C'
+        : 'die Parallelverschiebung bitte selbst auf ${plan.normalShift.fixed(0)}';
     final closeAnyway = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -74,7 +75,7 @@ Future<bool> endHolidayPlanWithConfirmation(
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: Text(plan.setbackApplied
           ? (plan.controlMode == 'room'
-              ? '✓ Normalbetrieb: Raum-Sollwert wieder ${plan.normalRoomTemp.toStringAsFixed(1)} °C.'
+              ? '✓ Normalbetrieb: Raum-Sollwert wieder ${plan.normalRoomTemp.fixed(1)} °C.'
               : '✓ Normalbetrieb wiederhergestellt.')
           : '✓ Geplante Abwesenheit verworfen.'),
     ));
@@ -142,8 +143,8 @@ class _ActiveHolidayCardState extends State<ActiveHolidayCard> {
     final what = armed
         ? 'Geplant ab ${_when(plan.startDateTime)}'
         : (plan.controlMode == 'room'
-            ? 'Raum-Sollwert auf ${plan.targetRoomTemp.toStringAsFixed(1)} °C (normal ${plan.normalRoomTemp.toStringAsFixed(1)} °C)'
-            : 'Parallelverschiebung ${plan.setbackShift.toStringAsFixed(0)} (normal ${plan.normalShift.toStringAsFixed(0)})');
+            ? 'Raum-Sollwert auf ${plan.targetRoomTemp.fixed(1)} °C (normal ${plan.normalRoomTemp.fixed(1)} °C)'
+            : 'Parallelverschiebung ${plan.setbackShift.fixed(0)} (normal ${plan.normalShift.fixed(0)})');
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Container(

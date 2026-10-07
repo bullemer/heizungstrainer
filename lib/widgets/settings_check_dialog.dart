@@ -1,3 +1,4 @@
+import 'package:heizungstrainer/utils/number_format.dart';
 import 'package:flutter/material.dart';
 
 import 'package:heizungstrainer/models/ecl_parameter.dart';
@@ -36,7 +37,7 @@ class _SettingsCheckDialogState extends State<SettingsCheckDialog> {
   static String _fmt(double? v, String unit, [String? id]) {
     if (v == null) return '–';
     if (id == ECLRegisters.circuitMode.id) return eclModeLabel(v);
-    final s = v == v.roundToDouble() ? v.toStringAsFixed(0) : v.toStringAsFixed(1);
+    final s = v == v.roundToDouble() ? v.fixed(0) : v.fixed(1);
     return unit.isEmpty ? s : '$s $unit';
   }
 

@@ -1,3 +1,4 @@
+import 'package:heizungstrainer/utils/number_format.dart';
 import 'dart:async';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:heizungstrainer/billing/billing_provider.dart';
@@ -87,7 +88,7 @@ abstract class BaseBillingProvider implements BillingProvider {
   Future<void> setPricePerKwh(double price) async {
     await _secureStorage.write(
       key: BillingStorageKeys.pricePerKwh(id),
-      value: price.toStringAsFixed(4),
+      value: price.fixed(4),
     );
   }
 

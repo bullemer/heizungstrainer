@@ -5,6 +5,7 @@
 /// mathematical curve with the current parallel shift applied.
 library;
 
+import 'package:heizungstrainer/utils/number_format.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 
@@ -191,7 +192,7 @@ class HeatingCurveChart extends StatelessWidget {
               getTooltipColor: (_) => const Color(0xFF35353F),
               getTooltipItems: (spots) => spots.map((spot) {
                 return LineTooltipItem(
-                  '${spot.x.toStringAsFixed(0)}°C → ${spot.y.toStringAsFixed(1)}°C',
+                  '${spot.x.fixed(0)}°C → ${spot.y.fixed(1)}°C',
                   const TextStyle(
                     color: Color(0xFFECECF0),
                     fontSize: 12,
@@ -230,7 +231,7 @@ class HeatingCurveLegend extends StatelessWidget {
       children: [
         _LegendItem(
           color: const Color(0xFFFFA726),
-          label: 'Deine Kurve (${parallelShift > 0 ? '+' : ''}${parallelShift.toStringAsFixed(0)})',
+          label: 'Deine Kurve (${parallelShift > 0 ? '+' : ''}${parallelShift.fixed(0)})',
           dashed: false,
         ),
         const _LegendItem(
@@ -241,8 +242,8 @@ class HeatingCurveLegend extends StatelessWidget {
         _LegendItem(
           color: const Color(0xFF7C4DFF),
           label: 'Betriebspunkt '
-              '(${currentOutdoorTemp.toStringAsFixed(0)}° / '
-              '${currentFlowTemp.toStringAsFixed(0)}°)',
+              '(${currentOutdoorTemp.fixed(0)}° / '
+              '${currentFlowTemp.fixed(0)}°)',
           dashed: true,
         ),
       ],

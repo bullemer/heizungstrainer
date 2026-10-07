@@ -3,6 +3,7 @@
 /// Includes reading history tracking for sparkline trend charts.
 library;
 
+import 'package:heizungstrainer/utils/number_format.dart';
 import 'dart:async';
 import 'dart:collection';
 import 'dart:convert';
@@ -773,6 +774,7 @@ class ECLProvider extends ChangeNotifier {
     final mapping = ECLRegisters.sensorMappingFor(_controllerApplication);
     final changed = !mapEquals(_modbusService.sensorAddressOverrides, mapping ?? const {});
     _modbusService.sensorAddressOverrides = mapping ?? const {};
+    _modbusService.extraSensors = ECLRegisters.extraSensorsFor(_controllerApplication);
     if (changed) {
       // history from the previous mapping would mix different sensors
       _history.remove(ECLRegisters.flowTemp.id);
@@ -857,7 +859,7 @@ class ECLProvider extends ChangeNotifier {
     }
   }
 
-  static String _fmtSetting(double v) => v == v.roundToDouble() ? v.toStringAsFixed(0) : v.toStringAsFixed(1);
+  static String _fmtSetting(double v) => v == v.roundToDouble() ? v.fixed(0) : v.fixed(1);
 
   static String _fmtTime(DateTime t) =>
       '${t.day.toString().padLeft(2, '0')}.${t.month.toString().padLeft(2, '0')}. '
@@ -1587,7 +1589,7 @@ class ECLProvider extends ChangeNotifier {
         await _logService.logRead(
           controllerId: _selectedControllerId,
           action: 'READ_TELEMETRY_SUCCESS',
-          message: 'Telemetrie aktualisiert: VL ${telemetry.flowTemp?.toStringAsFixed(1) ?? "-"}°C, RL ${telemetry.returnTemp?.toStringAsFixed(1) ?? "-"}°C, AT ${telemetry.outdoorTemp?.toStringAsFixed(1) ?? "-"}°C',
+          message: 'Telemetrie aktualisiert: VL ${telemetry.flowTemp?.fixed(1) ?? "-"}°C, RL ${telemetry.returnTemp?.fixed(1) ?? "-"}°C, AT ${telemetry.outdoorTemp?.fixed(1) ?? "-"}°C',
           details: {
             'flowTemp': telemetry.flowTemp,
             'returnTemp': telemetry.returnTemp,
@@ -2159,7 +2161,7 @@ class ECLProvider extends ChangeNotifier {
         _logService.logBilling(
           billingId: _selectedBillingId,
           action: 'SYNC_SUCCESS',
-          message: 'Abrechnungsdaten erfolgreich synchronisiert: ${result.data!.consumedKwh.toStringAsFixed(0)} kWh erfasst.',
+          message: 'Abrechnungsdaten erfolgreich synchronisiert: ${result.data!.consumedKwh.fixed(0)} kWh erfasst.',
           success: true,
           details: {
             'consumedKwh': result.data!.consumedKwh,

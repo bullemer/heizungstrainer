@@ -1,3 +1,4 @@
+import 'package:heizungstrainer/utils/number_format.dart';
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -120,7 +121,7 @@ class NibeModbusController implements HeatingController {
 
   double? _convertRaw(int? raw) {
     if (raw == null || _isDisconnectedRaw(raw)) return null;
-    return double.parse((raw * _config.multiplier).toStringAsFixed(2));
+    return double.parse((raw * _config.multiplier).fixed(2));
   }
 
   ModbusElementType get _elementType => _config.isHoldingRegister

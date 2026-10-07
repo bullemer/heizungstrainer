@@ -1,3 +1,4 @@
+import 'package:heizungstrainer/utils/number_format.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -256,7 +257,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   String _formatPrice(double price) {
-    var s = price.toStringAsFixed(4);
+    var s = price.fixed(4);
     if (s.contains('.')) {
       s = s.replaceAll(RegExp(r'0+$'), '').replaceAll(RegExp(r'\.$'), '');
     }
@@ -716,9 +717,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
         SnackBar(
           content: Text(
             '${provider.currentBillingDescriptor.name} Synchronisation erfolgreich!\n'
-            'Verbrauch: ${provider.brunataData!.consumedKwh.toStringAsFixed(0)} kWh | '
-            'Kosten: ${provider.brunataData!.currentBillingPeriodCost.toStringAsFixed(2)} € | '
-            'Gebäudevergleich: ${provider.brunataData!.communityComparisonPercentage > 0 ? "+" : ""}${provider.brunataData!.communityComparisonPercentage.toStringAsFixed(1)}%',
+            'Verbrauch: ${provider.brunataData!.consumedKwh.fixed(0)} kWh | '
+            'Kosten: ${provider.brunataData!.currentBillingPeriodCost.fixed(2)} € | '
+            'Gebäudevergleich: ${provider.brunataData!.communityComparisonPercentage > 0 ? "+" : ""}${provider.brunataData!.communityComparisonPercentage.fixed(1)}%',
           ),
           backgroundColor: const Color(0xFF1B3D2F),
           behavior: SnackBarBehavior.floating,

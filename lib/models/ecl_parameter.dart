@@ -221,6 +221,19 @@ abstract final class ECLRegisters {
     return null;
   }
 
+  /// A247: hot-water charging flow (S4) and tank bottom (S8).
+  static const dhwChargeFlow = ECLParameter(
+    id: 'dhw_charge_flow', name: 'Ladevorlauf Warmwasser (S4)', unit: '°C', modbusAddress: 10203, multiplier: 0.01,
+  );
+  static const dhwTankBottom = ECLParameter(
+    id: 'dhw_tank_bottom', name: 'Speicher unten (S8)', unit: '°C', modbusAddress: 10207, multiplier: 0.01,
+  );
+
+  /// Additional sensors an application provides (read only for that
+  /// application – on others the same inputs may mean something else).
+  static List<ECLParameter> extraSensorsFor(String? application) =>
+      (application?.startsWith('A247') ?? false) ? const [dhwChargeFlow, dhwTankBottom] : const [];
+
   /// Human-readable sensor names for a mapping (for the log).
   static String describeMapping(Map<String, int> mapping) => mapping.entries
       .map((e) => '${e.key == flowTemp.id ? 'Vorlauf' : e.key == returnTemp.id ? 'Rücklauf' : e.key} = S${e.value - 10199}')

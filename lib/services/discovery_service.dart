@@ -4,6 +4,7 @@
 /// then verifies each candidate by performing a test Modbus read.
 library;
 
+import 'package:heizungstrainer/utils/number_format.dart';
 import 'dart:async';
 import 'dart:io';
 
@@ -156,7 +157,7 @@ class DiscoveryService {
 
         // Convert to temperature: raw value * 0.01 (Danfoss scale factor)
         final temp = rawValue.toDouble() * 0.01;
-        debugPrint('[Discovery] Computed temperature: ${temp.toStringAsFixed(1)}°C');
+        debugPrint('[Discovery] Computed temperature: ${temp.fixed(1)}°C');
 
         // Sanity check: outdoor temp should be within realistic bounds
         final plausible = temp >= -50.0 && temp <= 60.0;

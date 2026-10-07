@@ -1,3 +1,4 @@
+import 'package:heizungstrainer/utils/number_format.dart';
 import 'package:flutter/material.dart';
 import 'package:heizungstrainer/widgets/brunata_chart_card.dart';
 
@@ -98,10 +99,10 @@ class BrunataDetailScreen extends StatelessWidget {
 
 String _fmtKwh(double v) {
   if (v >= 100) return '${v.round()}';
-  return v.toStringAsFixed(v == v.roundToDouble() ? 0 : 1);
+  return v.fixed(v == v.roundToDouble() ? 0 : 1);
 }
 
-String _fmtEur(double v) => '${v.toStringAsFixed(2)} €';
+String _fmtEur(double v) => '${v.fixed(2)} €';
 
 // ── tariff banner ─────────────────────────────────────────────────────────
 class _TariffNote extends StatelessWidget {
@@ -126,7 +127,7 @@ class _TariffNote extends StatelessWidget {
           Expanded(
             child: Text(
               'Kosten sind Schätzungen auf Basis von '
-              '${price.toStringAsFixed(2).replaceAll('.', ',')} €/kWh. '
+              '${price.fixed(2).replaceAll('.', ',')} €/kWh. '
               'Das Portal liefert nur kWh.',
               style: const TextStyle(
                 fontSize: 12,

@@ -4,6 +4,7 @@
 /// and the smart intelligence engine into a unified card.
 library;
 
+import 'package:heizungstrainer/utils/number_format.dart';
 import 'package:flutter/material.dart';
 
 import 'package:heizungstrainer/models/brunata_meter_data.dart';
@@ -296,8 +297,8 @@ class _BrunataCostCard extends StatelessWidget {
               ),
               child: Text(
                 meterData.isAboveCommunityAverage
-                    ? '⚠️ ${meterData.communityComparisonPercentage.toStringAsFixed(1)} % über Schnitt (je m²)'
-                    : '🌱 ${meterData.communityComparisonPercentage.abs().toStringAsFixed(1)} % unter Schnitt (je m²)',
+                    ? '⚠️ ${meterData.communityComparisonPercentage.fixed(1)} % über Schnitt (je m²)'
+                    : '🌱 ${meterData.communityComparisonPercentage.abs().fixed(1)} % unter Schnitt (je m²)',
                 style: TextStyle(
                   color: meterData.isAboveCommunityAverage
                       ? const Color(0xFFFFA726)
@@ -339,7 +340,7 @@ class _BrunataCostCard extends StatelessWidget {
                     children: [
                       Text(
                         meterData != null
-                            ? '${meterData.currentBillingPeriodCost.toStringAsFixed(2)} €'
+                            ? '${meterData.currentBillingPeriodCost.fixed(2)} €'
                             : '– €',
                         style: const TextStyle(
                           fontSize: 28, fontWeight: FontWeight.bold,
@@ -365,7 +366,7 @@ class _BrunataCostCard extends StatelessWidget {
                     children: [
                       Text(
                         meterData != null
-                            ? '${meterData.consumedKwh.toStringAsFixed(0)} kWh'
+                            ? '${meterData.consumedKwh.fixed(0)} kWh'
                             : '– kWh',
                         style: const TextStyle(
                           fontSize: 22, fontWeight: FontWeight.bold,
@@ -388,7 +389,7 @@ class _BrunataCostCard extends StatelessWidget {
             const SizedBox(height: 10),
             Text(
               meterData != null
-                  ? '${(meterData.costPerKwh * 100).toStringAsFixed(1)} ct/kWh'
+                  ? '${(meterData.costPerKwh * 100).fixed(1)} ct/kWh'
                   : 'Tarif wird nach Synchronisation berechnet',
               style: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.35)),
             ),
@@ -536,7 +537,7 @@ class _HeatingCurveSection extends StatelessWidget {
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: Text(
-                  'Shift: ${parallelShift > 0 ? '+' : ''}${parallelShift.toStringAsFixed(0)}',
+                  'Shift: ${parallelShift > 0 ? '+' : ''}${parallelShift.fixed(0)}',
                   style: const TextStyle(
                     color: Color(0xFFFFA726),
                     fontSize: 11,
@@ -588,8 +589,8 @@ class _HeatingCurveSection extends StatelessWidget {
                 Expanded(
                   child: Text(
                     'Dein aktueller Betriebspunkt: '
-                    '${currentOutdoorTemp.toStringAsFixed(1)}°C Außen → '
-                    '${currentFlowTemp.toStringAsFixed(1)}°C Vorlauf',
+                    '${currentOutdoorTemp.fixed(1)}°C Außen → '
+                    '${currentFlowTemp.fixed(1)}°C Vorlauf',
                     style: TextStyle(
                       fontSize: 11.5,
                       color: Colors.white.withValues(alpha: 0.7),
@@ -658,13 +659,13 @@ class HeatingSimulationCard extends StatelessWidget {
     if (ref == null) return null;
     final own = curve.flowAt(-8, 20); // guide values are for 20 °C room
     final lo = ref.lowAtMinus8, hi = ref.highAtMinus8;
-    final range = '${lo.toStringAsFixed(0)}–${hi.toStringAsFixed(0)} °C';
+    final range = '${lo.fixed(0)}–${hi.fixed(0)} °C';
     final where = own > hi + 0.5
         ? 'über dem Richtwert ($range) – hier steckt Sparpotenzial, wenn alle Räume warm genug bleiben.'
         : own < lo - 0.5
             ? 'unter dem Richtwert ($range) – gut, solange alle Räume warm genug werden.'
             : 'im Richtwert-Bereich ($range).';
-    return 'Bei −8 °C außen liefert deine Kurve ${own.toStringAsFixed(0)} °C (bei 20 °C Raum) – $where';
+    return 'Bei −8 °C außen liefert deine Kurve ${own.fixed(0)} °C (bei 20 °C Raum) – $where';
   }
 
   Widget _savingsTable() {
@@ -688,21 +689,21 @@ class HeatingSimulationCard extends StatelessWidget {
       rows.add(TableRow(children: [
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 3),
-          child: Text('${target.toStringAsFixed(1)} °C (−${delta.toStringAsFixed(1)})', style: style),
+          child: Text('${target.fixed(1)} °C (−${delta.fixed(1)})', style: style),
         ),
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 3),
           child: Text(
             s.kwhPerYear == null
-                ? '−${s.percent.toStringAsFixed(0)} %'
-                : '−${s.kwhPerYear!.toStringAsFixed(0)} kWh (${s.percent.toStringAsFixed(0)} %)',
+                ? '−${s.percent.fixed(0)} %'
+                : '−${s.kwhPerYear!.fixed(0)} kWh (${s.percent.fixed(0)} %)',
             style: style,
           ),
         ),
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 3),
           child: Text(
-            s.euroPerYear == null ? '–' : '−${s.euroPerYear!.toStringAsFixed(0)} €',
+            s.euroPerYear == null ? '–' : '−${s.euroPerYear!.fixed(0)} €',
             style: const TextStyle(fontSize: 12, color: Color(0xFF66BB6A), fontWeight: FontWeight.w700),
           ),
         ),
@@ -745,7 +746,7 @@ class HeatingSimulationCard extends StatelessWidget {
               child: Text('Heizkurve & Sparpotenzial',
                   style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5, color: Color(0xFFECECF0))),
             ),
-            Text('Raum-Soll ${roomSetpoint.toStringAsFixed(1)} °C',
+            Text('Raum-Soll ${roomSetpoint.fixed(1)} °C',
                 style: const TextStyle(color: Color(0xFFFFA726), fontSize: 11, fontWeight: FontWeight.w600)),
           ]),
           const SizedBox(height: 12),
@@ -762,7 +763,7 @@ class HeatingSimulationCard extends StatelessWidget {
             _legendItem(ControllerCurveChart.currentColor, 'Heizkurve im Regler'),
             if ((roomSetpoint - 20).abs() >= 0.25)
               _legendItem(ControllerCurveChart.currentColor,
-                  'Wirksam bei Raum-Soll ${roomSetpoint.toStringAsFixed(1)} °C', dashed: true),
+                  'Wirksam bei Raum-Soll ${roomSetpoint.fixed(1)} °C', dashed: true),
             if (previewing) _legendItem(ControllerCurveChart.simulatedColor, 'Vorschau', dashed: true),
             _legendItem(
               ControllerCurveChart.factoryColor,
@@ -794,11 +795,11 @@ class HeatingSimulationCard extends StatelessWidget {
           const SizedBox(height: 10),
           Text(
             previewing
-                ? 'Vorschau ${preview.toStringAsFixed(1)} °C (gestrichelt): Vorlauf bei '
-                    '${outdoorTemp.toStringAsFixed(1)} °C außen ${flowNow.toStringAsFixed(1)} → '
-                    '${flowPreview.toStringAsFixed(1)} °C. Noch nicht übernommen.'
-                : 'Vorlauf jetzt bei ${outdoorTemp.toStringAsFixed(1)} °C außen: '
-                    '${flowNow.toStringAsFixed(1)} °C. Bewege oben „Haus Basis-Wärme“, um eine '
+                ? 'Vorschau ${preview.fixed(1)} °C (gestrichelt): Vorlauf bei '
+                    '${outdoorTemp.fixed(1)} °C außen ${flowNow.fixed(1)} → '
+                    '${flowPreview.fixed(1)} °C. Noch nicht übernommen.'
+                : 'Vorlauf jetzt bei ${outdoorTemp.fixed(1)} °C außen: '
+                    '${flowNow.fixed(1)} °C. Bewege oben „Haus Basis-Wärme“, um eine '
                     'andere Einstellung zu simulieren.',
             style: muted,
           ),
@@ -819,8 +820,8 @@ class HeatingSimulationCard extends StatelessWidget {
                 child: Text(
                   annualHeatingKwh == null
                       ? 'Für kWh und € fehlt dein Jahresverbrauch: Abrechnung synchronisieren oder eintragen.'
-                      : 'Basis: ${annualHeatingKwh!.toStringAsFixed(0)} kWh – ${annualHeatingKwhSource ?? 'Jahresverbrauch'}'
-                          '${pricePerKwh != null ? ', ${(pricePerKwh! * 100).toStringAsFixed(1)} ct/kWh' : ''}. '
+                      : 'Basis: ${annualHeatingKwh!.fixed(0)} kWh – ${annualHeatingKwhSource ?? 'Jahresverbrauch'}'
+                          '${pricePerKwh != null ? ', ${(pricePerKwh! * 100).fixed(1)} ct/kWh' : ''}. '
                           'Faustregel ~6 % je °C, Schätzung.',
                   style: muted,
                 ),
@@ -861,9 +862,9 @@ class ControllerSavingsLine extends StatelessWidget {
     final saving = savings.percent > 0;
     final color = saving ? const Color(0xFF66BB6A) : const Color(0xFFFF7043);
     final verb = saving ? 'weniger' : 'mehr';
-    final parts = <String>['ca. ${savings.percent.abs().toStringAsFixed(0)} % $verb Heizenergie'];
-    if (savings.kwhPerYear != null) parts.add('≈ ${savings.kwhPerYear!.abs().toStringAsFixed(0)} kWh/Jahr');
-    if (savings.euroPerYear != null) parts.add('≈ ${savings.euroPerYear!.abs().toStringAsFixed(0)} €/Jahr');
+    final parts = <String>['ca. ${savings.percent.abs().fixed(0)} % $verb Heizenergie'];
+    if (savings.kwhPerYear != null) parts.add('≈ ${savings.kwhPerYear!.abs().fixed(0)} kWh/Jahr');
+    if (savings.euroPerYear != null) parts.add('≈ ${savings.euroPerYear!.abs().fixed(0)} €/Jahr');
     final basis = savings.kwhPerYear == null
         ? 'Für kWh und € den Jahresverbrauch im Sparrechner eintragen oder die Abrechnung synchronisieren.'
         : 'Basis: ${source ?? 'Jahresverbrauch'} und dein kWh-Preis; Faustregel ~6 % je °C.';
@@ -933,7 +934,7 @@ class _SavingsAdviceCard extends StatelessWidget {
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
-                  'Ca. ${savings.annualSavingsEuro.toStringAsFixed(0)} €/Jahr',
+                  'Ca. ${savings.annualSavingsEuro.fixed(0)} €/Jahr',
                   style: const TextStyle(
                     color: Color(0xFF66BB6A),
                     fontWeight: FontWeight.bold,
@@ -983,7 +984,7 @@ class _SavingsAdviceCard extends StatelessWidget {
           Text(
             savings.basedOnActualCost
                 ? 'Basierend auf deinen tatsächlichen Heizkosten '
-                    '(${savings.annualBaseCost.toStringAsFixed(0)} €/Jahr aus Brunata).'
+                    '(${savings.annualBaseCost.fixed(0)} €/Jahr aus Brunata).'
                 : 'Schätzung — synchronisiere Brunata für eine Berechnung '
                     'auf Basis deiner tatsächlichen Kosten.',
             style: TextStyle(

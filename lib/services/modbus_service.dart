@@ -117,6 +117,9 @@ class ModbusService {
   /// provider once the controller's application is known.
   Map<String, int> sensorAddressOverrides = const {};
 
+  /// Application-specific extra sensors read on every poll (e.g. A247 S4/S8).
+  List<ECLParameter> extraSensors = const [];
+
   /// The sensor parameters at the registers this installation uses.
   List<ECLParameter> get _sensorParameters => [
         for (final p in ECLRegisters.sensorParameters)
@@ -310,6 +313,15 @@ class ModbusService {
           lastError = err;
           debugPrint('[Modbus] Failed reading sensor ${param.id}: $err');
         }
+      }
+    }
+
+    // 1b. Application-specific extra sensors (optional)
+    for (final param in extraSensors) {
+      try {
+        results[param.id] = await readParameter(param);
+      } catch (err) {
+        debugPrint('[Modbus] Extra sensor ${param.id} not available: $err');
       }
     }
 

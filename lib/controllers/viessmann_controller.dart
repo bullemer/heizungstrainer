@@ -1,3 +1,4 @@
+import 'package:heizungstrainer/utils/number_format.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -468,7 +469,7 @@ class ViessmannController implements HeatingController {
     }
 
     if (_config.connectionType == ViessmannConnectionType.optolinkTcp) {
-      final res = await _sendOptolinkCommand('setTempRaumSoll ${temperature.toStringAsFixed(1)}');
+      final res = await _sendOptolinkCommand('setTempRaumSoll ${temperature.fixed(1)}');
       if (res == null || res.toLowerCase().contains('err') || res.toLowerCase().contains('fail')) {
         throw ModbusCommunicationException(
           message: 'Viessmann Optolink Raum-Sollwert konnte nicht gesetzt werden: $res',
