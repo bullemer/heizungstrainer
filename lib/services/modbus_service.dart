@@ -13,6 +13,7 @@ import 'package:modbus_client_tcp/modbus_client_tcp.dart';
 
 import 'package:heizungstrainer/exceptions/modbus_exceptions.dart';
 import 'package:heizungstrainer/models/ecl_parameter.dart';
+import 'package:heizungstrainer/models/week_schedule.dart';
 import 'package:heizungstrainer/models/ecl_reading.dart';
 
 /// Core Modbus TCP service for reading sensor values and safely writing
@@ -112,6 +113,56 @@ class ModbusService {
   ///
   /// Returns an [ECLReading] with the raw value and timestamp.
   /// Throws [ModbusCommunicationException] on failure or timeout.
+  /// Reads [count] raw holding registers starting at [address] in one request.
+  Future<List<int>> _readRaw(int address, int count) async {
+    _ensureConnected();
+    final regs = [
+      for (var i = 0; i < count; i++)
+        ModbusInt16Register(name: 'r${address + i}', type: ModbusElementType.holdingRegister, address: address + i),
+    ];
+    final response = await _client!.send(ModbusElementsGroup(regs).getReadRequest()).timeout(_requestTimeout);
+    if (response != ModbusResponseCode.requestSucceed) {
+      throw ModbusCommunicationException(message: 'Lesefehler Register $address (+$count): Modbus-Code $response');
+    }
+    return [for (final r in regs) (r.value ?? 0).toInt()];
+  }
+
+  /// Weekly comfort schedule of heating circuit 1, or null if the
+  /// application has none.
+  Future<WeekSchedule?> readSchedule() async {
+    try {
+      return WeekSchedule.fromRaw([
+        for (var day = 0; day < 7; day++) await _readRaw(WeekSchedule.address(day, 0, stop: false), 6),
+      ]);
+    } catch (e) {
+      debugPrint('[Modbus] Schedule not available: $e');
+      return null;
+    }
+  }
+
+  /// Writes the three periods of [day] (P1 start, P1 stop, … in this order,
+  /// as the Danfoss description requires) and returns the schedule read back.
+  Future<WeekSchedule?> writeScheduleDay(int day, List<SchedulePeriod> periods) async {
+    _ensureConnected();
+    if (periods.length != 3) throw ArgumentError('3 periods expected');
+    final valid = {for (var h = 0; h <= 24; h++) ...[h * 100, if (h < 24) h * 100 + 30]};
+    for (var p = 0; p < 3; p++) {
+      for (final (value, stop) in [(periods[p].start, false), (periods[p].stop, true)]) {
+        if (!valid.contains(value)) {
+          throw ModbusCommunicationException(message: 'Ungültige Uhrzeit $value im Zeitprogramm.');
+        }
+        final address = WeekSchedule.address(day, p, stop: stop);
+        final register = ModbusInt16Register(name: 's$address', type: ModbusElementType.holdingRegister, address: address);
+        final response = await _client!.send(register.getWriteRequest(value)).timeout(_requestTimeout);
+        if (response != ModbusResponseCode.requestSucceed) {
+          throw ModbusCommunicationException(message: 'Schreibfehler Zeitprogramm (Register $address): Modbus-Code $response');
+        }
+      }
+    }
+    await Future.delayed(const Duration(milliseconds: 200));
+    return readSchedule();
+  }
+
   /// ECL alarm bitmask as one 32-bit value (bit 0 = alarm 1 … bit 31 =
   /// alarm 32), or null if the application doesn't provide it.
   Future<int?> readAlarmMask() async {

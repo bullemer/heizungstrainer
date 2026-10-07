@@ -13,6 +13,7 @@ import 'package:heizungstrainer/services/heating_analytics_service.dart';
 import 'package:heizungstrainer/services/heating_curve_model.dart';
 import 'package:heizungstrainer/widgets/analysis_section.dart';
 import 'package:heizungstrainer/widgets/building_profile_picker.dart';
+import 'package:heizungstrainer/widgets/controller_schedule_card.dart';
 import 'package:heizungstrainer/widgets/holiday_end_flow.dart';
 import 'package:heizungstrainer/widgets/pro_upgrade_dialog.dart';
 import 'package:heizungstrainer/widgets/sparkline_chart.dart';
@@ -170,6 +171,10 @@ class HomeScreen extends StatelessWidget {
                 _SectionLabel(label: 'Heizung'),
                 const SizedBox(height: 10),
                 _HeatingComfortCard(provider: provider),
+                if (provider.controllerSchedule != null) ...[
+                  const SizedBox(height: 12),
+                  ControllerScheduleCard(provider: provider),
+                ],
                 if (_controllerCurve(provider) != null &&
                     provider.getReading(ECLRegisters.roomTargetTemp) != null) ...[
                   const SizedBox(height: 12),

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import 'package:heizungstrainer/models/ecl_parameter.dart';
+import 'package:heizungstrainer/models/week_schedule.dart';
 
 /// Who set a known value last.
 enum SettingSource { app, controller }
@@ -166,5 +167,32 @@ class ControllerSettingsWatch {
       cleared: before.difference(active),
       stillActive: active.intersection(before),
     );
+  }
+
+  // ── Weekly schedule ────────────────────────────────────────────────
+
+  static String scheduleKey(String controllerId) => 'controller_schedule_$controllerId';
+
+  /// Last known schedule and whether the app wrote it.
+  Future<({WeekSchedule? schedule, bool byApp})> knownSchedule(String controllerId) async {
+    final key = scheduleKey(controllerId);
+    final raw = _memory != null ? _memory[key] : await _storage!.read(key: key);
+    if (raw == null) return (schedule: null, byApp: false);
+    try {
+      final map = jsonDecode(raw) as Map<String, dynamic>;
+      return (schedule: WeekSchedule.decode(map['s'] as String?), byApp: map['src'] == 'app');
+    } catch (_) {
+      return (schedule: null, byApp: false);
+    }
+  }
+
+  Future<void> saveSchedule(String controllerId, WeekSchedule schedule, {required bool byApp}) async {
+    final raw = jsonEncode({'src': byApp ? 'app' : 'controller', 's': schedule.encode()});
+    final key = scheduleKey(controllerId);
+    if (_memory != null) {
+      _memory[key] = raw;
+    } else {
+      await _storage!.write(key: key, value: raw);
+    }
   }
 }

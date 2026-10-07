@@ -35,6 +35,7 @@ import 'package:heizungstrainer/models/telemetry_sample.dart';
 import 'package:heizungstrainer/services/activity_log_service.dart';
 import 'package:heizungstrainer/services/brunata_local_scraper_service.dart';
 import 'package:heizungstrainer/services/database_service.dart';
+import 'package:heizungstrainer/models/week_schedule.dart';
 import 'package:heizungstrainer/services/controller_settings_watch.dart';
 import 'package:heizungstrainer/services/device_registry.dart';
 import 'package:heizungstrainer/services/discovery_service.dart';
@@ -582,8 +583,137 @@ class ECLProvider extends ChangeNotifier {
   String? get controllerApplication => _controllerApplication;
   bool _alarmsCheckedThisConnection = false;
 
+  // ── Weekly schedule (ECL circuit 1) ─────────────────────────────
+
+  WeekSchedule? _controllerSchedule;
+
+  /// The controller's weekly comfort schedule (null if not read/available).
+  WeekSchedule? get controllerSchedule => _controllerSchedule;
+
+  @visibleForTesting
+  void setControllerScheduleForTesting(WeekSchedule? schedule) {
+    _controllerSchedule = schedule;
+    notifyListeners();
+  }
+
+  /// Schedule and saving setpoint are only read/written on a real ECL 310.
+  bool get supportsControllerSchedule =>
+      _selectedControllerId == 'danfoss_ecl_310' && !_isSimulationActive && isConnected;
+
+  bool _scheduleLoadedThisConnection = false;
+
+  /// Reads the weekly schedule and logs days changed outside the app
+  /// (or app changes the controller no longer shows, as an error).
+  Future<void> loadControllerSchedule() async {
+    if (!supportsControllerSchedule) return;
+    final live = await _modbusService.readSchedule();
+    if (live == null) return;
+    final known = await settingsWatch.knownSchedule(_selectedControllerId);
+    final before = known.schedule;
+    var changed = before == null;
+    if (before != null) {
+      for (var d = 0; d < 7; d++) {
+        if (before.sameDay(live, d)) continue;
+        changed = true;
+        final change = 'Zeitprogramm ${WeekSchedule.dayNames[d]}: ${before.describeDay(d)} → ${live.describeDay(d)}';
+        final details = {'day': d, 'before': before.describeDay(d), 'controller': live.describeDay(d)};
+        if (known.byApp) {
+          await _logService.logError(
+            action: 'APP_CHANGE_NOT_ON_DEVICE',
+            message: 'Von der App gesetztes Zeitprogramm fehlt im Regler: $change.',
+            controllerId: _selectedControllerId,
+            category: ActivityLogCategory.controllerRead,
+            errorCode: 'APP_CHANGE_NOT_ON_DEVICE',
+            details: details,
+          );
+        } else {
+          await _logService.logRead(
+            controllerId: _selectedControllerId,
+            action: 'SETTING_CHANGED_OUTSIDE_APP',
+            message: 'Außerhalb der App geändert: $change.',
+            errorCode: 'EXTERNAL_CHANGE',
+            level: ActivityLogLevel.warning,
+            details: details,
+          );
+        }
+      }
+    }
+    if (changed) await settingsWatch.saveSchedule(_selectedControllerId, live, byApp: false);
+    _controllerSchedule = live;
+    notifyListeners();
+  }
+
+  /// Writes the comfort periods of [day] (0 = Monday) to the controller,
+  /// reads them back and logs before → after.
+  Future<void> writeScheduleDay(int day, List<SchedulePeriod> periods) async {
+    if (!supportsControllerSchedule) {
+      throw ModbusCommunicationException(message: 'Zeitprogramm nur bei verbundenem Danfoss ECL 310 änderbar.');
+    }
+    if (!_licenseService.canWriteParameters) {
+      await _logService.logSecurityGate(
+        controllerId: _selectedControllerId,
+        message: 'Schreibbefehl blockiert: Heizungstrainer Pro erforderlich.',
+        details: {'parameterId': 'schedule', 'day': day, 'tier': _licenseService.currentTier.name},
+        errorCode: 'LICENSE_PRO_REQUIRED',
+      );
+      throw const LicenseRequiredException(
+        message: 'Das Verändern von Regler-Parametern erfordert Heizungstrainer Pro.',
+        featureName: 'Parametrierung schreiben',
+      );
+    }
+    final before = _controllerSchedule?.describeDay(day) ?? '?';
+    final wanted = (_controllerSchedule ?? WeekSchedule(List.generate(7, (_) => List.filled(3, SchedulePeriod.unused))))
+        .withDay(day, periods);
+    _writeInProgress = true;
+    try {
+      final result = await _modbusService.writeScheduleDay(day, periods);
+      if (result == null || !result.sameDay(wanted, day)) {
+        final got = result?.describeDay(day) ?? 'keine Antwort';
+        await _logService.logWrite(
+          controllerId: _selectedControllerId,
+          action: 'WRITE_NOT_CONFIRMED',
+          message: 'Zeitprogramm ${WeekSchedule.dayNames[day]}: Regler meldet „$got“ statt „${wanted.describeDay(day)}“ – nicht übernommen.',
+          details: {'day': day, 'wanted': wanted.describeDay(day), 'controller': got},
+          success: false,
+          errorCode: 'WRITE_NOT_CONFIRMED',
+        );
+        if (result != null) _controllerSchedule = result;
+        notifyListeners();
+        throw ModbusCommunicationException(message: 'Der Regler hat das Zeitprogramm nicht übernommen ($got).');
+      }
+      _controllerSchedule = result;
+      await settingsWatch.saveSchedule(_selectedControllerId, result, byApp: true);
+      await _logService.logWrite(
+        controllerId: _selectedControllerId,
+        action: 'WRITE_SCHEDULE_VERIFIED',
+        message: 'Zeitprogramm ${WeekSchedule.dayNames[day]}: $before → ${result.describeDay(day)} '
+            '– geschrieben und zurückgelesen.',
+        details: {'day': day, 'before': before, 'controller': result.describeDay(day)},
+      );
+      notifyListeners();
+    } on ModbusCommunicationException {
+      rethrow;
+    } catch (e) {
+      await _logService.logWrite(
+        controllerId: _selectedControllerId,
+        action: 'WRITE_PARAMETER_FAILED',
+        message: 'Fehler beim Schreiben des Zeitprogramms (${WeekSchedule.dayNames[day]}): $e',
+        details: {'day': day, 'error': e.toString()},
+        success: false,
+        errorCode: 'WRITE_FAILED',
+      );
+      rethrow;
+    } finally {
+      _writeInProgress = false;
+    }
+  }
+
   Future<void> _pollAlarms() async {
     if (_isSimulationActive || _selectedControllerId != 'danfoss_ecl_310') return;
+    if (!_scheduleLoadedThisConnection) {
+      _scheduleLoadedThisConnection = true;
+      await loadControllerSchedule();
+    }
     _controllerApplication ??= await _modbusService.readApplicationName();
     await processAlarmMask(await _modbusService.readAlarmMask());
   }
@@ -642,6 +772,7 @@ class ECLProvider extends ChangeNotifier {
   Future<List<SettingCheckRow>> checkControllerSettings() async {
     final before = await settingsWatch.known(_selectedControllerId);
     await refreshReadings();
+    await loadControllerSchedule();
     return [
       for (final p in ControllerSettingsWatch.tracked)
         if (before[p.id] != null || _readings[p.id] != null)
@@ -964,6 +1095,7 @@ class ECLProvider extends ChangeNotifier {
       _connectionState = ECLConnectionState.connected;
       _settingsCheckedThisConnection = false;
       _alarmsCheckedThisConnection = false;
+      _scheduleLoadedThisConnection = false;
       _isReconnecting = false;
       _consecutivePollErrors = 0;
       notifyListeners();
@@ -1139,6 +1271,7 @@ class ECLProvider extends ChangeNotifier {
       _connectionState = ECLConnectionState.connected;
       _settingsCheckedThisConnection = false;
       _alarmsCheckedThisConnection = false;
+      _scheduleLoadedThisConnection = false;
       _consecutivePollErrors = 0;
       _isReconnecting = false;
       notifyListeners();
@@ -1227,6 +1360,7 @@ class ECLProvider extends ChangeNotifier {
       _connectionState = ECLConnectionState.connected;
       _settingsCheckedThisConnection = false;
       _alarmsCheckedThisConnection = false;
+      _scheduleLoadedThisConnection = false;
       _consecutivePollErrors = 0;
       _isReconnecting = false;
       notifyListeners();
@@ -1780,6 +1914,10 @@ class ECLProvider extends ChangeNotifier {
       }
       if (value < caps.minShift || value > caps.maxShift) {
         return '$brand erlaubt eine Parallelverschiebung von ${caps.minShift} bis ${caps.maxShift}, nicht $value.';
+      }
+    } else if (parameter.id == ECLRegisters.savingRoomTemp.id) {
+      if (!supportsControllerSchedule) {
+        return 'Der Spar-Raumsollwert ist nur beim verbundenen Danfoss ECL 310 änderbar.';
       }
     } else if (parameter.id == ECLRegisters.roomTargetTemp.id) {
       if (!caps.supportsRoomTarget) {

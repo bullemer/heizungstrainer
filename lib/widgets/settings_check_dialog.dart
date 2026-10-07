@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'package:heizungstrainer/models/ecl_parameter.dart';
+import 'package:heizungstrainer/models/week_schedule.dart';
 import 'package:heizungstrainer/providers/ecl_provider.dart';
 import 'package:heizungstrainer/services/controller_settings_watch.dart';
 
@@ -31,8 +33,9 @@ class _SettingsCheckDialogState extends State<SettingsCheckDialog> {
   static const _muted = TextStyle(fontSize: 11.5, color: Color(0xFF9E9EA8));
   static const _cell = TextStyle(fontSize: 12.5, color: Color(0xFFECECF0));
 
-  static String _fmt(double? v, String unit) {
+  static String _fmt(double? v, String unit, [String? id]) {
     if (v == null) return '–';
+    if (id == ECLRegisters.circuitMode.id) return eclModeLabel(v);
     final s = v == v.roundToDouble() ? v.toStringAsFixed(0) : v.toStringAsFixed(1);
     return unit.isEmpty ? s : '$s $unit';
   }
@@ -87,7 +90,7 @@ class _SettingsCheckDialogState extends State<SettingsCheckDialog> {
                           Padding(
                             padding: const EdgeInsets.symmetric(vertical: 3),
                             child: Text(
-                              _fmt(r.known?.value, r.parameter.unit) +
+                              _fmt(r.known?.value, r.parameter.unit, r.parameter.id) +
                                   (r.known?.source == SettingSource.app ? ' (App)' : ''),
                               style: _cell,
                             ),
@@ -95,7 +98,7 @@ class _SettingsCheckDialogState extends State<SettingsCheckDialog> {
                           Padding(
                             padding: const EdgeInsets.symmetric(vertical: 3),
                             child: Text(
-                              _fmt(r.live, r.parameter.unit),
+                              _fmt(r.live, r.parameter.unit, r.parameter.id),
                               style: r.differs
                                   ? const TextStyle(fontSize: 12.5, color: Color(0xFFEF5350), fontWeight: FontWeight.w700)
                                   : _cell,

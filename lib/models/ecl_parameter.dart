@@ -182,6 +182,7 @@ abstract final class ECLRegisters {
   /// Room setpoint outside comfort periods ("Spar"/setback, PNU 11181).
   static const savingRoomTemp = ECLParameter(
     id: 'saving_room_temp', name: 'Spar-Raumsollwert', unit: '°C', modbusAddress: 11180, multiplier: 0.1,
+    isWritable: true, minValue: 10.0, maxValue: 30.0,
   );
 
   /// Operating mode circuit 1 (PNU 4201): 0 manual, 1 scheduled,
