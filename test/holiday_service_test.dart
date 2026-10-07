@@ -618,6 +618,15 @@ void main() {
     expect(find.byKey(const Key('activeHolidayCard')), findsNothing);
   });
 
+  test('seasonal table runs chronologically from the current month', () {
+    final starts = seasonalTableStarts(DateTime(2026, 10, 7));
+    expect(starts.first, DateTime(2026, 10, 10, 8));
+    expect(starts[2], DateTime(2026, 12, 10, 8));
+    expect(starts[3], DateTime(2027, 1, 10, 8));
+    expect(starts.last, DateTime(2027, 9, 10, 8));
+    expect(seasonalTableStarts(DateTime(2026, 1, 31)).last, DateTime(2026, 12, 10, 8));
+  });
+
   test('a week in December saves more than a week in August (same month of last period)', () async {
     FlutterSecureStorage.setMockInitialValues({});
     final provider = ECLProvider(

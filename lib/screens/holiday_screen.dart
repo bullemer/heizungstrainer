@@ -727,9 +727,9 @@ class _HolidayScreenState extends State<HolidayScreen> {
         Padding(padding: EdgeInsets.only(bottom: 6), child: Text('Kosten', style: muted)),
       ]),
     ];
-    for (var m = 1; m <= 12; m++) {
-      final year = m < now.month ? now.year + 1 : now.year;
-      final start = DateTime(year, m, 10, 8);
+    for (final start in seasonalTableStarts(now)) {
+      final m = start.month;
+      final year = start.year;
       final end = start.add(preset.duration);
       final s = _savingsFor(provider,
           start: start,
@@ -1036,3 +1036,11 @@ class _HolidayPreset {
   const _HolidayPreset(this.icon, this.title, this.planTitle, this.duration, this.setbackShift,
       this.roomSetbackKelvin, this.preheatHours);
 }
+
+/// Start dates for the "1 Woche Urlaub – nach Monat" table: the 10th of each
+/// of the next 12 months, chronologically from the current month.
+@visibleForTesting
+List<DateTime> seasonalTableStarts(DateTime now) => [
+      for (var i = 0; i < 12; i++)
+        DateTime(now.year + (now.month - 1 + i) ~/ 12, (now.month - 1 + i) % 12 + 1, 10, 8),
+    ];

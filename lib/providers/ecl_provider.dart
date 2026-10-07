@@ -407,6 +407,16 @@ class ECLProvider extends ChangeNotifier {
   }
 
   @visibleForTesting
+  void setReadingForTesting(ECLParameter parameter, double value) {
+    _readings[parameter.id] = ECLReading(
+      parameter: parameter,
+      rawValue: parameter.displayToRaw(value),
+      timestamp: DateTime.now(),
+    );
+    notifyListeners();
+  }
+
+  @visibleForTesting
   void setBrunataDataForTesting(BrunataMeterData? data) {
     _brunataData = data;
     notifyListeners();

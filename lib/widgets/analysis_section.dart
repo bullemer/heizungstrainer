@@ -273,39 +273,41 @@ class _BrunataCostCard extends StatelessWidget {
                     color: Color(0xFFFFA726), size: 18),
                 const SizedBox(width: 4),
               ],
-              if (meterData != null &&
-                  meterData.communityComparisonPercentage.abs() >= 0.5)
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: (meterData.isAboveCommunityAverage
-                            ? const Color(0xFFFFA726)
-                            : const Color(0xFF66BB6A))
-                        .withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: (meterData.isAboveCommunityAverage
-                              ? const Color(0xFFFFA726)
-                              : const Color(0xFF66BB6A))
-                          .withValues(alpha: 0.3),
-                    ),
-                  ),
-                  child: Text(
-                    meterData.isAboveCommunityAverage
-                        ? '⚠️ ${meterData.communityComparisonPercentage.toStringAsFixed(1)} % über Schnitt (je m²)'
-                        : '🌱 ${meterData.communityComparisonPercentage.abs().toStringAsFixed(1)} % unter Schnitt (je m²)',
-                    style: TextStyle(
-                      color: meterData.isAboveCommunityAverage
-                          ? const Color(0xFFFFA726)
-                          : const Color(0xFF66BB6A),
-                      fontSize: 10.5,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
             ],
           ),
+          if (meterData != null &&
+              meterData.communityComparisonPercentage.abs() >= 0.5) ...[
+            const SizedBox(height: 10),
+            Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: (meterData.isAboveCommunityAverage
+                        ? const Color(0xFFFFA726)
+                        : const Color(0xFF66BB6A))
+                    .withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: (meterData.isAboveCommunityAverage
+                          ? const Color(0xFFFFA726)
+                          : const Color(0xFF66BB6A))
+                      .withValues(alpha: 0.3),
+                ),
+              ),
+              child: Text(
+                meterData.isAboveCommunityAverage
+                    ? '⚠️ ${meterData.communityComparisonPercentage.toStringAsFixed(1)} % über Schnitt (je m²)'
+                    : '🌱 ${meterData.communityComparisonPercentage.abs().toStringAsFixed(1)} % unter Schnitt (je m²)',
+                style: TextStyle(
+                  color: meterData.isAboveCommunityAverage
+                      ? const Color(0xFFFFA726)
+                      : const Color(0xFF66BB6A),
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
           const SizedBox(height: 16),
           // Sync loading overlay
           if (_isSyncing)

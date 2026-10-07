@@ -32,6 +32,11 @@ class ConfigurationBackup {
   /// Whether this is a factory / pre-defined profile.
   final bool isPreset;
 
+  /// What the backup controls: 'shift' (heating-curve shift) or 'room'
+  /// (comfort room setpoint, for controllers without a writable shift).
+  /// Backups from before 1.1.9 have none and are shift backups.
+  final String controlMode;
+
   const ConfigurationBackup({
     required this.id,
     required this.name,
@@ -43,7 +48,10 @@ class ConfigurationBackup {
     this.returnTemp,
     this.note,
     this.isPreset = false,
+    this.controlMode = 'shift',
   });
+
+  bool get isRoomMode => controlMode == 'room';
 
   Map<String, dynamic> toJson() => {
         'id': id,
@@ -56,6 +64,7 @@ class ConfigurationBackup {
         'returnTemp': returnTemp,
         'note': note,
         'isPreset': isPreset,
+        'controlMode': controlMode,
       };
 
   factory ConfigurationBackup.fromJson(Map<String, dynamic> json) {
@@ -70,6 +79,7 @@ class ConfigurationBackup {
       returnTemp: (json['returnTemp'] as num?)?.toDouble(),
       note: json['note'] as String?,
       isPreset: json['isPreset'] as bool? ?? false,
+      controlMode: json['controlMode'] as String? ?? 'shift',
     );
   }
 
@@ -90,33 +100,72 @@ class ConfigurationBackup {
   }
 
   /// Factory presets provided for quick 1-tap recovery.
-  static List<ConfigurationBackup> get presets => [
+  static List<ConfigurationBackup> get presets => presetsFor('shift');
+
+  /// Presets for the controller's [controlMode] ('shift' or 'room').
+  static List<ConfigurationBackup> presetsFor(String controlMode) {
+    if (controlMode == 'room') {
+      return [
         ConfigurationBackup(
-          id: 'preset_standard',
-          name: 'Werkseinstellung (Danfoss Standard)',
+          id: 'preset_room_standard',
+          name: 'Werkseinstellung (20 °C)',
           timestamp: DateTime(2026, 1, 1),
           heatingCurveShift: 0.0,
           roomTarget: 20.0,
-          note: 'Empfohlene Grundeinstellung ohne Parallelverschiebung.',
+          note: 'Danfoss-Standard für den Komfort-Raumsollwert.',
           isPreset: true,
+          controlMode: 'room',
         ),
         ConfigurationBackup(
-          id: 'preset_eco',
-          name: 'Eco-Sparbetrieb (-2)',
+          id: 'preset_room_eco',
+          name: 'Eco-Sparbetrieb (19 °C)',
           timestamp: DateTime(2026, 1, 1),
-          heatingCurveShift: -2.0,
-          roomTarget: 20.0,
-          note: 'Ca. 12% Heizenergieersparnis für gut gedämmte Gebäude.',
+          heatingCurveShift: 0.0,
+          roomTarget: 19.0,
+          note: 'Ca. 6 % weniger Heizenergie je Grad weniger Raumsoll.',
           isPreset: true,
+          controlMode: 'room',
         ),
         ConfigurationBackup(
-          id: 'preset_comfort',
-          name: 'Komfortbetrieb (+1)',
+          id: 'preset_room_comfort',
+          name: 'Komfortbetrieb (21 °C)',
           timestamp: DateTime(2026, 1, 1),
-          heatingCurveShift: 1.0,
+          heatingCurveShift: 0.0,
           roomTarget: 21.0,
-          note: 'Höhere Vorlauftemperatur für kalte Frosttage.',
+          note: 'Etwas wärmer, z. B. für kalte Frosttage.',
           isPreset: true,
+          controlMode: 'room',
         ),
       ];
+    }
+    return [
+      ConfigurationBackup(
+        id: 'preset_standard',
+        name: 'Werkseinstellung (Danfoss Standard)',
+        timestamp: DateTime(2026, 1, 1),
+        heatingCurveShift: 0.0,
+        roomTarget: 20.0,
+        note: 'Empfohlene Grundeinstellung ohne Parallelverschiebung.',
+        isPreset: true,
+      ),
+      ConfigurationBackup(
+        id: 'preset_eco',
+        name: 'Eco-Sparbetrieb (-2)',
+        timestamp: DateTime(2026, 1, 1),
+        heatingCurveShift: -2.0,
+        roomTarget: 20.0,
+        note: 'Ca. 12% Heizenergieersparnis für gut gedämmte Gebäude.',
+        isPreset: true,
+      ),
+      ConfigurationBackup(
+        id: 'preset_comfort',
+        name: 'Komfortbetrieb (+1)',
+        timestamp: DateTime(2026, 1, 1),
+        heatingCurveShift: 1.0,
+        roomTarget: 21.0,
+        note: 'Höhere Vorlauftemperatur für kalte Frosttage.',
+        isPreset: true,
+      ),
+    ];
+  }
 }

@@ -49,9 +49,37 @@ class _BackupScreenState extends State<BackupScreen> {
     }
   }
 
+  /// 'room' when the controller is driven via the comfort room setpoint
+  /// (no readable curve shift, e.g. ECL 310 applications without PNU 11176),
+  /// otherwise 'shift'.
+  String _modeOf(ECLProvider provider) =>
+      provider.holidayControlMode == 'room' ? 'room' : 'shift';
+
+  ECLParameter _paramFor(String mode) => mode == 'room'
+      ? ECLRegisters.roomTargetTemp
+      : ECLRegisters.heatingCurveShift;
+
+  double? _currentValue(ECLProvider provider, String mode) =>
+      provider.getReading(_paramFor(mode))?.displayValue;
+
+  double? _backupValue(ConfigurationBackup backup) =>
+      backup.isRoomMode ? backup.roomTarget : backup.heatingCurveShift;
+
+  String _modeLabel(String mode) =>
+      mode == 'room' ? 'Komfort-Raumsoll' : 'Parallelverschiebung';
+
+  String _formatValue(double? value, String mode) {
+    if (value == null) return '–';
+    if (mode != 'room') return _formatShift(value);
+    final digits = value == value.roundToDouble() ? 0 : 1;
+    return '${value.toStringAsFixed(digits)} °C';
+  }
+
   Future<void> _createBackup(ECLProvider provider) async {
-    final shiftReading = provider.getReading(ECLRegisters.heatingCurveShift);
-    final currentShift = shiftReading?.displayValue ?? 0.0;
+    final mode = _modeOf(provider);
+    final currentShift =
+        provider.getReading(ECLRegisters.heatingCurveShift)?.displayValue;
+    final currentValue = _currentValue(provider, mode);
     final outdoorTemp =
         provider.getReading(ECLRegisters.outdoorTemp)?.displayValue;
     final flowTemp = provider.getReading(ECLRegisters.flowTemp)?.displayValue;
@@ -62,7 +90,7 @@ class _BackupScreenState extends State<BackupScreen> {
 
     final now = DateTime.now();
     final defaultTitle =
-        'Sicherung ${_formatDateTimeShort(now)} (Shift ${_formatShift(currentShift)})';
+        'Sicherung ${_formatDateTimeShort(now)} (${mode == 'room' ? 'Raum' : 'Shift'} ${_formatValue(currentValue, mode)})';
 
     final nameController = TextEditingController(text: defaultTitle);
     final noteController = TextEditingController();
@@ -146,7 +174,7 @@ class _BackupScreenState extends State<BackupScreen> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      '• Parallelverschiebung: ${_formatShift(currentShift)}\n'
+                      '• ${_modeLabel(mode)}: ${_formatValue(currentValue, mode)}\n'
                       '• Außentemperatur: ${outdoorTemp != null ? "${outdoorTemp.toStringAsFixed(1)} °C" : "–"}\n'
                       '• Vorlauftemperatur: ${flowTemp != null ? "${flowTemp.toStringAsFixed(1)} °C" : "–"}',
                       style: const TextStyle(
@@ -183,8 +211,9 @@ class _BackupScreenState extends State<BackupScreen> {
           ? defaultTitle
           : nameController.text.trim(),
       timestamp: DateTime.now(),
-      heatingCurveShift: currentShift,
+      heatingCurveShift: currentShift ?? 0.0,
       roomTarget: roomTarget,
+      controlMode: mode,
       outdoorTemp: outdoorTemp,
       flowTemp: flowTemp,
       returnTemp: returnTemp,
@@ -221,8 +250,21 @@ class _BackupScreenState extends State<BackupScreen> {
       return;
     }
 
-    final currentShift =
-        provider.getReading(ECLRegisters.heatingCurveShift)?.displayValue ?? 0.0;
+    final mode = _modeOf(provider);
+    final targetValue = _backupValue(backup);
+    if (backup.controlMode != mode || targetValue == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Diese Sicherung enthält eine ${_modeLabel(backup.controlMode)}, '
+            'der Regler wird aber über ${mode == 'room' ? 'den' : 'die'} ${_modeLabel(mode)} gesteuert.',
+          ),
+          backgroundColor: const Color(0xFFEF5350),
+        ),
+      );
+      return;
+    }
+    final currentValue = _currentValue(provider, mode);
 
     final confirmed = await showDialog<bool>(
       context: context,
@@ -265,7 +307,7 @@ class _BackupScreenState extends State<BackupScreen> {
                         style: TextStyle(color: _textSecondary, fontSize: 12),
                       ),
                       Text(
-                        _formatShift(currentShift),
+                        _formatValue(currentValue, mode),
                         style: const TextStyle(
                           color: _textPrimary,
                           fontWeight: FontWeight.bold,
@@ -283,7 +325,7 @@ class _BackupScreenState extends State<BackupScreen> {
                         style: TextStyle(color: _accent, fontSize: 12),
                       ),
                       Text(
-                        _formatShift(backup.heatingCurveShift),
+                        _formatValue(targetValue, mode),
                         style: const TextStyle(
                           color: _accent,
                           fontWeight: FontWeight.bold,
@@ -320,17 +362,14 @@ class _BackupScreenState extends State<BackupScreen> {
     HapticFeedback.heavyImpact();
 
     try {
-      await provider.writeParameter(
-        ECLRegisters.heatingCurveShift,
-        backup.heatingCurveShift,
-      );
+      await provider.writeParameter(_paramFor(mode), targetValue);
 
       if (mounted) {
         setState(() => _isRestoring = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              'Erfolgreich wiederhergestellt: ${_formatShift(backup.heatingCurveShift)}',
+              'Erfolgreich wiederhergestellt: ${_formatValue(targetValue, mode)}',
             ),
             backgroundColor: const Color(0xFF66BB6A),
           ),
@@ -384,8 +423,7 @@ class _BackupScreenState extends State<BackupScreen> {
   Widget build(BuildContext context) {
     final provider = context.watch<ECLProvider>();
     final isConnected = provider.isConnected;
-    final currentShift =
-        provider.getReading(ECLRegisters.heatingCurveShift)?.displayValue ?? 0.0;
+    final mode = _modeOf(provider);
 
     return Scaffold(
       backgroundColor: _background,
@@ -407,14 +445,14 @@ class _BackupScreenState extends State<BackupScreen> {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
               children: [
                 // ── Status & Snapshot Banner ──────────────────────────────
-                _buildActiveStatusCard(provider, isConnected, currentShift),
+                _buildActiveStatusCard(provider, isConnected, mode),
                 const SizedBox(height: 20),
 
                 // ── Factory Presets ───────────────────────────────────────
                 _buildSectionHeader('Vordefinierte Profile'),
                 const SizedBox(height: 10),
-                for (final preset in ConfigurationBackup.presets)
-                  _buildPresetTile(preset, provider, isConnected),
+                for (final preset in ConfigurationBackup.presetsFor(mode))
+                  _buildPresetTile(preset, provider, isConnected, mode),
 
                 const SizedBox(height: 24),
 
@@ -425,7 +463,7 @@ class _BackupScreenState extends State<BackupScreen> {
                   _buildEmptyState()
                 else
                   for (final b in _backups)
-                    _buildBackupCard(b, provider, isConnected),
+                    _buildBackupCard(b, provider, isConnected, mode),
 
                 const SizedBox(height: 32),
               ],
@@ -448,7 +486,7 @@ class _BackupScreenState extends State<BackupScreen> {
   Widget _buildActiveStatusCard(
     ECLProvider provider,
     bool isConnected,
-    double currentShift,
+    String mode,
   ) {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -485,7 +523,7 @@ class _BackupScreenState extends State<BackupScreen> {
                     ),
                     Text(
                       isConnected
-                          ? 'Verbunden · Parallelverschiebung ${_formatShift(currentShift)}'
+                          ? 'Verbunden · ${_modeLabel(mode)} ${_formatValue(_currentValue(provider, mode), mode)}'
                           : 'Offline · Letzter bekannter Stand',
                       style: TextStyle(
                         color: isConnected ? const Color(0xFF66BB6A) : _textSecondary,
@@ -525,11 +563,14 @@ class _BackupScreenState extends State<BackupScreen> {
     ConfigurationBackup preset,
     ECLProvider provider,
     bool isConnected,
+    String mode,
   ) {
+    final current = _currentValue(provider, mode);
+    final target = _backupValue(preset);
     final isCurrent = isConnected &&
-        (provider.getReading(ECLRegisters.heatingCurveShift)?.displayValue ??
-                0.0) ==
-            preset.heatingCurveShift;
+        current != null &&
+        target != null &&
+        (current - target).abs() < 0.05;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -551,7 +592,7 @@ class _BackupScreenState extends State<BackupScreen> {
               borderRadius: BorderRadius.circular(8),
             ),
             child: Text(
-              _formatShift(preset.heatingCurveShift),
+              _formatValue(target, preset.controlMode),
               style: const TextStyle(
                 color: _accent,
                 fontWeight: FontWeight.bold,
@@ -634,7 +675,9 @@ class _BackupScreenState extends State<BackupScreen> {
     ConfigurationBackup backup,
     ECLProvider provider,
     bool isConnected,
+    String mode,
   ) {
+    final matchesMode = backup.controlMode == mode;
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(14),
@@ -656,7 +699,7 @@ class _BackupScreenState extends State<BackupScreen> {
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
-                  _formatShift(backup.heatingCurveShift),
+                  _formatValue(_backupValue(backup), backup.controlMode),
                   style: const TextStyle(
                     color: _accent,
                     fontWeight: FontWeight.bold,
@@ -724,11 +767,19 @@ class _BackupScreenState extends State<BackupScreen> {
               ],
             ),
           ],
+          if (!matchesMode) ...[
+            const SizedBox(height: 8),
+            Text(
+              'Gespeichert als ${_modeLabel(backup.controlMode)} – '
+              'passt nicht zur aktuellen Steuerung (${_modeLabel(mode)}).',
+              style: const TextStyle(color: Color(0xFFFFB74D), fontSize: 11.5),
+            ),
+          ],
           const SizedBox(height: 12),
           SizedBox(
             width: double.infinity,
             child: OutlinedButton.icon(
-              onPressed: isConnected && !_isRestoring
+              onPressed: isConnected && matchesMode && !_isRestoring
                   ? () => _restoreBackup(backup, provider)
                   : null,
               icon: const Icon(Icons.restore_rounded, size: 16),
@@ -736,7 +787,7 @@ class _BackupScreenState extends State<BackupScreen> {
               style: OutlinedButton.styleFrom(
                 foregroundColor: _accent,
                 side: BorderSide(
-                  color: isConnected
+                  color: isConnected && matchesMode
                       ? _accent.withValues(alpha: 0.4)
                       : Colors.white.withValues(alpha: 0.1),
                 ),

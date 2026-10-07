@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:heizungstrainer/models/brunata_chart.dart';
 import 'package:heizungstrainer/models/brunata_meter_data.dart';
 import 'package:heizungstrainer/models/configuration_backup.dart';
+import 'package:heizungstrainer/models/ecl_parameter.dart';
 import 'package:heizungstrainer/providers/ecl_provider.dart';
 import 'package:heizungstrainer/screens/backup_screen.dart';
 import 'package:heizungstrainer/screens/community_screen.dart';
@@ -64,6 +65,29 @@ void main() {
       expect(decoded[0].id, 'b1');
       expect(decoded[1].id, 'b2');
       expect(decoded[1].heatingCurveShift, -2.0);
+    });
+
+    test('controlMode round-trips; legacy backups are shift backups', () {
+      final room = ConfigurationBackup(
+        id: 'r1',
+        name: 'Raum',
+        timestamp: DateTime(2026, 10, 7),
+        heatingCurveShift: 0.0,
+        roomTarget: 21.0,
+        controlMode: 'room',
+      );
+      final restored = ConfigurationBackup.fromJson(room.toJson());
+      expect(restored.controlMode, 'room');
+      expect(restored.isRoomMode, isTrue);
+
+      final legacy = room.toJson()..remove('controlMode');
+      expect(ConfigurationBackup.fromJson(legacy).controlMode, 'shift');
+    });
+
+    test('room-mode presets carry room setpoints', () {
+      final presets = ConfigurationBackup.presetsFor('room');
+      expect(presets.map((p) => p.roomTarget), [20.0, 19.0, 21.0]);
+      expect(presets.every((p) => p.isRoomMode && p.isPreset), isTrue);
     });
 
     test('provides factory presets with valid values', () {
@@ -233,6 +257,32 @@ void main() {
       expect(find.text('Vordefinierte Profile'), findsOneWidget);
       expect(find.textContaining('Werkseinstellung'), findsOneWidget);
       expect(find.textContaining('Eco-Sparbetrieb'), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      provider.dispose();
+    });
+
+    testWidgets('BackupScreen uses the room setpoint when there is no shift',
+        (tester) async {
+      final provider = ECLProvider();
+      provider.setReadingForTesting(ECLRegisters.roomTargetTemp, 21.0);
+      provider.setConnectedForTesting(ip: '192.168.0.10');
+      final backupService = BackupService(inMemoryStorage: {});
+
+      await tester.pumpWidget(
+        ChangeNotifierProvider.value(
+          value: provider,
+          child: MaterialApp(
+            home: BackupScreen(backupService: backupService),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.text('Verbunden · Komfort-Raumsoll 21 °C'), findsOneWidget);
+      expect(find.textContaining('Parallelverschiebung'), findsNothing);
+      expect(find.text('Komfortbetrieb (21 °C)'), findsOneWidget);
+      expect(find.text('Aktiv'), findsOneWidget);
 
       await tester.pumpWidget(const SizedBox.shrink());
       provider.dispose();
