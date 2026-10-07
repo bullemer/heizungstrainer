@@ -2,6 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import 'package:heizungstrainer/models/license_info.dart';
+import 'package:heizungstrainer/services/feedback_service.dart';
+import 'package:heizungstrainer/services/play_store.dart';
+import 'package:heizungstrainer/widgets/feedback_sheet.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:heizungstrainer/app_version.dart';
 import 'package:heizungstrainer/billing/billing_provider.dart';
 import 'package:heizungstrainer/controllers/generic_modbus_controller.dart';
@@ -955,6 +960,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       _ActiveSystemSummary(provider: provider),
                       const SizedBox(height: 16),
                       _LicenseStatusCard(provider: provider),
+                      const SizedBox(height: 12),
+                      _FeedbackCard(provider: provider),
                       const SizedBox(height: 24),
 
                       // ── SECTION 1: HEATING CONTROLLER ─────────────
@@ -3980,6 +3987,7 @@ class _LicenseStatusCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final license = provider.licenseService;
     final isPro = license.isPro;
+    final isEarly = license.currentInfo.source == LicenseSource.earlyAdopter;
 
     return Container(
       padding: const EdgeInsets.all(14),
@@ -4017,7 +4025,11 @@ class _LicenseStatusCard extends StatelessWidget {
                 Row(
                   children: [
                     Text(
-                      isPro ? 'Heizungstrainer Pro' : 'Free Edition',
+                      isEarly
+                          ? 'Early Adopter'
+                          : isPro
+                              ? 'Heizungstrainer Pro'
+                              : 'Free Edition',
                       style: const TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w700,
@@ -4046,7 +4058,9 @@ class _LicenseStatusCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  isPro
+                  isEarly
+                      ? 'Alle Funktionen dauerhaft frei – danke fürs frühe Mitmachen!'
+                      : isPro
                       ? 'Schreibrechte & Urlaubs-Autopilot freigeschaltet.'
                       : 'Nur Lesezugriff. Upgrade für Schreibzugriff & Sicherungen.',
                   style: TextStyle(
@@ -4666,6 +4680,83 @@ class _Badge extends StatelessWidget {
           fontWeight: FontWeight.w700,
           color: color,
         ),
+      ),
+    );
+  }
+}
+
+/// Feedback, Play rating and forum – the app is in its free launch phase and
+/// lives on user feedback.
+class _FeedbackCard extends StatelessWidget {
+  final ECLProvider provider;
+
+  const _FeedbackCard({required this.provider});
+
+  @override
+  Widget build(BuildContext context) {
+    const accent = Color(0xFFFFA726);
+    final buttonStyle = OutlinedButton.styleFrom(
+      foregroundColor: accent,
+      side: BorderSide(color: accent.withValues(alpha: 0.6)),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+    );
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFF2A2A34),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFF3A3A44)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.forum_rounded, color: accent, size: 20),
+              SizedBox(width: 8),
+              Text(
+                'Feedback & Mitmachen',
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFFECECF0)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Heizungstrainer ist neu – sag uns, was gut läuft und was fehlt.',
+            style: TextStyle(fontSize: 11.5, color: Colors.white.withValues(alpha: 0.6)),
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              OutlinedButton.icon(
+                key: const ValueKey('feedback_open'),
+                style: buttonStyle,
+                icon: const Icon(Icons.chat_bubble_outline_rounded, size: 16),
+                label: const Text('Feedback senden'),
+                onPressed: () => FeedbackSheet.show(context),
+              ),
+              if (isPlayBuild)
+                OutlinedButton.icon(
+                  style: buttonStyle,
+                  icon: const Icon(Icons.star_outline_rounded, size: 16),
+                  label: const Text('Im Play Store bewerten'),
+                  onPressed: () => provider.feedbackService.openStoreListing(),
+                ),
+              OutlinedButton.icon(
+                style: buttonStyle,
+                icon: const Icon(Icons.groups_outlined, size: 16),
+                label: const Text('Forum'),
+                onPressed: () => launchUrl(
+                  Uri.parse(FeedbackService.forumUrl),
+                  mode: LaunchMode.externalApplication,
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }

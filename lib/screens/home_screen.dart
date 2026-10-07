@@ -78,7 +78,11 @@ class HomeScreen extends StatelessWidget {
                   color: isPro ? const Color(0xFF66BB6A) : const Color(0xFFFFA726),
                   size: 22,
                 ),
-                tooltip: isPro ? 'Pro-Lizenz aktiv' : 'Upgrade auf Pro',
+                tooltip: provider.licenseService.isEarlyAdopter
+                    ? 'Early Adopter – alle Funktionen frei'
+                    : isPro
+                        ? 'Pro-Lizenz aktiv'
+                        : 'Upgrade auf Pro',
               );
             },
           ),

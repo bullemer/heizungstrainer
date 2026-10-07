@@ -195,16 +195,40 @@ class _ProUpgradeDialogState extends State<ProUpgradeDialog> {
                   children: [
                     const Icon(Icons.check_circle_rounded, color: _ecoGreen, size: 40),
                     const SizedBox(height: 8),
-                    const Text(
-                      'Du nutzt bereits Heizungstrainer Pro!',
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: _ecoGreen),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Quelle: ${licenseService.currentInfo.note ?? licenseService.currentInfo.source.name}',
-                      style: const TextStyle(fontSize: 12, color: Colors.white70),
-                    ),
-                    if (licenseService.currentInfo.source != LicenseSource.inAppPurchase) ...[
+                    if (licenseService.currentInfo.source == LicenseSource.earlyAdopter) ...[
+                      const Text(
+                        'Early Adopter – alle Funktionen frei',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: _ecoGreen),
+                      ),
+                      const SizedBox(height: 6),
+                      const Text(
+                        'Danke, dass du von Anfang an dabei bist! Heizungstrainer ist in der '
+                        'Startphase kostenlos. Wer jetzt einsteigt, behält alle Pro-Funktionen '
+                        'dauerhaft – auch wenn Pro später kostenpflichtig wird.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(fontSize: 12.5, color: Colors.white70, height: 1.4),
+                      ),
+                      const SizedBox(height: 6),
+                      const Text(
+                        'Hinweis: Die Freischaltung gilt für dieses Gerät. Nach Neuinstallation '
+                        'oder Gerätewechsel schreib uns kurz über „Feedback senden“.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(fontSize: 11, color: Colors.white54, height: 1.4),
+                      ),
+                    ] else ...[
+                      const Text(
+                        'Du nutzt bereits Heizungstrainer Pro!',
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: _ecoGreen),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Quelle: ${licenseService.currentInfo.note ?? licenseService.currentInfo.source.name}',
+                        style: const TextStyle(fontSize: 12, color: Colors.white70),
+                      ),
+                    ],
+                    if (licenseService.currentInfo.source != LicenseSource.inAppPurchase &&
+                        licenseService.currentInfo.source != LicenseSource.earlyAdopter) ...[
                       const SizedBox(height: 12),
                       OutlinedButton(
                         onPressed: () async {

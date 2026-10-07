@@ -12,6 +12,7 @@ enum LicenseSource {
   offlineKey,
   inAppPurchase,
   testOverride,
+  earlyAdopter,
 }
 
 /// Encapsulates the user's license entitlements, source, and activation details.
@@ -76,6 +77,17 @@ class LicenseInfo {
       productId: productId,
       activatedAt: activatedAt ?? DateTime.now(),
       note: 'Google Play',
+    );
+  }
+
+  /// Installed during the free launch phase: Pro stays unlocked for life,
+  /// also after Pro becomes a paid upgrade.
+  factory LicenseInfo.earlyAdopter({required DateTime since}) {
+    return LicenseInfo(
+      tier: LicenseTier.pro,
+      source: LicenseSource.earlyAdopter,
+      activatedAt: since,
+      note: 'Early Adopter – alle Funktionen dauerhaft frei',
     );
   }
 

@@ -13,16 +13,28 @@ import 'package:heizungstrainer/services/play_store.dart';
 /// checked without internet but not forged from the APK. The stored licence is
 /// re-verified on every start, so editing the stored record doesn't unlock Pro.
 ///
+/// Free launch phase ([freeLaunchPhase]): everything is unlocked and every
+/// install is marked as early adopter (separate storage key, never touched by
+/// purchases or key revocation). Early adopters keep Pro for life once the
+/// phase ends and Pro becomes a paid upgrade.
+///
 /// The Google Play build sells Pro through Play Billing instead ([store]): a
 /// stored Play purchase counts until Play, when reachable, no longer reports
 /// it (refund), so Pro keeps working offline.
+/// While true, Pro is free for everyone and installs become early adopters.
+/// Set to false (in an app update) to start charging for Pro.
+const bool freeLaunchPhase = true;
+
 class LicenseService extends ChangeNotifier {
   static const String _storageKey = 'ecl_license_info';
+  static const String _earlyAdopterKey = 'ht_early_adopter_since';
 
   final FlutterSecureStorage? _secureStorage;
   final Map<String, String>? _inMemoryStorage;
   final List<int> _publicKey;
   final PlayStoreGateway? _store;
+  final bool _freeLaunch;
+  DateTime? _earlyAdopterSince;
   StreamSubscription<List<StorePurchase>>? _storeSubscription;
 
   LicenseInfo _currentInfo;
@@ -35,8 +47,10 @@ class LicenseService extends ChangeNotifier {
     Map<String, String>? inMemoryStorage,
     LicenseTier? initialTier,
     PlayStoreGateway? store,
+    bool freeLaunch = false,
     @visibleForTesting List<int>? publicKey,
   })  : _store = store,
+        _freeLaunch = freeLaunch,
         _publicKey = publicKey ?? LicenseKeyCodec.productionPublicKey,
         _secureStorage = inMemoryStorage != null
             ? null
@@ -46,14 +60,28 @@ class LicenseService extends ChangeNotifier {
             ? LicenseInfo.proTest(note: 'Initial Test Pro')
             : LicenseInfo.free();
 
-  /// Current license state.
-  LicenseInfo get currentInfo => _currentInfo;
+  /// Effective license state: a key or purchase wins, then early adopter.
+  LicenseInfo get currentInfo {
+    if (_currentInfo.isPro) return _currentInfo;
+    final since = _earlyAdopterSince;
+    if (since != null) return LicenseInfo.earlyAdopter(since: since);
+    return _currentInfo;
+  }
 
   /// Current tier (free or pro).
-  LicenseTier get currentTier => _currentInfo.tier;
+  LicenseTier get currentTier => isPro ? LicenseTier.pro : LicenseTier.free;
 
   /// Whether the user has unlocked Pro features.
-  bool get isPro => _currentInfo.isPro;
+  bool get isPro => _freeLaunch || _currentInfo.isPro || _earlyAdopterSince != null;
+
+  /// Free launch phase: no upgrade/purchase UI, everything unlocked.
+  bool get isFreeLaunch => _freeLaunch;
+
+  /// Installed during the free launch phase (Pro for life).
+  bool get isEarlyAdopter => _earlyAdopterSince != null;
+
+  /// Since when this install is an early adopter.
+  DateTime? get earlyAdopterSince => _earlyAdopterSince;
 
   /// Whether the service has completed loading from secure storage.
   bool get isInitialized => _isInitialized;
@@ -85,12 +113,8 @@ class LicenseService extends ChangeNotifier {
     if (_isInitialized) return;
 
     try {
-      String? raw;
-      if (_inMemoryStorage != null) {
-        raw = _inMemoryStorage[_storageKey];
-      } else if (_secureStorage != null) {
-        raw = await _secureStorage.read(key: _storageKey);
-      }
+      await _loadEarlyAdopter();
+      final raw = await _read(_storageKey);
 
       if (raw != null && raw.isNotEmpty) {
         final loaded = LicenseInfo.decode(raw);
@@ -120,6 +144,34 @@ class LicenseService extends ChangeNotifier {
         onError: (Object e) => debugPrint('[LicenseService] Play purchase stream: $e'),
       );
       await syncWithStore();
+    }
+  }
+
+  Future<String?> _read(String key) async {
+    if (_inMemoryStorage != null) return _inMemoryStorage[key];
+    return _secureStorage?.read(key: key);
+  }
+
+  Future<void> _write(String key, String value) async {
+    if (_inMemoryStorage != null) {
+      _inMemoryStorage[key] = value;
+    } else {
+      await _secureStorage?.write(key: key, value: value);
+    }
+  }
+
+  /// Reads the early-adopter mark; during the launch phase sets it once.
+  Future<void> _loadEarlyAdopter() async {
+    try {
+      final raw = await _read(_earlyAdopterKey);
+      _earlyAdopterSince = raw == null ? null : DateTime.tryParse(raw);
+      if (_earlyAdopterSince == null && _freeLaunch) {
+        final now = DateTime.now();
+        await _write(_earlyAdopterKey, now.toIso8601String());
+        _earlyAdopterSince = now;
+      }
+    } catch (e) {
+      debugPrint('[LicenseService] Early-adopter mark not readable/writable: $e');
     }
   }
 
@@ -221,16 +273,10 @@ class LicenseService extends ChangeNotifier {
 
   Future<void> _persist(LicenseInfo info) async {
     _currentInfo = info;
-    final encoded = info.encode();
-
-    if (_inMemoryStorage != null) {
-      _inMemoryStorage[_storageKey] = encoded;
-    } else {
-      try {
-        await _secureStorage!.write(key: _storageKey, value: encoded);
-      } catch (e) {
-        debugPrint('[LicenseService] Error persisting license: $e');
-      }
+    try {
+      await _write(_storageKey, info.encode());
+    } catch (e) {
+      debugPrint('[LicenseService] Error persisting license: $e');
     }
 
     notifyListeners();
@@ -261,7 +307,7 @@ class LicenseService extends ChangeNotifier {
 
   // ── Revocation / Reset ────────────────────────────────────────────────────
 
-  /// Removes the licence from this device and returns to the Free tier.
+  /// Removes the licence key from this device. The early-adopter mark stays.
   Future<void> revokeLicense() async {
     await _persist(LicenseInfo.free());
   }

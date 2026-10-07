@@ -41,6 +41,7 @@ import 'package:heizungstrainer/services/energy_price_service.dart';
 import 'package:heizungstrainer/services/heating_curve_model.dart';
 import 'package:heizungstrainer/exceptions/license_exception.dart';
 import 'package:heizungstrainer/models/license_info.dart';
+import 'package:heizungstrainer/services/feedback_service.dart';
 import 'package:heizungstrainer/services/license_service.dart';
 import 'package:heizungstrainer/services/play_store.dart';
 import 'package:heizungstrainer/services/modbus_service.dart';
@@ -64,6 +65,7 @@ class ECLProvider extends ChangeNotifier {
   final ActivityLogService _logService;
   final EnergyPriceService _energyPriceService;
   final LicenseService _licenseService;
+  final FeedbackService _feedbackService;
   final FlutterSecureStorage _secureStorage;
   final bool _autoConnect;
 
@@ -137,6 +139,7 @@ class ECLProvider extends ChangeNotifier {
   BillingProvider get activeBillingProvider => _activeBillingProvider;
   EnergyPriceService get energyPriceService => _energyPriceService;
   LicenseService get licenseService => _licenseService;
+  FeedbackService get feedbackService => _feedbackService;
   GenericModbusConfig get genericModbusConfig => _genericModbusConfig;
   BoschBuderusEmsConfig get boschBuderusConfig => _boschBuderusConfig;
   ViessmannConfig get viessmannConfig => _viessmannConfig;
@@ -436,6 +439,7 @@ class ECLProvider extends ChangeNotifier {
     ActivityLogService? logService,
     EnergyPriceService? energyPriceService,
     LicenseService? licenseService,
+    FeedbackService? feedbackService,
     FlutterSecureStorage? secureStorage,
     bool autoLoadDatabase = true,
     bool? autoConnect,
@@ -458,8 +462,13 @@ class ECLProvider extends ChangeNotifier {
                 ? LicenseService(
                     secureStorage: secureStorage ?? const FlutterSecureStorage(),
                     store: isPlayBuild ? InAppPurchaseGateway() : null,
+                    freeLaunch: freeLaunchPhase,
                   )
-                : LicenseService(initialTier: LicenseTier.pro)) {
+                : LicenseService(initialTier: LicenseTier.pro)),
+        _feedbackService = feedbackService ??
+            (autoLoadDatabase
+                ? FeedbackService(storage: secureStorage)
+                : FeedbackService(inMemoryStorage: {}, reviewEnabled: false)) {
     _activeController = DeviceRegistry.createController(
       _selectedControllerId,
       modbusService: _modbusService,
@@ -1514,6 +1523,7 @@ class ECLProvider extends ChangeNotifier {
           },
           success: true,
         );
+        if (!_isSimulationActive) unawaited(_feedbackService.recordSuccessfulWrite());
 
         notifyListeners();
         return reading!;
@@ -1538,6 +1548,7 @@ class ECLProvider extends ChangeNotifier {
         },
         success: true,
       );
+      unawaited(_feedbackService.recordSuccessfulWrite());
 
       notifyListeners();
       return reading;
