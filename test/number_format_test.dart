@@ -16,7 +16,7 @@ void main() {
   });
 
   test('A247 reads S4 and S8 in addition; other applications do not', () {
-    expect(ECLRegisters.extraSensorsFor('A247.1 v4.00').map((p) => p.modbusAddress), [10203, 10207]);
+    expect(ECLRegisters.extraSensorsFor('A247.1 v4.00').map((p) => p.modbusAddress), [10203, 10207, 12189]);
     expect(ECLRegisters.extraSensorsFor('A266.1 v1.08'), isEmpty);
     expect(ECLRegisters.extraSensorsFor(null), isEmpty);
   });

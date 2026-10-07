@@ -221,6 +221,12 @@ abstract final class ECLRegisters {
     return null;
   }
 
+  /// Hot-water comfort setpoint of circuit 2 (PNU 12190, ×0.1) – in DHW
+  /// applications such as A247 (checked live: 55.0 °C).
+  static const dhwComfortSetpoint = ECLParameter(
+    id: 'dhw_comfort_setpoint', name: 'Warmwasser-Sollwert', unit: '°C', modbusAddress: 12189, multiplier: 0.1,
+  );
+
   /// A247: hot-water charging flow (S4) and tank bottom (S8).
   static const dhwChargeFlow = ECLParameter(
     id: 'dhw_charge_flow', name: 'Ladevorlauf Warmwasser (S4)', unit: '°C', modbusAddress: 10203, multiplier: 0.01,
@@ -232,7 +238,7 @@ abstract final class ECLRegisters {
   /// Additional sensors an application provides (read only for that
   /// application – on others the same inputs may mean something else).
   static List<ECLParameter> extraSensorsFor(String? application) =>
-      (application?.startsWith('A247') ?? false) ? const [dhwChargeFlow, dhwTankBottom] : const [];
+      (application?.startsWith('A247') ?? false) ? const [dhwChargeFlow, dhwTankBottom, dhwComfortSetpoint] : const [];
 
   /// Human-readable sensor names for a mapping (for the log).
   static String describeMapping(Map<String, int> mapping) => mapping.entries

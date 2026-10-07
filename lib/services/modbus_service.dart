@@ -13,6 +13,7 @@ import 'package:modbus_client_tcp/modbus_client_tcp.dart';
 
 import 'package:heizungstrainer/exceptions/modbus_exceptions.dart';
 import 'package:heizungstrainer/models/ecl_parameter.dart';
+import 'package:heizungstrainer/models/live_snapshot.dart';
 import 'package:heizungstrainer/models/week_schedule.dart';
 import 'package:heizungstrainer/models/ecl_reading.dart';
 
@@ -174,6 +175,52 @@ class ModbusService {
     }
     await Future.delayed(const Duration(milliseconds: 200));
     return readSchedule();
+  }
+
+  Future<int?> _readOne(int address) async {
+    try {
+      return (await _readRaw(address, 1)).first;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Everything the plant diagram needs, in a few requests: sensors S1–S10,
+  /// the application's sensor references, outputs, circuit mode/status,
+  /// limiter flags and the controller clock. Read only while the live view
+  /// is open.
+  Future<LiveSnapshot> readLiveSnapshot(LiveViewSpec spec) async {
+    final rawSensors = await _readRaw(10200, 10);
+    final sensors = {for (var i = 0; i < 10; i++) i + 1: LiveSnapshot.sensorFromRaw(rawSensors[i])};
+    final references = <int, double>{};
+    for (final e in spec.references.entries) {
+      final v = await _readOne(LiveViewSpec.referenceAddress(e.value, e.key));
+      if (v != null && v < 19200) references[e.key] = v / 100.0;
+    }
+    List<bool> bits(List<int> raw) => [for (final v in raw) v != 0];
+    final outputs = await _readRaw(3999, 12); // Tr1–Tr6, R1–R6
+    final mode = await _readRaw(4200, 2).catchError((_) => <int>[]);
+    final status = await _readRaw(4210, 2).catchError((_) => <int>[]);
+    final limiter = await _readRaw(4219, 4).catchError((_) => <int>[]);
+    final clock = await _readRaw(64044, 5).catchError((_) => <int>[]);
+    DateTime? time;
+    if (clock.length == 5) {
+      try {
+        time = DateTime(clock[4], clock[3], clock[2], clock[0], clock[1]);
+      } catch (_) {}
+    }
+    return LiveSnapshot(
+      at: DateTime.now(),
+      spec: spec,
+      sensors: sensors,
+      references: references,
+      triacs: bits(outputs.sublist(0, 6)),
+      relays: bits(outputs.sublist(6, 12)),
+      circuitMode: {for (var i = 0; i < mode.length; i++) i + 1: mode[i]},
+      circuitStatus: {for (var i = 0; i < status.length; i++) i + 1: status[i]},
+      limiter: [for (final v in limiter) v & 0xFFFF],
+      controllerTime: time,
+    );
   }
 
   /// ECL alarm bitmask as one 32-bit value (bit 0 = alarm 1 … bit 31 =

@@ -36,6 +36,7 @@ import 'package:heizungstrainer/models/telemetry_sample.dart';
 import 'package:heizungstrainer/services/activity_log_service.dart';
 import 'package:heizungstrainer/services/brunata_local_scraper_service.dart';
 import 'package:heizungstrainer/services/database_service.dart';
+import 'package:heizungstrainer/models/live_snapshot.dart';
 import 'package:heizungstrainer/models/week_schedule.dart';
 import 'package:heizungstrainer/services/alert_center.dart';
 import 'package:heizungstrainer/services/controller_settings_watch.dart';
@@ -761,6 +762,46 @@ class ECLProvider extends ChangeNotifier {
     } finally {
       _writeInProgress = false;
     }
+  }
+
+  /// Plant diagram data is available (real ECL; simulation gets demo data).
+  bool get supportsLiveView =>
+      isConnected && (_selectedControllerId == 'danfoss_ecl_310' || _isSimulationActive);
+
+  LiveViewSpec get liveViewSpec =>
+      _isSimulationActive ? LiveViewSpec.a247 : LiveViewSpec.forApplication(_controllerApplication);
+
+  /// One live reading for the plant diagram (null if not available).
+  Future<LiveSnapshot?> readLiveSnapshot() async {
+    if (!supportsLiveView) return null;
+    if (_isSimulationActive) return _simulatedSnapshot();
+    try {
+      return await _modbusService.readLiveSnapshot(liveViewSpec);
+    } catch (e) {
+      debugPrint('[Provider] live snapshot failed: $e');
+      return null;
+    }
+  }
+
+  /// Demo data shaped like an A247 installation, using the simulated readings.
+  LiveSnapshot _simulatedSnapshot() {
+    double? r(ECLParameter p) => _readings[p.id]?.displayValue;
+    final flow = r(ECLRegisters.flowTemp) ?? 38;
+    final ret = r(ECLRegisters.returnTemp) ?? 30;
+    final hw = r(ECLRegisters.hotWaterTemp) ?? 52;
+    final outdoor = r(ECLRegisters.outdoorTemp) ?? 4;
+    return LiveSnapshot(
+      at: DateTime.now(),
+      spec: LiveViewSpec.a247,
+      sensors: {1: outdoor, 2: null, 3: flow, 4: hw + 6, 5: ret, 6: hw, 8: hw - 3},
+      references: {3: flow + 0.5, 5: ret + 2, 2: 40, 4: 60, 6: 55},
+      relays: [true, false, true, false, false, false],
+      triacs: [false, false, true, false, false, false],
+      circuitMode: const {1: 1, 2: 1},
+      circuitStatus: const {1: 2, 2: 2},
+      controllerTime: DateTime.now(),
+      simulated: true,
+    );
   }
 
   bool _sensorMappingChecked = false;

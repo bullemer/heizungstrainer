@@ -9,6 +9,7 @@ import 'package:heizungstrainer/models/ecl_parameter.dart';
 import 'package:heizungstrainer/models/ecl_reading.dart';
 import 'package:heizungstrainer/providers/ecl_provider.dart';
 import 'package:heizungstrainer/screens/curve_simulator_screen.dart';
+import 'package:heizungstrainer/screens/live_view_screen.dart';
 import 'package:heizungstrainer/screens/settings_screen.dart';
 import 'package:heizungstrainer/services/heating_analytics_service.dart';
 import 'package:heizungstrainer/services/heating_curve_model.dart';
@@ -171,6 +172,10 @@ class HomeScreen extends StatelessWidget {
                 // ── Heizung ─────────────────────────────────
                 _SectionLabel(label: 'Heizung'),
                 const SizedBox(height: 10),
+                if (provider.supportsLiveView) ...[
+                  _LiveViewTile(),
+                  const SizedBox(height: 12),
+                ],
                 _HeatingComfortCard(provider: provider),
                 if (provider.controllerSchedule != null) ...[
                   const SizedBox(height: 12),
@@ -1142,7 +1147,7 @@ class _HotWaterCard extends StatelessWidget {
           // Radial indicator
           RadialTemperatureIndicator(
             currentTemp: temp,
-            targetTemp: 55.0,
+            targetTemp: provider.getReading(ECLRegisters.dhwComfortSetpoint)?.displayValue ?? 55.0,
             size: 100,
             accentColor: accent,
             isDisconnected: isDisconnected,
@@ -1224,7 +1229,7 @@ class _HotWaterCard extends StatelessWidget {
                 Text(
                   isDisconnected
                       ? 'Kein Fühlersignal (S6)'
-                      : 'Zieltemperatur: 55.0°C',
+                      : 'Zieltemperatur: ${(provider.getReading(ECLRegisters.dhwComfortSetpoint)?.displayValue ?? 55.0).fixed(1)} °C',
                   style: TextStyle(
                     fontSize: 11.5,
                     color: Colors.white.withValues(alpha: 0.4),
@@ -1426,6 +1431,41 @@ class _EfficiencyDeltaChip extends StatelessWidget {
 // ═══════════════════════════════════════════════════════════════════════════
 // Section Label
 // ═══════════════════════════════════════════════════════════════════════════
+
+/// Opens the live plant diagram.
+class _LiveViewTile extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) => Material(
+        color: const Color(0xFF2A2A32),
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          key: const Key('openLiveView'),
+          borderRadius: BorderRadius.circular(16),
+          onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const LiveViewScreen())),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: const Color(0xFF3A3A44)),
+            ),
+            child: const Row(children: [
+              Icon(Icons.account_tree_outlined, color: Color(0xFFFFA726), size: 22),
+              SizedBox(width: 12),
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text('Anlage live',
+                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: Color(0xFFECECF0))),
+                  SizedBox(height: 2),
+                  Text('Anlagenbild mit Ist- und Sollwerten, Pumpen und Ventilen',
+                      style: TextStyle(fontSize: 11.5, color: Color(0xFF9E9EA8))),
+                ]),
+              ),
+              Icon(Icons.chevron_right_rounded, color: Color(0xFF9E9EA8)),
+            ]),
+          ),
+        ),
+      );
+}
 
 class _SectionLabel extends StatelessWidget {
   final String label;
