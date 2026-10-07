@@ -64,7 +64,7 @@ HINWEISE
 **Grafiken** (Pflicht):
 - App-Symbol 512×512 PNG (32-bit, Alpha)
 - Feature-Grafik 1024×500 JPG/PNG
-- Screenshots: assets/branding/screenshots/01–07 (1080×2109, echte Daten: Danfoss ECL 310 + Brunata Hamburg, 2026-10-07; Status-/Navigationsleiste abgeschnitten wegen Play-Limit 2:1; Liegenschaftsvergleich-Tabelle NICHT verwenden – zeigt den Namen des Mieters)
+- Screenshots für Play: assets/branding/screenshots/play/01–07 (1080×1920 = 9:16, Play verlangt 16:9/9:16; Quelle: screenshots/01–07 1080×2109, echte Daten: Danfoss ECL 310 + Brunata Hamburg, 2026-10-07; Status-/Navigationsleiste abgeschnitten wegen Play-Limit 2:1; Liegenschaftsvergleich-Tabelle NICHT verwenden – zeigt den Namen des Mieters)
 - Icon: assets/branding/play_icon_512.png · Feature-Grafik: assets/branding/play_feature_1024x500.png
 
 ## 3. Store-Einstellungen
