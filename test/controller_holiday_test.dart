@@ -75,8 +75,10 @@ void main() {
     expect(ControllerHolidayLayout.datesFor(start: DateTime(2026, 10, 10, 9), heatUpFrom: DateTime(2026, 10, 10, 20)), isNull);
   });
 
-  test('no slot layout is enabled before it is verified live', () {
-    expect(ControllerHolidayLayout.heatingSlotsFor('A247.1 v4.00'), isNull);
+  test('A247 heating holidays are P3–P6 (verified live); others not enabled', () {
+    expect(ControllerHolidayLayout.heatingSlotsFor('A247.1 v4.00'), [3, 4, 5, 6]);
+    expect(ControllerHolidayLayout.heatingSlotsFor('A266.1 v1.08'), isNull);
+    expect(ControllerHolidayLayout.heatingSlotsFor(null), isNull);
   });
 
   group('holiday in the controller', () {

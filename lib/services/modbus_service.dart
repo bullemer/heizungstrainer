@@ -264,8 +264,15 @@ class ModbusService {
       await write(6, end.year);
       await write(5, end.month);
       await write(4, end.day);
+      await write(0, mode.code);
+    } else {
+      // off first, then back to the unused default 01.01.2015 (day/month
+      // before the year – 1.1. is valid in any year)
+      await write(0, mode.code);
+      for (final (index, value) in [(1, 1), (2, 1), (3, 2015), (4, 1), (5, 1), (6, 2015)]) {
+        await write(index, value);
+      }
     }
-    await write(0, mode.code);
     await Future.delayed(const Duration(milliseconds: 200));
     return ControllerHolidayEntry.fromRaw(slot, await _readRaw(ControllerHolidayEntry.address(slot, 0), 7));
   }

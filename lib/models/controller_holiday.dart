@@ -80,10 +80,11 @@ abstract final class ControllerHolidayLayout {
     return null;
   }
 
-  /// A247.1: heating-circuit holiday schedules. Null until verified live
-  /// (set one heating holiday in the Danfoss app/portal and see which
-  /// schedule changes) – never write to an unverified slot.
-  static const List<int>? a247HeatingSlots = null;
+  /// A247.1: heating-circuit holiday schedules P3–P6 – verified 2026-10-08 on
+  /// the user's controller: test entries written to P1/P2/P3/P5/P6/P7/P9,
+  /// the Danfoss portal listed exactly P3, P5, P6 (entries 1, 3, 4) under
+  /// circuit 1 "Holiday" and none of the others.
+  static const List<int> a247HeatingSlots = [3, 4, 5, 6];
 
   /// Controller dates for an absence: start = start day 00:00; end = the
   /// midnight at or before [heatUpFrom] (when normal heating must resume so
