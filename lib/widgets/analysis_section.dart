@@ -759,7 +759,10 @@ class HeatingSimulationCard extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Wrap(spacing: 12, runSpacing: 4, children: [
-            _legendItem(ControllerCurveChart.currentColor, 'Deine Kurve'),
+            _legendItem(ControllerCurveChart.currentColor, 'Heizkurve im Regler'),
+            if ((roomSetpoint - 20).abs() >= 0.25)
+              _legendItem(ControllerCurveChart.currentColor,
+                  'Wirksam bei Raum-Soll ${roomSetpoint.toStringAsFixed(1)} °C', dashed: true),
             if (previewing) _legendItem(ControllerCurveChart.simulatedColor, 'Vorschau', dashed: true),
             _legendItem(
               ControllerCurveChart.factoryColor,

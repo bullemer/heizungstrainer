@@ -3,9 +3,12 @@ import 'package:flutter/material.dart';
 
 import 'package:heizungstrainer/services/heating_curve_model.dart';
 
-/// The controller's real heating curve (solid) and, if [simulatedSetpoint]
-/// differs from [roomSetpoint], the curve the controller would use at that
-/// setpoint (dashed). Marks the current outdoor temperature.
+/// The heating curve as stored in the controller (solid, with its six
+/// points – the same view as the controller's own display, based on 20 °C
+/// room temperature) and, when the comfort setpoint differs from 20 °C, the
+/// curve that is actually in effect (thin dashed). If [simulatedSetpoint]
+/// differs from [roomSetpoint], the curve at that setpoint (blue dashed).
+/// Marks the current outdoor temperature.
 class ControllerCurveChart extends StatelessWidget {
   final ControllerHeatingCurve curve;
   final double roomSetpoint;
@@ -43,34 +46,102 @@ class ControllerCurveChart extends StatelessWidget {
   @override
   Widget build(BuildContext context) => SizedBox(height: height, child: _chart());
 
+  static const double _minX = -30;
+  static const double _maxX = 20;
+
+  /// Effective curve shown separately only if it visibly differs from the
+  /// stored (20 °C) curve.
+  bool get showsEffective =>
+      (roomSetpoint - ControllerHeatingCurve.referenceRoomTemp).abs() >= 0.25;
+
+  static String _fmt(double v) => v.toStringAsFixed(1);
+
   Widget _chart() {
+    const base = ControllerHeatingCurve.referenceRoomTemp;
     final room = roomSetpoint;
     final sim = simulatedSetpoint ?? roomSetpoint;
-    List<FlSpot> spots(double setpoint) => [
-          for (var x = -20.0; x <= 20.0; x += 1) FlSpot(x, curve.flowAt(x, setpoint)),
+    List<FlSpot> line(ControllerHeatingCurve c, double setpoint) => [
+          for (var x = _minX; x <= _maxX; x += 1) FlSpot(x, c.flowAt(x, setpoint)),
         ];
-    final current = spots(room);
-    final simulated = spots(sim);
-    final factory = [
-      for (var x = -20.0; x <= 20.0; x += 1) FlSpot(x, danfossFactoryCurve.flowAt(x, room)),
-    ];
+    final stored = line(curve, base);
+    final effective = line(curve, room);
+    final simulated = line(curve, sim);
+    final factory = line(danfossFactoryCurve, base);
     final ref = reference;
-    final refLow = ref == null ? <FlSpot>[] : [for (var x = -20.0; x <= 20.0; x += 1) FlSpot(x, ref.lowAt(x))];
-    final refHigh = ref == null ? <FlSpot>[] : [for (var x = -20.0; x <= 20.0; x += 1) FlSpot(x, ref.highAt(x))];
-    final all = [
-      ...current,
-      ...simulated,
-      if (showFactoryCurve) ...factory,
-      ...refLow,
-      ...refHigh,
-    ].map((s) => s.y);
+    final refLow = ref == null ? <FlSpot>[] : [for (var x = _minX; x <= _maxX; x += 1) FlSpot(x, ref.lowAt(x))];
+    final refHigh = ref == null ? <FlSpot>[] : [for (var x = _minX; x <= _maxX; x += 1) FlSpot(x, ref.highAt(x))];
+    final pointXs = curve.outdoorTemps.toSet();
+
+    // Bars in drawing order; labels feed the tooltip.
+    final bars = <(LineChartBarData, String?)>[
+      if (ref != null) ...[
+        (LineChartBarData(spots: refLow, color: referenceColor.withValues(alpha: 0.5), barWidth: 1, dotData: const FlDotData(show: false)), null),
+        (LineChartBarData(spots: refHigh, color: referenceColor.withValues(alpha: 0.5), barWidth: 1, dotData: const FlDotData(show: false)), 'Richtwert'),
+      ],
+      if (showFactoryCurve)
+        (
+          LineChartBarData(
+            spots: factory,
+            color: factoryColor.withValues(alpha: 0.8),
+            barWidth: 1.5,
+            dashArray: [3, 4],
+            dotData: const FlDotData(show: false),
+          ),
+          'Werkseinstellung'
+        ),
+      (
+        LineChartBarData(
+          spots: stored,
+          color: currentColor,
+          barWidth: 3,
+          dotData: FlDotData(
+            show: true,
+            checkToShowDot: (spot, _) => pointXs.contains(spot.x),
+            getDotPainter: (_, _, _, _) => FlDotCirclePainter(
+              radius: 3.5,
+              color: currentColor,
+              strokeWidth: 1.5,
+              strokeColor: const Color(0xFF2A2A32),
+            ),
+          ),
+        ),
+        'Regler'
+      ),
+      if (showsEffective)
+        (
+          LineChartBarData(
+            spots: effective,
+            color: currentColor.withValues(alpha: 0.7),
+            barWidth: 1.5,
+            dashArray: [2, 3],
+            dotData: const FlDotData(show: false),
+          ),
+          'Wirksam bei ${_fmt(room)} °C'
+        ),
+      if (showsSimulation)
+        (
+          LineChartBarData(
+            spots: simulated,
+            color: simulatedColor,
+            barWidth: 2.5,
+            dashArray: [6, 4],
+            dotData: const FlDotData(show: false),
+          ),
+          'Simulation ${_fmt(sim)} °C'
+        ),
+    ];
+
+    // Scale to the user's curves (like the controller's own view); the much
+    // higher factory curve is clipped instead of squashing everything.
+    final all = [...stored, ...effective, if (showsSimulation) ...simulated, ...refLow, ...refHigh].map((s) => s.y);
     final minY = (all.reduce((a, b) => a < b ? a : b) / 5).floor() * 5 - 5.0;
     final maxY = (all.reduce((a, b) => a > b ? a : b) / 5).ceil() * 5 + 5.0;
     const axis = TextStyle(color: Color(0xFF9E9EA8), fontSize: 10);
 
     return LineChart(LineChartData(
-      minX: -20,
-      maxX: 20,
+      minX: _minX,
+      maxX: _maxX,
+      clipData: const FlClipData.all(),
       minY: minY,
       maxY: maxY,
       gridData: FlGridData(
@@ -94,7 +165,7 @@ class ControllerCurveChart extends StatelessWidget {
           sideTitles: SideTitles(
             showTitles: true,
             reservedSize: 22,
-            interval: 5,
+            interval: 10,
             getTitlesWidget: (v, _) => Text('${v.toInt()}', style: axis),
           ),
         ),
@@ -107,33 +178,50 @@ class ControllerCurveChart extends StatelessWidget {
         if (ref != null)
           BetweenBarsData(fromIndex: 0, toIndex: 1, color: referenceColor.withValues(alpha: 0.16)),
       ],
-      lineBarsData: [
-        if (ref != null) ...[
-          LineChartBarData(spots: refLow, color: referenceColor.withValues(alpha: 0.5), barWidth: 1, dotData: const FlDotData(show: false)),
-          LineChartBarData(spots: refHigh, color: referenceColor.withValues(alpha: 0.5), barWidth: 1, dotData: const FlDotData(show: false)),
-        ],
-        if (showFactoryCurve)
-          LineChartBarData(
-            spots: factory,
-            color: factoryColor.withValues(alpha: 0.8),
-            barWidth: 1.5,
-            dashArray: [3, 4],
-            dotData: const FlDotData(show: false),
-          ),
-        LineChartBarData(spots: current, color: currentColor, barWidth: 3, dotData: const FlDotData(show: false)),
-        if (showsSimulation)
-          LineChartBarData(
-            spots: simulated,
-            color: simulatedColor,
-            barWidth: 2.5,
-            dashArray: [6, 4],
-            dotData: const FlDotData(show: false),
-          ),
-      ],
+      lineBarsData: [for (final b in bars) b.$1],
+      lineTouchData: LineTouchData(
+        touchTooltipData: LineTouchTooltipData(
+          getTooltipColor: (_) => const Color(0xF0202028),
+          fitInsideHorizontally: true,
+          maxContentWidth: 240,
+          fitInsideVertically: true,
+          getTooltipItems: (touched) {
+            final items = <LineTooltipItem?>[];
+            var header = true;
+            for (final t in touched) {
+              final label = bars[t.barIndex].$2;
+              if (label == null) {
+                items.add(null);
+                continue;
+              }
+              final value = label == 'Richtwert' && ref != null
+                  ? '${_fmt(ref.lowAt(t.x))}–${_fmt(t.y)} °C'
+                  : '${_fmt(t.y)} °C';
+              items.add(LineTooltipItem(
+                header ? '${t.x.toStringAsFixed(0)} °C außen\n' : '',
+                const TextStyle(color: Color(0xFFBDBDC7), fontSize: 10.5),
+                textAlign: TextAlign.left,
+                children: [
+                  TextSpan(
+                    text: '$label: $value',
+                    style: TextStyle(
+                      color: bars[t.barIndex].$1.color ?? Colors.white,
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ));
+              header = false;
+            }
+            return items;
+          },
+        ),
+      ),
       extraLinesData: ExtraLinesData(verticalLines: [
         if (outdoorTemp != null)
           VerticalLine(
-            x: outdoorTemp!.clamp(-20, 20).toDouble(),
+            x: outdoorTemp!.clamp(_minX, _maxX).toDouble(),
             color: Colors.white.withValues(alpha: 0.35),
             strokeWidth: 1,
             dashArray: [4, 4],
@@ -147,5 +235,4 @@ class ControllerCurveChart extends StatelessWidget {
       ]),
     ));
   }
-
 }

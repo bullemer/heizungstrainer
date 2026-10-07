@@ -174,7 +174,9 @@ class _CurveSimulatorScreenState extends State<CurveSimulatorScreen> {
               ControllerCurveChart(curve: curve, roomSetpoint: room, simulatedSetpoint: sim, outdoorTemp: outdoorTemp, reference: provider.buildingReference),
               const SizedBox(height: 8),
               Wrap(spacing: 16, children: [
-                _legend(ControllerCurveChart.currentColor, 'Aktuell (${room.toStringAsFixed(1)} °C)'),
+                _legend(ControllerCurveChart.currentColor, 'Heizkurve im Regler'),
+                if ((room - 20).abs() >= 0.25)
+                  _legend(ControllerCurveChart.currentColor.withValues(alpha: 0.7), 'Wirksam bei ${room.toStringAsFixed(1)} °C'),
                 if ((sim - room).abs() >= 0.25) _legend(ControllerCurveChart.simulatedColor, 'Simuliert (${sim.toStringAsFixed(1)} °C)'),
               ]),
             ],
