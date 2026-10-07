@@ -513,6 +513,17 @@ class _ConnectionScreenState extends State<ConnectionScreen>
                 ),
               ),
             ),
+            const SizedBox(height: 8),
+            // Without a controller at hand (or for the Play review): try it all simulated.
+            TextButton.icon(
+              key: const Key('startpage_demo_button'),
+              onPressed: () => provider.startSimulation(),
+              icon: const Icon(Icons.play_circle_outline_rounded),
+              label: const Text('Ohne Regler ausprobieren (Demo)'),
+              style: TextButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+              ),
+            ),
           ],
         );
 
@@ -598,6 +609,17 @@ class _ConnectionScreenState extends State<ConnectionScreen>
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(14),
                 ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            // Without a controller at hand (or for the Play review): try it all simulated.
+            TextButton.icon(
+              key: const Key('startpage_error_demo_button'),
+              onPressed: () => provider.startSimulation(),
+              icon: const Icon(Icons.play_circle_outline_rounded),
+              label: const Text('Ohne Regler ausprobieren (Demo)'),
+              style: TextButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 12),
               ),
             ),
           ],

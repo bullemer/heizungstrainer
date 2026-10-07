@@ -1,6 +1,6 @@
 # Google Play – Store-Eintrag & Data safety
 
-Stand: 2026-10-07, App 1.1.6 (Build 8), Paket `com.heizungstrainer.heizungstrainer`.
+Stand: 2026-10-07, App 1.1.8 (Build 10), Paket `com.heizungstrainer.heizungstrainer`.
 Alles hier entspricht dem, was die App tatsächlich tut (geprüft am Code). Bei
 Änderungen an Netzwerkzugriffen oder Berechtigungen diese Datei mit anpassen.
 
@@ -64,7 +64,8 @@ HINWEISE
 **Grafiken** (Pflicht):
 - App-Symbol 512×512 PNG (32-bit, Alpha)
 - Feature-Grafik 1024×500 JPG/PNG
-- Mind. 2 Smartphone-Screenshots (16:9 oder 9:16, 320–3840 px) – geplant via adb: Startseite, Heizkurve/Simulator, Urlaubsmodus, Verbrauchsvergleich, Einstellungen
+- Screenshots: assets/branding/screenshots/01–06 (1080×2109, Demo-Modus, Status-/Navigationsleiste abgeschnitten wegen Play-Limit 2:1)
+- Icon: assets/branding/play_icon_512.png · Feature-Grafik: assets/branding/play_feature_1024x500.png
 
 ## 3. Store-Einstellungen
 
@@ -95,7 +96,7 @@ HINWEISE
 **App-Zugriff – Anleitung für die Prüfer:**
 
 ```
-Kein Benutzerkonto und kein Login nötig. Die App steuert einen Heizungsregler im lokalen Netzwerk (z. B. Danfoss ECL Comfort 310 per Modbus TCP), den Prüfer nicht haben. Zum Testen auf der Startseite im violetten Hinweis „Offline-Ansicht“ auf „Demo“ tippen (alternativ: Einstellungen → Heizungsregler → beim ausgewählten Regler „Simulation testen“). Danach sind alle Funktionen (Messwerte, Heizkurve, Simulator, Urlaubsmodus, Sicherungen) mit simulierten Werten nutzbar; es wird keine echte Heizung angesteuert. Das Abrechnungsportal (Brunata Hamburg) braucht echte Mieter-Zugangsdaten und ist für den Test nicht erforderlich.
+Kein Benutzerkonto und kein Login nötig. Die App steuert einen Heizungsregler im lokalen Netzwerk (z. B. Danfoss ECL Comfort 310 per Modbus TCP), den Prüfer nicht haben. Zum Testen auf dem ersten Bildschirm unten „Ohne Regler ausprobieren (Demo)“ tippen (alternativ: Einstellungen → Heizungsregler → beim ausgewählten Regler „Simulation testen“). Danach sind alle Funktionen (Messwerte, Heizkurve, Urlaubsmodus, Sicherungen) mit simulierten Werten nutzbar; es wird keine echte Heizung angesteuert. Das Abrechnungsportal (Brunata Hamburg) braucht echte Mieter-Zugangsdaten und ist für den Test nicht erforderlich.
 ```
 
 ## 5. Einstufung des Inhalts (IARC-Fragebogen)
