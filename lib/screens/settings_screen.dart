@@ -4433,7 +4433,8 @@ class _ControllerCard extends StatelessWidget {
               children: [
                 _TagChip(label: _protocolString(descriptor.protocol)),
                 const Spacer(),
-                if (isSelected && !descriptor.isSupported) ...[
+                // Simulation for every controller, so it can be tried without hardware.
+                if (isSelected) ...[
                   if (isConnected) ...[
                     OutlinedButton.icon(
                       onPressed: onDisconnect,

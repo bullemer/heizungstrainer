@@ -354,6 +354,24 @@ class _OfflineModeBanner extends StatelessWidget {
               ),
             ),
           ),
+          // No controller at hand (or Play review): try everything simulated.
+          TextButton(
+            key: const ValueKey('home_start_demo'),
+            onPressed: () => provider.startSimulation(),
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              minimumSize: const Size(50, 28),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            child: const Text(
+              'Demo',
+              style: TextStyle(
+                color: Color(0xFFB388FF),
+                fontWeight: FontWeight.bold,
+                fontSize: 12,
+              ),
+            ),
+          ),
         ],
       ),
     );
