@@ -762,6 +762,34 @@ class ECLProvider extends ChangeNotifier {
     }
   }
 
+  bool _sensorMappingChecked = false;
+
+  /// Reads the installed ECL application and selects which sensors are flow
+  /// and return before the first poll of a connection.
+  Future<void> _applySensorMapping() async {
+    _sensorMappingChecked = true;
+    if (_isSimulationActive || _selectedControllerId != 'danfoss_ecl_310') return;
+    _controllerApplication = await _modbusService.readApplicationName();
+    final mapping = ECLRegisters.sensorMappingFor(_controllerApplication);
+    final changed = !mapEquals(_modbusService.sensorAddressOverrides, mapping ?? const {});
+    _modbusService.sensorAddressOverrides = mapping ?? const {};
+    if (changed) {
+      // history from the previous mapping would mix different sensors
+      _history.remove(ECLRegisters.flowTemp.id);
+      _history.remove(ECLRegisters.returnTemp.id);
+    }
+    await _logService.logRead(
+      controllerId: _selectedControllerId,
+      action: 'SENSOR_MAPPING',
+      message: mapping == null
+          ? 'Applikation ${_controllerApplication ?? 'unbekannt'}: Standard-Fühlerzuordnung '
+              '(Vorlauf = S4, Rücklauf = S3) – für diese Applikation nicht geprüft.'
+          : 'Applikation $_controllerApplication: ${ECLRegisters.describeMapping(mapping)}.',
+      level: mapping == null ? ActivityLogLevel.warning : ActivityLogLevel.info,
+      details: {'application': _controllerApplication, 'mapping': mapping},
+    );
+  }
+
   Future<void> _pollAlarms() async {
     if (_isSimulationActive || _selectedControllerId != 'danfoss_ecl_310') return;
     if (!_scheduleLoadedThisConnection) {
@@ -1164,6 +1192,7 @@ class ECLProvider extends ChangeNotifier {
       _settingsCheckedThisConnection = false;
       _alarmsCheckedThisConnection = false;
       _scheduleLoadedThisConnection = false;
+      _sensorMappingChecked = false;
       _isReconnecting = false;
       _consecutivePollErrors = 0;
       notifyListeners();
@@ -1340,6 +1369,7 @@ class ECLProvider extends ChangeNotifier {
       _settingsCheckedThisConnection = false;
       _alarmsCheckedThisConnection = false;
       _scheduleLoadedThisConnection = false;
+      _sensorMappingChecked = false;
       _consecutivePollErrors = 0;
       _isReconnecting = false;
       notifyListeners();
@@ -1429,6 +1459,7 @@ class ECLProvider extends ChangeNotifier {
       _settingsCheckedThisConnection = false;
       _alarmsCheckedThisConnection = false;
       _scheduleLoadedThisConnection = false;
+      _sensorMappingChecked = false;
       _consecutivePollErrors = 0;
       _isReconnecting = false;
       notifyListeners();
@@ -1616,6 +1647,7 @@ class ECLProvider extends ChangeNotifier {
     }
 
     try {
+      if (!_sensorMappingChecked) await _applySensorMapping();
       final newReadings = await _modbusService.readAllParameters();
       // Parameters the controller doesn't provide (e.g. no "Verschieben" in
       // this application) must not keep showing a cached or stale value.

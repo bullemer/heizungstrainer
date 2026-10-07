@@ -38,6 +38,18 @@ class ECLParameter {
     return null;
   }
 
+  /// Same parameter at another register (sensor mapping per application).
+  ECLParameter atAddress(int address) => ECLParameter(
+        id: id,
+        name: name,
+        unit: unit,
+        modbusAddress: address,
+        multiplier: multiplier,
+        isWritable: isWritable,
+        minValue: minValue,
+        maxValue: maxValue,
+      );
+
   int get displayPrecision {
     if (multiplier <= 0.01) return 1;
     if (multiplier < 1) return 1;
@@ -194,6 +206,25 @@ abstract final class ECLRegisters {
   /// Further settings that are only read and compared (not every
   /// application provides them).
   static const List<ECLParameter> extraSettings = [savingRoomTemp, circuitMode];
+
+  /// Sensor registers that differ from the defaults for an application
+  /// (keyed by parameter id), or null if the defaults apply.
+  ///
+  /// A247.1 (Danfoss diagram "A247_1 ex. a", checked live 2026-10-08): S3 =
+  /// heating flow (10202), S5 = heating return (10204); S4 (10203) is the
+  /// hot-water charging flow and S2 (10201) the hot-water return.
+  static Map<String, int>? sensorMappingFor(String? application) {
+    if (application == null) return null;
+    if (application.startsWith('A247')) {
+      return {flowTemp.id: 10202, returnTemp.id: 10204};
+    }
+    return null;
+  }
+
+  /// Human-readable sensor names for a mapping (for the log).
+  static String describeMapping(Map<String, int> mapping) => mapping.entries
+      .map((e) => '${e.key == flowTemp.id ? 'Vorlauf' : e.key == returnTemp.id ? 'Rücklauf' : e.key} = S${e.value - 10199}')
+      .join(', ');
 
   /// Outdoor temperatures of the six curve points, in register order.
   static const List<double> curvePointOutdoorTemps = [-30, -15, -5, 0, 5, 15];

@@ -113,6 +113,16 @@ class ModbusService {
   ///
   /// Returns an [ECLReading] with the raw value and timestamp.
   /// Throws [ModbusCommunicationException] on failure or timeout.
+  /// Per-application sensor registers (parameter id → address), set by the
+  /// provider once the controller's application is known.
+  Map<String, int> sensorAddressOverrides = const {};
+
+  /// The sensor parameters at the registers this installation uses.
+  List<ECLParameter> get _sensorParameters => [
+        for (final p in ECLRegisters.sensorParameters)
+          sensorAddressOverrides.containsKey(p.id) ? p.atAddress(sensorAddressOverrides[p.id]!) : p,
+      ];
+
   /// Reads [count] raw holding registers starting at [address] in one request.
   Future<List<int>> _readRaw(int address, int count) async {
     _ensureConnected();
@@ -240,7 +250,7 @@ class ModbusService {
   /// Reads all sensor parameters in a single batch Modbus request (registers 10200..10205).
   Future<Map<String, ECLReading>> _readSensorBatch() async {
     final registers = {
-      for (final param in ECLRegisters.sensorParameters)
+      for (final param in _sensorParameters)
         param: ModbusInt16Register(
           name: param.id,
           type: ModbusElementType.holdingRegister,
@@ -292,7 +302,7 @@ class ModbusService {
       debugPrint('[Modbus] Batch-read ${sensorReadings.length} sensors in 1 request.');
     } catch (e) {
       debugPrint('[Modbus] Sensor batch-read failed, falling back to sequential: $e');
-      for (final param in ECLRegisters.sensorParameters) {
+      for (final param in _sensorParameters) {
         try {
           results[param.id] = await readParameter(param);
         } catch (err) {

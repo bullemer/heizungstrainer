@@ -17,6 +17,16 @@ WeekSchedule realSchedule() => WeekSchedule.fromRaw([
     ]);
 
 void main() {
+  test('A247 uses S3 as flow and S5 as return; other applications keep the defaults', () {
+    final m = ECLRegisters.sensorMappingFor('A247.1 v4.00')!;
+    expect(m[ECLRegisters.flowTemp.id], 10202);
+    expect(m[ECLRegisters.returnTemp.id], 10204);
+    expect(ECLRegisters.describeMapping(m), 'Vorlauf = S3, Rücklauf = S5');
+    expect(ECLRegisters.sensorMappingFor('A266.1 v1.08'), isNull);
+    expect(ECLRegisters.sensorMappingFor(null), isNull);
+    expect(ECLRegisters.flowTemp.atAddress(10202).id, 'flow_temp');
+  });
+
   test('register addresses follow PNU 3110 + 10·day + 2·period − 1', () {
     expect(WeekSchedule.address(0, 0, stop: false), 3109); // Mon P1 start
     expect(WeekSchedule.address(1, 0, stop: true), 3120); // Tue P1 stop
