@@ -573,6 +573,64 @@ class ECLProvider extends ChangeNotifier {
     }
   }
 
+  /// Alarms the controller currently reports (alarm numbers 1–32).
+  Set<int> _controllerAlarms = {};
+  Set<int> get controllerAlarms => Set.unmodifiable(_controllerAlarms);
+
+  /// Installed ECL application, e.g. "A266.1 v1.08" (null until read).
+  String? _controllerApplication;
+  String? get controllerApplication => _controllerApplication;
+  bool _alarmsCheckedThisConnection = false;
+
+  Future<void> _pollAlarms() async {
+    if (_isSimulationActive || _selectedControllerId != 'danfoss_ecl_310') return;
+    _controllerApplication ??= await _modbusService.readApplicationName();
+    await processAlarmMask(await _modbusService.readAlarmMask());
+  }
+
+  /// Logs alarms the controller raised or cleared since the last poll.
+  /// [mask] = 32-bit alarm bitmask, null if the controller has none.
+  @visibleForTesting
+  Future<void> processAlarmMask(int? mask) async {
+    if (mask == null) return;
+    final active = ControllerSettingsWatch.alarmsIn(mask);
+    final change = await settingsWatch.updateAlarms(_selectedControllerId, active);
+    _controllerAlarms = active;
+    final app = _controllerApplication == null ? '' : ' (Applikation $_controllerApplication)';
+    for (final n in change.raised.toList()..sort()) {
+      await _logService.logError(
+        action: 'CONTROLLER_ALARM',
+        message: 'Regler meldet Alarm $n$app. Die Bedeutung der Alarmnummer steht in der '
+            'Anleitung der Danfoss-Applikation; am Regler unter „Alarm“ einsehbar.',
+        controllerId: _selectedControllerId,
+        category: ActivityLogCategory.controllerRead,
+        errorCode: 'ECL_ALARM_$n',
+        details: {'alarm': n, 'pnu': 1040 + n - 1, 'mask': mask, 'application': _controllerApplication},
+      );
+    }
+    for (final n in change.cleared.toList()..sort()) {
+      await _logService.logRead(
+        controllerId: _selectedControllerId,
+        action: 'CONTROLLER_ALARM_CLEARED',
+        message: 'Regler-Alarm $n ist nicht mehr aktiv.',
+        level: ActivityLogLevel.success,
+        details: {'alarm': n, 'mask': mask},
+      );
+    }
+    if (!_alarmsCheckedThisConnection) {
+      _alarmsCheckedThisConnection = true;
+      await _logService.logRead(
+        controllerId: _selectedControllerId,
+        action: 'CONTROLLER_ALARM_STATUS',
+        message: active.isEmpty
+            ? 'Regler-Alarme geprüft: keine aktiv$app.'
+            : 'Aktive Regler-Alarme: ${(active.toList()..sort()).join(', ')}$app.',
+        level: active.isEmpty ? ActivityLogLevel.info : ActivityLogLevel.warning,
+        details: {'active': active.toList()..sort(), 'mask': mask, 'application': _controllerApplication},
+      );
+    }
+  }
+
   static String _fmtSetting(double v) => v == v.roundToDouble() ? v.toStringAsFixed(0) : v.toStringAsFixed(1);
 
   static String _fmtTime(DateTime t) =>
@@ -905,6 +963,7 @@ class ECLProvider extends ChangeNotifier {
       await _activeController.connect(host: '127.0.0.1');
       _connectionState = ECLConnectionState.connected;
       _settingsCheckedThisConnection = false;
+      _alarmsCheckedThisConnection = false;
       _isReconnecting = false;
       _consecutivePollErrors = 0;
       notifyListeners();
@@ -1079,6 +1138,7 @@ class ECLProvider extends ChangeNotifier {
       await _rememberSuccessfulConnection();
       _connectionState = ECLConnectionState.connected;
       _settingsCheckedThisConnection = false;
+      _alarmsCheckedThisConnection = false;
       _consecutivePollErrors = 0;
       _isReconnecting = false;
       notifyListeners();
@@ -1166,6 +1226,7 @@ class ECLProvider extends ChangeNotifier {
       await _rememberSuccessfulConnection();
       _connectionState = ECLConnectionState.connected;
       _settingsCheckedThisConnection = false;
+      _alarmsCheckedThisConnection = false;
       _consecutivePollErrors = 0;
       _isReconnecting = false;
       notifyListeners();
@@ -1403,6 +1464,7 @@ class ECLProvider extends ChangeNotifier {
       // Persist latest state & telemetry to SQLite
       _persistReadings(_readings);
       await _checkSettings();
+      await _pollAlarms();
 
       notifyListeners();
     } on ModbusCommunicationException catch (e) {

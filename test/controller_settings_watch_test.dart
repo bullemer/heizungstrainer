@@ -53,6 +53,41 @@ void main() {
     });
   });
 
+  group('Controller alarms', () {
+    test('bitmask → alarm numbers (alarm 1 = bit 0, 17 = high word bit 0)', () {
+      expect(ControllerSettingsWatch.alarmsIn(0), isEmpty);
+      expect(ControllerSettingsWatch.alarmsIn(0x1), {1});
+      expect(ControllerSettingsWatch.alarmsIn(0x8002), {2, 16});
+      expect(ControllerSettingsWatch.alarmsIn(0x10000), {17});
+      expect(ControllerSettingsWatch.alarmsIn(0x80000000), {32});
+    });
+
+    test('provider logs raised and cleared alarms once', () async {
+      FlutterSecureStorage.setMockInitialValues({});
+      final log = ActivityLogService(enablePersistence: false, enableRemoteDispatch: false);
+      final provider = ECLProvider(logService: log, autoLoadDatabase: false);
+      List<ActivityLogEntry> by(String a) => log.recentEntries.where((e) => e.action == a).toList();
+
+      await provider.processAlarmMask(0);
+      expect(by('CONTROLLER_ALARM_STATUS').single.message, contains('keine aktiv'));
+
+      await provider.processAlarmMask(0x20002); // alarms 2 and 18
+      expect(by('CONTROLLER_ALARM').map((e) => e.errorCode), unorderedEquals(['ECL_ALARM_2', 'ECL_ALARM_18']));
+      expect(by('CONTROLLER_ALARM').every((e) => e.level == ActivityLogLevel.error), isTrue);
+      expect(provider.controllerAlarms, {2, 18});
+
+      await provider.processAlarmMask(0x20002); // unchanged → nothing new
+      expect(by('CONTROLLER_ALARM'), hasLength(2));
+
+      await provider.processAlarmMask(0x20000); // alarm 2 gone
+      expect(by('CONTROLLER_ALARM_CLEARED').single.message, contains('Alarm 2 '));
+      expect(by('CONTROLLER_ALARM_STATUS'), hasLength(1));
+
+      await provider.processAlarmMask(null); // no alarm registers → no change
+      expect(provider.controllerAlarms, {18});
+    });
+  });
+
   group('ECLProvider settings check', () {
     setUp(() => FlutterSecureStorage.setMockInitialValues({}));
 

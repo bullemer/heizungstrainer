@@ -112,6 +112,31 @@ class ModbusService {
   ///
   /// Returns an [ECLReading] with the raw value and timestamp.
   /// Throws [ModbusCommunicationException] on failure or timeout.
+  /// ECL alarm bitmask as one 32-bit value (bit 0 = alarm 1 … bit 31 =
+  /// alarm 32), or null if the application doesn't provide it.
+  Future<int?> readAlarmMask() async {
+    try {
+      final high = await readParameter(ECLRegisters.alarmMaskHigh);
+      final low = await readParameter(ECLRegisters.alarmMaskLow);
+      return ((high.rawValue & 0xFFFF) << 16) | (low.rawValue & 0xFFFF);
+    } catch (e) {
+      debugPrint('[Modbus] Alarm registers not available: $e');
+      return null;
+    }
+  }
+
+  /// Installed application, e.g. "A266.1 v1.08", or null if not readable.
+  Future<String?> readApplicationName() async {
+    try {
+      final v = [for (final p in ECLRegisters.applicationInfo) (await readParameter(p)).rawValue & 0xFFFF];
+      final version = '${v[3] >> 8}.${(v[3] & 0xFF).toString().padLeft(2, '0')}';
+      return '${String.fromCharCode(v[0])}${v[1]}.${v[2]} v$version';
+    } catch (e) {
+      debugPrint('[Modbus] Application info not available: $e');
+      return null;
+    }
+  }
+
   Future<ECLReading> readParameter(ECLParameter parameter) async {
     _ensureConnected();
 
@@ -240,7 +265,7 @@ class ModbusService {
 
     // 3. Optional heating-curve parameters (not every application has them;
     //    a missing one is not a connection problem).
-    for (final param in ECLRegisters.curveParameters) {
+    for (final param in [...ECLRegisters.curveParameters, ...ECLRegisters.extraSettings]) {
       try {
         results[param.id] = await readParameter(param);
       } catch (err) {

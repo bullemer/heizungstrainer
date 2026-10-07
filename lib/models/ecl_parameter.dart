@@ -161,6 +161,39 @@ abstract final class ECLRegisters {
     modbusAddress: 11178, multiplier: 1.0,
   );
 
+  // ── Alarms and application (Danfoss communication description 6.10/6.12) ──
+  // PNU 1024/1025 = alarm bitmask (alarm 1 = PNU 1025 bit 0, alarms 17–32 in
+  // PNU 1024); PNU 2060–2063 = application prefix/type/sub/version.
+  // Register address = PNU − 1. Raw 16-bit words, no unit.
+
+  static const alarmMaskHigh = ECLParameter(
+    id: 'alarm_mask_high', name: 'Alarme 17–32', unit: '', modbusAddress: 1023, multiplier: 1.0,
+  );
+  static const alarmMaskLow = ECLParameter(
+    id: 'alarm_mask_low', name: 'Alarme 1–16', unit: '', modbusAddress: 1024, multiplier: 1.0,
+  );
+  static const List<ECLParameter> applicationInfo = [
+    ECLParameter(id: 'app_prefix', name: 'Applikation Präfix', unit: '', modbusAddress: 2059, multiplier: 1.0),
+    ECLParameter(id: 'app_type', name: 'Applikation Typ', unit: '', modbusAddress: 2060, multiplier: 1.0),
+    ECLParameter(id: 'app_sub', name: 'Applikation Unternummer', unit: '', modbusAddress: 2061, multiplier: 1.0),
+    ECLParameter(id: 'app_version', name: 'Applikation Version', unit: '', modbusAddress: 2062, multiplier: 1.0),
+  ];
+
+  /// Room setpoint outside comfort periods ("Spar"/setback, PNU 11181).
+  static const savingRoomTemp = ECLParameter(
+    id: 'saving_room_temp', name: 'Spar-Raumsollwert', unit: '°C', modbusAddress: 11180, multiplier: 0.1,
+  );
+
+  /// Operating mode circuit 1 (PNU 4201): 0 manual, 1 scheduled,
+  /// 2 constant comfort, 3 constant setback, 4 frost protection.
+  static const circuitMode = ECLParameter(
+    id: 'circuit_mode', name: 'Betriebsart Heizkreis', unit: '', modbusAddress: 4200, multiplier: 1.0,
+  );
+
+  /// Further settings that are only read and compared (not every
+  /// application provides them).
+  static const List<ECLParameter> extraSettings = [savingRoomTemp, circuitMode];
+
   /// Outdoor temperatures of the six curve points, in register order.
   static const List<double> curvePointOutdoorTemps = [-30, -15, -5, 0, 5, 15];
 

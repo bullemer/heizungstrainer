@@ -65,6 +65,7 @@ class ControllerSettingsWatch {
   static const List<ECLParameter> tracked = [
     ...ECLRegisters.writableParameters,
     ...ECLRegisters.curveParameters,
+    ...ECLRegisters.extraSettings,
   ];
 
   static String storageKey(String controllerId) => 'controller_known_settings_$controllerId';
@@ -133,5 +134,37 @@ class ControllerSettingsWatch {
     }
     if (changed) await _save(controllerId);
     return diffs;
+  }
+
+  // ── Controller alarms ──────────────────────────────────────────────
+
+  static String alarmKey(String controllerId) => 'controller_active_alarms_$controllerId';
+
+  /// Alarm numbers (1–32) set in [mask].
+  static Set<int> alarmsIn(int mask) => {for (var i = 0; i < 32; i++) if (mask & (1 << i) != 0) i + 1};
+
+  /// Compares the controller's active alarms with the last known ones and
+  /// stores the new state. Returns (raised, cleared, stillActive).
+  Future<({Set<int> raised, Set<int> cleared, Set<int> stillActive})> updateAlarms(
+      String controllerId, Set<int> active) async {
+    final key = alarmKey(controllerId);
+    final raw = _memory != null ? _memory[key] : await _storage!.read(key: key);
+    final before = <int>{
+      for (final part in (raw ?? '').split(','))
+        if (int.tryParse(part) != null) int.parse(part),
+    };
+    final value = (active.toList()..sort()).join(',');
+    if (value != raw) {
+      if (_memory != null) {
+        _memory[key] = value;
+      } else {
+        await _storage!.write(key: key, value: value);
+      }
+    }
+    return (
+      raised: active.difference(before),
+      cleared: before.difference(active),
+      stillActive: active.intersection(before),
+    );
   }
 }
