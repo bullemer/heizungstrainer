@@ -6,6 +6,7 @@ import 'package:heizungstrainer/models/license_info.dart';
 import 'package:heizungstrainer/services/feedback_service.dart';
 import 'package:heizungstrainer/services/play_store.dart';
 import 'package:heizungstrainer/widgets/feedback_sheet.dart';
+import 'package:heizungstrainer/widgets/settings_transfer_card.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:heizungstrainer/app_version.dart';
 import 'package:heizungstrainer/billing/billing_provider.dart';
@@ -962,6 +963,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       _LicenseStatusCard(provider: provider),
                       const SizedBox(height: 12),
                       _FeedbackCard(provider: provider),
+                      const SizedBox(height: 12),
+                      SettingsTransferCard(provider: provider),
                       const SizedBox(height: 24),
 
                       // ── SECTION 1: HEATING CONTROLLER ─────────────

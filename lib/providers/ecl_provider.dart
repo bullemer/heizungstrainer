@@ -500,6 +500,9 @@ class ECLProvider extends ChangeNotifier {
     _initHardwareSettings();
   }
 
+  /// Re-reads all persisted settings, e.g. after a settings import.
+  Future<void> reloadSettings() => _initHardwareSettings();
+
   Future<void> _initHardwareSettings() async {
     try {
       _genericModbusConfig = await GenericModbusConfig.load(_secureStorage);
