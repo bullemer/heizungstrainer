@@ -295,12 +295,32 @@ class _MainShellState extends State<MainShell> {
             label: 'Sicherungen',
           ),
           NavigationDestination(
-            icon: Icon(Icons.receipt_long_outlined),
-            selectedIcon: Icon(Icons.receipt_long_rounded),
+            icon: _LogsIcon(selected: false),
+            selectedIcon: _LogsIcon(selected: true),
             label: 'Logs',
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Logs tab icon with the number of new alerts.
+class _LogsIcon extends StatelessWidget {
+  const _LogsIcon({required this.selected});
+
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context) {
+    final alerts = context.read<ECLProvider>().alerts;
+    return ListenableBuilder(
+      listenable: alerts,
+      builder: (context, _) {
+        final n = alerts.unacknowledgedCount;
+        final icon = Icon(selected ? Icons.receipt_long_rounded : Icons.receipt_long_outlined);
+        return n == 0 ? icon : Badge(label: Text('$n'), child: icon);
+      },
     );
   }
 }

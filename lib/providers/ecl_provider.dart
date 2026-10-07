@@ -36,6 +36,7 @@ import 'package:heizungstrainer/services/activity_log_service.dart';
 import 'package:heizungstrainer/services/brunata_local_scraper_service.dart';
 import 'package:heizungstrainer/services/database_service.dart';
 import 'package:heizungstrainer/models/week_schedule.dart';
+import 'package:heizungstrainer/services/alert_center.dart';
 import 'package:heizungstrainer/services/controller_settings_watch.dart';
 import 'package:heizungstrainer/services/device_registry.dart';
 import 'package:heizungstrainer/services/discovery_service.dart';
@@ -456,7 +457,10 @@ class ECLProvider extends ChangeNotifier {
     bool autoLoadDatabase = true,
     bool? autoConnect,
     ControllerSettingsWatch? settingsWatch,
+    AlertCenter? alerts,
   })  : _autoConnect = autoConnect ?? autoLoadDatabase,
+        alerts = alerts ??
+            (autoLoadDatabase ? AlertCenter(storage: secureStorage) : AlertCenter(inMemoryStorage: {})),
         settingsWatch = settingsWatch ??
             (autoLoadDatabase
                 ? ControllerSettingsWatch(storage: secureStorage)
@@ -503,6 +507,7 @@ class ECLProvider extends ChangeNotifier {
       _initFromDatabase();
       _logService.init();
       _licenseService.init();
+      this.alerts.load();
     }
     _initHardwareSettings();
   }
@@ -510,6 +515,30 @@ class ECLProvider extends ChangeNotifier {
   /// Remembers the controller's settings to detect changes made outside the
   /// app and app changes the controller no longer shows.
   final ControllerSettingsWatch settingsWatch;
+
+  /// "Aktive Meldungen" at the top of the Logs tab.
+  final AlertCenter alerts;
+
+  /// Sensor faults (19200 on outdoor/flow/return/hot water) as alerts that
+  /// disappear when the sensor reads again.
+  Future<void> _updateSensorAlerts() async {
+    if (_isSimulationActive) return;
+    for (final p in ECLRegisters.sensorParameters) {
+      final r = _readings[p.id];
+      if (r == null) continue;
+      if (r.isSensorDisconnected) {
+        await alerts.raise(
+          key: 'sensor_${p.id}',
+          severity: AlertSeverity.error,
+          title: 'Fühlerfehler: ${p.name}',
+          message: 'Der Regler meldet 19200 – Fühler getrennt oder defekt.',
+          isCondition: true,
+        );
+      } else {
+        await alerts.resolve('sensor_${p.id}');
+      }
+    }
+  }
   bool _settingsCheckedThisConnection = false;
 
   /// A write is running: a poll in between must not report the app's own
@@ -539,7 +568,14 @@ class ECLProvider extends ChangeNotifier {
         'knownAt': d.known.at.toIso8601String(),
         'controllerValue': d.live,
       };
+      final alertKey = '${d.parameter.id}_${DateTime.now().millisecondsSinceEpoch}';
       if (d.appChangeMissing) {
+        await alerts.raise(
+          key: 'lost_$alertKey',
+          severity: AlertSeverity.error,
+          title: 'App-Änderung fehlt im Regler',
+          message: '${d.parameter.name} $change – am Regler geändert oder nicht übernommen.',
+        );
         await _logService.logError(
           action: 'APP_CHANGE_NOT_ON_DEVICE',
           message: 'Von der App gesetzter Wert fehlt im Regler: ${d.parameter.name} $change '
@@ -550,6 +586,12 @@ class ECLProvider extends ChangeNotifier {
           details: details,
         );
       } else {
+        await alerts.raise(
+          key: 'ext_$alertKey',
+          severity: AlertSeverity.info,
+          title: 'Außerhalb der App geändert',
+          message: '${d.parameter.name} $change',
+        );
         await _logService.logRead(
           controllerId: _selectedControllerId,
           action: 'SETTING_CHANGED_OUTSIDE_APP',
@@ -617,6 +659,12 @@ class ECLProvider extends ChangeNotifier {
         changed = true;
         final change = 'Zeitprogramm ${WeekSchedule.dayNames[d]}: ${before.describeDay(d)} → ${live.describeDay(d)}';
         final details = {'day': d, 'before': before.describeDay(d), 'controller': live.describeDay(d)};
+        await alerts.raise(
+          key: '${known.byApp ? 'lost' : 'ext'}_schedule_${d}_${DateTime.now().millisecondsSinceEpoch}',
+          severity: known.byApp ? AlertSeverity.error : AlertSeverity.info,
+          title: known.byApp ? 'App-Änderung fehlt im Regler' : 'Außerhalb der App geändert',
+          message: change,
+        );
         if (known.byApp) {
           await _logService.logError(
             action: 'APP_CHANGE_NOT_ON_DEVICE',
@@ -677,6 +725,12 @@ class ECLProvider extends ChangeNotifier {
           success: false,
           errorCode: 'WRITE_NOT_CONFIRMED',
         );
+        await alerts.raise(
+          key: 'write_schedule_${day}_${DateTime.now().millisecondsSinceEpoch}',
+          severity: AlertSeverity.error,
+          title: 'Schreiben nicht bestätigt',
+          message: 'Zeitprogramm ${WeekSchedule.dayNames[day]}: Regler meldet „$got“.',
+        );
         if (result != null) _controllerSchedule = result;
         notifyListeners();
         throw ModbusCommunicationException(message: 'Der Regler hat das Zeitprogramm nicht übernommen ($got).');
@@ -726,6 +780,20 @@ class ECLProvider extends ChangeNotifier {
     final active = ControllerSettingsWatch.alarmsIn(mask);
     final change = await settingsWatch.updateAlarms(_selectedControllerId, active);
     _controllerAlarms = active;
+    for (var n = 1; n <= 32; n++) {
+      if (active.contains(n)) {
+        await alerts.raise(
+          key: 'alarm_$n',
+          severity: AlertSeverity.error,
+          title: 'Regler-Alarm $n',
+          message: 'Der Regler meldet Alarm $n${_controllerApplication == null ? '' : ' (Applikation $_controllerApplication)'}. '
+              'Bedeutung: Anleitung der Danfoss-Applikation bzw. am Regler unter „Alarm“.',
+          isCondition: true,
+        );
+      } else {
+        await alerts.resolve('alarm_$n');
+      }
+    }
     final app = _controllerApplication == null ? '' : ' (Applikation $_controllerApplication)';
     for (final n in change.raised.toList()..sort()) {
       await _logService.logError(
@@ -1513,6 +1581,7 @@ class ECLProvider extends ChangeNotifier {
         }
 
         await _persistReadings(_readings);
+        await _updateSensorAlerts();
         await _checkSettings();
         notifyListeners();
       } catch (e) {
@@ -1597,6 +1666,7 @@ class ECLProvider extends ChangeNotifier {
 
       // Persist latest state & telemetry to SQLite
       _persistReadings(_readings);
+      await _updateSensorAlerts();
       await _checkSettings();
       await _pollAlarms();
 
@@ -1960,6 +2030,12 @@ class ECLProvider extends ChangeNotifier {
       errorCode: 'WRITE_NOT_CONFIRMED',
     );
     notifyListeners();
+    await alerts.raise(
+      key: 'write_${parameter.id}_${DateTime.now().millisecondsSinceEpoch}',
+      severity: AlertSeverity.error,
+      title: 'Schreiben nicht bestätigt',
+      message: message,
+    );
     throw ModbusCommunicationException(message: message);
   }
 

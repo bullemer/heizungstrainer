@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import 'package:heizungstrainer/widgets/alerts_panel.dart';
 import 'package:heizungstrainer/widgets/settings_check_dialog.dart';
 import 'package:heizungstrainer/models/activity_log_entry.dart';
 import 'package:heizungstrainer/providers/ecl_provider.dart';
@@ -109,6 +110,9 @@ class _LogScreenState extends State<LogScreen> {
           ),
           body: Column(
             children: [
+              // ── Active alerts ─────────────────────────────────────────
+              AlertsPanel(alerts: provider.alerts),
+
               // ── KPI Summary Cards ─────────────────────────────────────
               _buildKpiBanner(
                 total: totalCount,
