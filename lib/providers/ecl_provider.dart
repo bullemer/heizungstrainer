@@ -35,6 +35,7 @@ import 'package:heizungstrainer/models/telemetry_sample.dart';
 import 'package:heizungstrainer/services/activity_log_service.dart';
 import 'package:heizungstrainer/services/brunata_local_scraper_service.dart';
 import 'package:heizungstrainer/services/database_service.dart';
+import 'package:heizungstrainer/services/controller_settings_watch.dart';
 import 'package:heizungstrainer/services/device_registry.dart';
 import 'package:heizungstrainer/services/discovery_service.dart';
 import 'package:heizungstrainer/services/energy_price_service.dart';
@@ -453,7 +454,12 @@ class ECLProvider extends ChangeNotifier {
     FlutterSecureStorage? secureStorage,
     bool autoLoadDatabase = true,
     bool? autoConnect,
+    ControllerSettingsWatch? settingsWatch,
   })  : _autoConnect = autoConnect ?? autoLoadDatabase,
+        settingsWatch = settingsWatch ??
+            (autoLoadDatabase
+                ? ControllerSettingsWatch(storage: secureStorage)
+                : ControllerSettingsWatch(inMemoryStorage: {})),
         _modbusService = modbusService ?? ModbusService(),
         _discoveryService = discoveryService ?? DiscoveryService(),
         _brunataScraper = brunataScraper ?? BrunataLocalScraperService(),
@@ -498,6 +504,91 @@ class ECLProvider extends ChangeNotifier {
       _licenseService.init();
     }
     _initHardwareSettings();
+  }
+
+  /// Remembers the controller's settings to detect changes made outside the
+  /// app and app changes the controller no longer shows.
+  final ControllerSettingsWatch settingsWatch;
+  bool _settingsCheckedThisConnection = false;
+
+  /// A write is running: a poll in between must not report the app's own
+  /// change as "changed outside the app".
+  bool _writeInProgress = false;
+
+  /// Compares the polled settings with what the app knew and logs every
+  /// difference. Runs after each successful poll (no extra Modbus traffic).
+  Future<void> _checkSettings() async {
+    if (_isSimulationActive || _writeInProgress) return;
+    final live = <String, double>{
+      for (final p in ControllerSettingsWatch.tracked)
+        if (_readings[p.id] != null && !_readings[p.id]!.isSensorDisconnected)
+          p.id: _readings[p.id]!.displayValue,
+    };
+    if (live.isEmpty) return;
+    final diffs = await settingsWatch.compare(_selectedControllerId, live);
+    for (final d in diffs) {
+      final unit = d.parameter.unit.isEmpty ? '' : ' ${d.parameter.unit}';
+      final change = '${_fmtSetting(d.known.value)} → ${_fmtSetting(d.live)}$unit';
+      final details = {
+        'parameterId': d.parameter.id,
+        'parameterName': d.parameter.name,
+        'modbusAddress': d.parameter.modbusAddress,
+        'knownValue': d.known.value,
+        'knownSource': d.known.source.name,
+        'knownAt': d.known.at.toIso8601String(),
+        'controllerValue': d.live,
+      };
+      if (d.appChangeMissing) {
+        await _logService.logError(
+          action: 'APP_CHANGE_NOT_ON_DEVICE',
+          message: 'Von der App gesetzter Wert fehlt im Regler: ${d.parameter.name} $change '
+              '(App-Änderung vom ${_fmtTime(d.known.at)}; am Regler geändert oder nicht übernommen).',
+          controllerId: _selectedControllerId,
+          category: ActivityLogCategory.controllerRead,
+          errorCode: 'APP_CHANGE_NOT_ON_DEVICE',
+          details: details,
+        );
+      } else {
+        await _logService.logRead(
+          controllerId: _selectedControllerId,
+          action: 'SETTING_CHANGED_OUTSIDE_APP',
+          message: 'Außerhalb der App geändert: ${d.parameter.name} $change.',
+          errorCode: 'EXTERNAL_CHANGE',
+          level: ActivityLogLevel.warning,
+          details: details,
+        );
+      }
+    }
+    if (!_settingsCheckedThisConnection) {
+      _settingsCheckedThisConnection = true;
+      await _logService.logRead(
+        controllerId: _selectedControllerId,
+        action: 'SETTINGS_CHECK',
+        message: diffs.isEmpty
+            ? 'Reglereinstellungen geprüft: ${live.length} Werte, keine Abweichung.'
+            : 'Reglereinstellungen geprüft: ${live.length} Werte, ${diffs.length} Abweichung(en).',
+        level: diffs.isEmpty ? ActivityLogLevel.info : ActivityLogLevel.warning,
+        details: {'checked': live.length, 'differences': diffs.length},
+      );
+    }
+  }
+
+  static String _fmtSetting(double v) => v == v.roundToDouble() ? v.toStringAsFixed(0) : v.toStringAsFixed(1);
+
+  static String _fmtTime(DateTime t) =>
+      '${t.day.toString().padLeft(2, '0')}.${t.month.toString().padLeft(2, '0')}. '
+      '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+
+  /// Reads all settings from the controller now and returns them next to the
+  /// values the app knew before ("Regler abgleichen"). Differences are logged.
+  Future<List<SettingCheckRow>> checkControllerSettings() async {
+    final before = await settingsWatch.known(_selectedControllerId);
+    await refreshReadings();
+    return [
+      for (final p in ControllerSettingsWatch.tracked)
+        if (before[p.id] != null || _readings[p.id] != null)
+          SettingCheckRow(parameter: p, known: before[p.id], live: _readings[p.id]?.displayValue),
+    ];
   }
 
   /// Re-reads all persisted settings, e.g. after a settings import.
@@ -813,6 +904,7 @@ class ECLProvider extends ChangeNotifier {
       }
       await _activeController.connect(host: '127.0.0.1');
       _connectionState = ECLConnectionState.connected;
+      _settingsCheckedThisConnection = false;
       _isReconnecting = false;
       _consecutivePollErrors = 0;
       notifyListeners();
@@ -986,6 +1078,7 @@ class ECLProvider extends ChangeNotifier {
       await _modbusService.connect(ip);
       await _rememberSuccessfulConnection();
       _connectionState = ECLConnectionState.connected;
+      _settingsCheckedThisConnection = false;
       _consecutivePollErrors = 0;
       _isReconnecting = false;
       notifyListeners();
@@ -1072,6 +1165,7 @@ class ECLProvider extends ChangeNotifier {
       await _discoveryService.saveControllerIp(ip);
       await _rememberSuccessfulConnection();
       _connectionState = ECLConnectionState.connected;
+      _settingsCheckedThisConnection = false;
       _consecutivePollErrors = 0;
       _isReconnecting = false;
       notifyListeners();
@@ -1224,6 +1318,7 @@ class ECLProvider extends ChangeNotifier {
         }
 
         await _persistReadings(_readings);
+        await _checkSettings();
         notifyListeners();
       } catch (e) {
         debugPrint('[Provider] Controller reading error: $e');
@@ -1307,6 +1402,7 @@ class ECLProvider extends ChangeNotifier {
 
       // Persist latest state & telemetry to SQLite
       _persistReadings(_readings);
+      await _checkSettings();
 
       notifyListeners();
     } on ModbusCommunicationException catch (e) {
@@ -1506,6 +1602,11 @@ class ECLProvider extends ChangeNotifier {
       throw ModbusCommunicationException(message: capabilityError);
     }
 
+    final previous = _readings[parameter.id]?.displayValue;
+    _writeInProgress = true;
+    String change(double confirmed) =>
+        '${previous == null ? '' : '${_fmtSetting(previous)} → '}${_fmtSetting(value)} ${parameter.unit}'
+        ' (Regler meldet ${_fmtSetting(confirmed)} ${parameter.unit})';
     try {
       if (_selectedControllerId != 'danfoss_ecl_310' ||
           _activeController is MockHeatingController ||
@@ -1526,17 +1627,22 @@ class ECLProvider extends ChangeNotifier {
         await _logService.logWrite(
           controllerId: _selectedControllerId,
           action: 'WRITE_PARAMETER_VERIFIED',
-          message: '${parameter.name} auf $value ${parameter.unit} gesetzt und vom Regler bestätigt.',
+          message: '${parameter.name}: ${change(reading?.displayValue ?? value)} – gesetzt und bestätigt.',
           details: {
             'parameterId': parameter.id,
             'parameterName': parameter.name,
+            'previousValue': previous,
             'value': value,
+            'controllerValue': reading?.displayValue,
             'unit': parameter.unit,
             'controller': _selectedControllerId,
           },
           success: true,
         );
-        if (!_isSimulationActive) unawaited(_feedbackService.recordSuccessfulWrite());
+        if (!_isSimulationActive) {
+          unawaited(_feedbackService.recordSuccessfulWrite());
+          await settingsWatch.recordAppWrite(_selectedControllerId, parameter, reading?.displayValue ?? value);
+        }
 
         notifyListeners();
         return reading!;
@@ -1550,18 +1656,21 @@ class ECLProvider extends ChangeNotifier {
       await _logService.logWrite(
         controllerId: _selectedControllerId,
         action: 'WRITE_PARAMETER_VERIFIED',
-        message: '${parameter.name} erfolgreich über Modbus auf $value ${parameter.unit} geschrieben und verifiziert.',
+        message: '${parameter.name}: ${change(reading.displayValue)} – über Modbus geschrieben und zurückgelesen.',
         details: {
           'parameterId': parameter.id,
           'parameterName': parameter.name,
           'modbusAddress': parameter.modbusAddress,
+          'previousValue': previous,
           'value': value,
+          'controllerValue': reading.displayValue,
           'unit': parameter.unit,
           'rawWritten': reading.rawValue,
         },
         success: true,
       );
       unawaited(_feedbackService.recordSuccessfulWrite());
+      await settingsWatch.recordAppWrite(_selectedControllerId, parameter, reading.displayValue);
 
       notifyListeners();
       return reading;
@@ -1580,6 +1689,8 @@ class ECLProvider extends ChangeNotifier {
         errorCode: 'WRITE_FAILED',
       );
       rethrow;
+    } finally {
+      _writeInProgress = false;
     }
   }
 

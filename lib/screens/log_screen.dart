@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import 'package:heizungstrainer/widgets/settings_check_dialog.dart';
 import 'package:heizungstrainer/models/activity_log_entry.dart';
 import 'package:heizungstrainer/providers/ecl_provider.dart';
 import 'package:heizungstrainer/services/activity_log_service.dart';
@@ -61,6 +62,12 @@ class _LogScreenState extends State<LogScreen> {
               ],
             ),
             actions: [
+              IconButton(
+                key: const Key('settings_check'),
+                tooltip: 'Regler abgleichen',
+                icon: const Icon(Icons.fact_check_outlined, color: Color(0xFFFFA726)),
+                onPressed: () => SettingsCheckDialog.show(context, provider),
+              ),
               IconButton(
                 tooltip: 'Bericht an Backoffice senden',
                 icon: const Icon(Icons.cloud_upload_outlined, color: Color(0xFFFFA726)),
