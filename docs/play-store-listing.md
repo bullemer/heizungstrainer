@@ -93,10 +93,10 @@ HINWEISE
 | Gesundheit | Keine Gesundheitsfunktionen |
 | Data safety | siehe 6. |
 
-**App-Zugriff – Anleitung für die Prüfer:**
+**App-Zugriff – Anleitung für die Prüfer:** (Benutzername/Passwort leer lassen – keine eigenen Brunata-Zugangsdaten hinterlegen)
 
 ```
-Kein Benutzerkonto und kein Login nötig. Die App steuert einen Heizungsregler im lokalen Netzwerk (z. B. Danfoss ECL Comfort 310 per Modbus TCP), den Prüfer nicht haben. Zum Testen auf dem ersten Bildschirm unten „Ohne Regler ausprobieren (Demo)“ tippen (alternativ: Einstellungen → Heizungsregler → beim ausgewählten Regler „Simulation testen“). Danach sind alle Funktionen (Messwerte, Heizkurve, Urlaubsmodus, Sicherungen) mit simulierten Werten nutzbar; es wird keine echte Heizung angesteuert. Das Abrechnungsportal (Brunata Hamburg) braucht echte Mieter-Zugangsdaten und ist für den Test nicht erforderlich.
+Kein Benutzerkonto und kein Login nötig. Die App steuert einen Heizungsregler im lokalen Netzwerk (z. B. Danfoss ECL Comfort 310 per Modbus TCP), den Prüfer nicht haben. Zum Testen auf dem ersten Bildschirm unten „Ohne Regler ausprobieren (Demo)“ tippen (alternativ: Einstellungen → Heizungsregler → beim ausgewählten Regler „Simulation testen“). Danach sind alle Funktionen (Messwerte, Heizkurve, Urlaubsmodus, Sicherungen) mit simulierten Werten nutzbar; es wird keine echte Heizung angesteuert. Das Abrechnungsportal Brunata Hamburg braucht echte Mieter-Zugangsdaten (keine Test-Zugänge vorhanden); die Verbrauchsanalyse lässt sich ohne Zugangsdaten testen: Einstellungen → Messdienstleister & Abrechnung → z. B. „Techem Smart System“ wählen → simulierte Verbrauchsdaten.
 ```
 
 ## 5. Einstufung des Inhalts (IARC-Fragebogen)
