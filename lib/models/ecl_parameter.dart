@@ -162,9 +162,12 @@ abstract final class ECLRegisters {
     id: 'curve_min_flow', name: 'Min. Vorlauftemperatur', unit: '°C',
     modbusAddress: 11176, multiplier: 1.0,
   );
+  /// "Temp. max." (PNU 11178, ID 11178 in the controller menu): caps the
+  /// flow temperature whatever the curve asks for. Writable 30–90 °C here.
   static const curveMaxFlow = ECLParameter(
     id: 'curve_max_flow', name: 'Max. Vorlauftemperatur', unit: '°C',
     modbusAddress: 11177, multiplier: 1.0,
+    isWritable: true, minValue: 30, maxValue: 90,
   );
 
   /// "Sommer-Aus": outdoor temperature above which the circuit stops heating.

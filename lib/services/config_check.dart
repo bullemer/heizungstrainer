@@ -15,6 +15,7 @@ enum FindingArea { heating, hotWater, controller }
 enum FindingAction {
   fixSavingSetpoint,
   fixScheduleDays,
+  setMaxFlow,
   openCurveAssistant,
   pickBuildingProfile,
   openHotWater,
@@ -232,8 +233,9 @@ List<ConfigFinding> runConfigCheck(ConfigCheckInput i) {
         severity: FindingSeverity.warning,
         title: 'Max. Vorlauf ${t(maxFlow)} bei Fußbodenheizung',
         detail: 'Fußbodenheizungen brauchen selten mehr als 35–40 °C; viele Estriche vertragen dauerhaft '
-            'höchstens 45–55 °C. Die Begrenzung im Regler schützt vor zu heißem Vorlauf – im Zweifel den '
-            'Installateur fragen.',
+            'höchstens 45–55 °C. Die Begrenzung im Regler schützt vor zu heißem Vorlauf – ein Wert knapp über '
+            'dem höchsten Punkt der Heizkurve (z. B. 45 °C) reicht. Im Zweifel den Installateur fragen.',
+        action: FindingAction.setMaxFlow,
       ));
     }
   }

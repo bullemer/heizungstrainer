@@ -3,7 +3,9 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 
+import 'package:heizungstrainer/exceptions/modbus_exceptions.dart';
 import 'package:heizungstrainer/models/controller_holiday.dart';
+import 'package:heizungstrainer/models/ecl_parameter.dart';
 import 'package:heizungstrainer/models/week_schedule.dart';
 import 'package:heizungstrainer/providers/ecl_provider.dart';
 import 'package:heizungstrainer/screens/config_check_screen.dart';
@@ -57,6 +59,29 @@ void main() {
     expect(ids(input()), unorderedEquals(['max_flow_floor', 'circulation_night', 'circulation_long']));
     final night = runConfigCheck(input()).firstWhere((f) => f.id == 'circulation_night');
     expect(night.title, 'Zirkulation läuft nachts (Di, Mi, Do, Fr)');
+  });
+
+  test('max flow 50 °C with floor heating offers the "Max. Vorlauf ändern" fix', () {
+    final f = runConfigCheck(input()).firstWhere((x) => x.id == 'max_flow_floor');
+    expect(f.action, FindingAction.setMaxFlow);
+    expect(ids(ConfigCheckInput(curve: curve, reference: BuildingReference.floorAfter2010, maxFlow: 45)),
+        isNot(contains('max_flow_floor')));
+  });
+
+  test('max flow below what the curve needs is refused before writing', () async {
+    FlutterSecureStorage.setMockInitialValues({});
+    final provider = _ConnectedEcl();
+    for (final (p, v) in [
+      for (var i = 0; i < 6; i++) (ECLRegisters.curvePoints[i], [40.0, 36, 32, 29, 26, 22][i]),
+      (ECLRegisters.curveSlope, 0.5),
+      (ECLRegisters.roomTargetTemp, 21.0),
+    ]) {
+      provider.setReadingForTesting(p, v.toDouble());
+    }
+    // curve needs 40 + (21−20)·0.5·2.5 = 41.25 °C at −30 °C
+    await expectLater(provider.writeParameter(ECLRegisters.curveMaxFlow, 38),
+        throwsA(isA<ModbusCommunicationException>().having((e) => e.message, 'message', contains('41.3'))));
+    provider.dispose();
   });
 
   test('curve within the EnergieSchweiz band → no curve finding; too high → estimate', () {
@@ -122,4 +147,13 @@ class _CheckProvider extends ECLProvider {
     hidden.add(id);
     notifyListeners();
   }
+}
+
+class _ConnectedEcl extends ECLProvider {
+  _ConnectedEcl()
+      : super(logService: ActivityLogService(enablePersistence: false, enableRemoteDispatch: false), autoLoadDatabase: false);
+  @override
+  bool get supportsControllerSchedule => true;
+  @override
+  bool get isConnected => true;
 }

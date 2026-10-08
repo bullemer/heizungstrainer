@@ -2339,6 +2339,19 @@ class ECLProvider extends ChangeNotifier {
       if (value < caps.minShift || value > caps.maxShift) {
         return '$brand erlaubt eine Parallelverschiebung von ${caps.minShift} bis ${caps.maxShift}, nicht $value.';
       }
+    } else if (parameter.id == ECLRegisters.curveMaxFlow.id) {
+      if (!supportsControllerSchedule) {
+        return 'Die max. Vorlauftemperatur ist nur beim verbundenen Danfoss ECL 310 änderbar.';
+      }
+      final curve = ControllerHeatingCurve.fromReadings(getReading);
+      final comfort = getReading(ECLRegisters.roomTargetTemp)?.displayValue ?? 20;
+      if (curve != null) {
+        final needed = curve.flowTemps.reduce(math.max) + curve.roomCorrection(comfort);
+        if (value < needed - 0.5) {
+          return 'Die Heizkurve braucht bei −30 °C bis zu ${needed.fixed(1)} °C – eine Begrenzung auf '
+              '${value.fixed(0)} °C würde sie abschneiden. Erst die Heizkurve absenken.';
+        }
+      }
     } else if (ECLRegisters.dhwSettings.any((p) => p.id == parameter.id)) {
       if (!supportsDhwSettings) {
         return 'Warmwasser-Einstellungen sind nur beim verbundenen Danfoss ECL 310 (A247) änderbar.';

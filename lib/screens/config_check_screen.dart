@@ -1,11 +1,17 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import 'package:heizungstrainer/exceptions/modbus_exceptions.dart';
+import 'package:heizungstrainer/models/ecl_parameter.dart';
 import 'package:heizungstrainer/providers/ecl_provider.dart';
 import 'package:heizungstrainer/screens/curve_simulator_screen.dart';
 import 'package:heizungstrainer/screens/dhw_settings_screen.dart';
 import 'package:heizungstrainer/screens/live_view_screen.dart';
 import 'package:heizungstrainer/services/config_check.dart';
+import 'package:heizungstrainer/services/heating_curve_model.dart';
+import 'package:heizungstrainer/utils/number_format.dart';
 import 'package:heizungstrainer/widgets/building_profile_picker.dart';
 import 'package:heizungstrainer/widgets/controller_schedule_card.dart';
 
@@ -29,6 +35,7 @@ abstract final class FindingStyle {
   static String? actionLabel(FindingAction a) => switch (a) {
         FindingAction.fixSavingSetpoint => 'Spar-Sollwert ändern',
         FindingAction.fixScheduleDays => 'Wie die anderen Tage',
+        FindingAction.setMaxFlow => 'Max. Vorlauf ändern',
         FindingAction.openCurveAssistant => 'Heizkurve optimieren',
         FindingAction.pickBuildingProfile => 'Gebäudetyp wählen',
         FindingAction.openHotWater => 'Warmwasser einstellen',
@@ -42,6 +49,8 @@ abstract final class FindingStyle {
         await ControllerScheduleCard.fixSavingFor(context, provider);
       case FindingAction.fixScheduleDays:
         await ControllerScheduleCard.fixEmptyDaysFor(context, provider);
+      case FindingAction.setMaxFlow:
+        await _setMaxFlow(context, provider);
       case FindingAction.openCurveAssistant:
         await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const CurveSimulatorScreen()));
       case FindingAction.pickBuildingProfile:
@@ -53,6 +62,54 @@ abstract final class FindingStyle {
       case FindingAction.none:
         break;
     }
+  }
+}
+
+/// Dialog for the controller's max. flow temperature ("Temp. max.").
+Future<void> _setMaxFlow(BuildContext context, ECLProvider provider) async {
+  final current = provider.getReading(ECLRegisters.curveMaxFlow)?.displayValue;
+  final curve = ControllerHeatingCurve.fromReadings(provider.getReading);
+  final comfort = provider.getReading(ECLRegisters.roomTargetTemp)?.displayValue ?? 20;
+  if (current == null || curve == null) return;
+  final needed = (curve.flowTemps.reduce(math.max) + curve.roomCorrection(comfort)).ceilToDouble();
+  final min = math.max(30.0, needed);
+  var value = math.max(min, 45.0).clamp(min, math.max(min, current)).toDouble();
+  final chosen = await showDialog<double>(
+    context: context,
+    builder: (ctx) => StatefulBuilder(
+      builder: (ctx, setState) => AlertDialog(
+        backgroundColor: const Color(0xFF2A2A32),
+        title: const Text('Max. Vorlauftemperatur', style: TextStyle(color: Color(0xFFECECF0), fontSize: 18)),
+        content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('Aktuell ${current.fixed(0)} °C. Deine Heizkurve braucht höchstens ${needed.fixed(0)} °C (bei −30 °C).',
+              style: const TextStyle(color: Color(0xFFB0B0BA), fontSize: 13.5)),
+          const SizedBox(height: 12),
+          Center(child: Text('${value.fixed(0)} °C', style: const TextStyle(color: Color(0xFFFFA726), fontSize: 24, fontWeight: FontWeight.w700))),
+          Slider(
+            value: value,
+            min: min,
+            max: math.max(min + 1, current),
+            divisions: math.max(1, (math.max(min + 1, current) - min).round()),
+            onChanged: (v) => setState(() => value = v.roundToDouble()),
+          ),
+          const Text('Im Regler: Heizkreis → Einstellungen → Vorlauftemperatur → „Temp. max.“ (ID 11178). '
+              'Wird an den Regler gesendet, zurückgelesen und protokolliert.',
+              style: TextStyle(color: Color(0xFF9E9EA8), fontSize: 11.5)),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Abbrechen')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, value), child: const Text('An Regler senden')),
+        ],
+      ),
+    ),
+  );
+  if (chosen == null || !context.mounted) return;
+  final messenger = ScaffoldMessenger.of(context);
+  try {
+    await provider.writeParameter(ECLRegisters.curveMaxFlow, chosen);
+    messenger.showSnackBar(SnackBar(content: Text('Max. Vorlauf auf ${chosen.fixed(0)} °C gesetzt.'), backgroundColor: const Color(0xFF66BB6A)));
+  } catch (e) {
+    messenger.showSnackBar(SnackBar(content: Text(userFacingError(e)), backgroundColor: const Color(0xFFEF5350)));
   }
 }
 
