@@ -45,8 +45,14 @@ class WeekSchedule {
 
   /// Register address of a schedule value for circuit 1 (PNU 3110 + 10·day +
   /// 2·period [+1 for stop]; register = PNU − 1).
-  static int address(int day, int period, {required bool stop}) =>
-      3109 + 10 * day + 2 * period + (stop ? 1 : 0);
+  static int address(int day, int period, {required bool stop, int basePnu = heatingBasePnu}) =>
+      basePnu - 1 + 10 * day + 2 * period + (stop ? 1 : 0);
+
+  /// Schedule areas (PNU of Monday P1 start), verified on A247.1:
+  /// 3110 heating circuit, 3210 hot water, 3310 circulation pump P3.
+  static const heatingBasePnu = 3110;
+  static const dhwBasePnu = 3210;
+  static const circulationBasePnu = 3310;
 
   /// From the 6 raw registers per day (P1 start, P1 stop, … P3 stop).
   factory WeekSchedule.fromRaw(List<List<int>> raw) => WeekSchedule([

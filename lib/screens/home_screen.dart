@@ -9,6 +9,7 @@ import 'package:heizungstrainer/models/ecl_parameter.dart';
 import 'package:heizungstrainer/models/ecl_reading.dart';
 import 'package:heizungstrainer/providers/ecl_provider.dart';
 import 'package:heizungstrainer/screens/curve_simulator_screen.dart';
+import 'package:heizungstrainer/screens/dhw_settings_screen.dart';
 import 'package:heizungstrainer/screens/live_view_screen.dart';
 import 'package:heizungstrainer/screens/settings_screen.dart';
 import 'package:heizungstrainer/services/heating_analytics_service.dart';
@@ -233,7 +234,13 @@ class HomeScreen extends StatelessWidget {
                 // ── Warmwasser ──────────────────────────────
                 _SectionLabel(label: 'Warmwasser'),
                 const SizedBox(height: 10),
-                _HotWaterCard(provider: provider),
+                GestureDetector(
+                  key: const Key('openDhwSettings'),
+                  onTap: provider.supportsDhwSettings
+                      ? () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const DhwSettingsScreen()))
+                      : null,
+                  child: _HotWaterCard(provider: provider),
+                ),
                 const SizedBox(height: 24),
 
                 // ── Abrechnung & Analyse ────────────────────
@@ -1225,6 +1232,11 @@ class _HotWaterCard extends StatelessWidget {
                         style: const TextStyle(fontSize: 12, color: Color(0xFFBDBDC7)),
                       ),
                     ),
+                if (provider.supportsDhwSettings)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 6),
+                    child: Text('Einstellungen ›', style: TextStyle(fontSize: 12, color: Color(0xFF42A5F5), fontWeight: FontWeight.w600)),
+                  ),
                 const SizedBox(height: 8),
                 Text(
                   isDisconnected

@@ -648,6 +648,78 @@ class ECLProvider extends ChangeNotifier {
 
   bool _scheduleLoadedThisConnection = false;
 
+  // ── Hot water (A247 circuit 2) ────────────────────────────────────
+
+  /// Hot-water settings (setpoints, mode, legionella, circulation) can be
+  /// read and changed – verified registers for A247 only.
+  bool get supportsDhwSettings =>
+      supportsControllerSchedule && (_controllerApplication?.startsWith('A247') ?? false);
+
+  WeekSchedule? _dhwSchedule;
+  WeekSchedule? _circulationSchedule;
+  WeekSchedule? get dhwSchedule => _dhwSchedule;
+  WeekSchedule? get circulationSchedule => _circulationSchedule;
+
+  @visibleForTesting
+  void setDhwSchedulesForTesting({WeekSchedule? dhw, WeekSchedule? circulation}) {
+    _dhwSchedule = dhw;
+    _circulationSchedule = circulation;
+    notifyListeners();
+  }
+
+  Future<void> loadDhwSchedules() async {
+    if (!supportsDhwSettings) return;
+    _dhwSchedule = await _modbusService.readSchedule(basePnu: WeekSchedule.dhwBasePnu);
+    _circulationSchedule = await _modbusService.readSchedule(basePnu: WeekSchedule.circulationBasePnu);
+    notifyListeners();
+  }
+
+  /// Writes the circulation pump times of [day], reads them back and logs.
+  Future<void> writeCirculationDay(int day, List<SchedulePeriod> periods) async {
+    if (!supportsDhwSettings) {
+      throw ModbusCommunicationException(message: 'Zirkulationszeiten nur beim verbundenen ECL 310 (A247) änderbar.');
+    }
+    await _checkControllerHolidayWriteLicense('circulation');
+    final before = _circulationSchedule?.describeDay(day) ?? '?';
+    final wanted = (_circulationSchedule ?? WeekSchedule(List.generate(7, (_) => List.filled(3, SchedulePeriod.unused))))
+        .withDay(day, periods);
+    _writeInProgress = true;
+    try {
+      final result = await _modbusService.writeScheduleDay(day, periods, basePnu: WeekSchedule.circulationBasePnu);
+      if (result != null) _circulationSchedule = result;
+      if (result == null || !result.sameDay(wanted, day)) {
+        final got = result?.describeDay(day) ?? 'keine Antwort';
+        final message = 'Zirkulation ${WeekSchedule.dayNames[day]}: Regler meldet „$got“ statt „${wanted.describeDay(day)}“.';
+        await _logService.logWrite(
+          controllerId: _selectedControllerId,
+          action: 'WRITE_NOT_CONFIRMED',
+          message: '$message – nicht übernommen.',
+          details: {'day': day, 'wanted': wanted.describeDay(day), 'controller': got},
+          success: false,
+          errorCode: 'WRITE_NOT_CONFIRMED',
+        );
+        await alerts.raise(
+          key: 'write_circ_${day}_${DateTime.now().millisecondsSinceEpoch}',
+          severity: AlertSeverity.error,
+          title: 'Schreiben nicht bestätigt',
+          message: message,
+        );
+        notifyListeners();
+        throw ModbusCommunicationException(message: 'Der Regler hat die Zirkulationszeiten nicht übernommen.');
+      }
+      await _logService.logWrite(
+        controllerId: _selectedControllerId,
+        action: 'WRITE_SCHEDULE_VERIFIED',
+        message: 'Zirkulationspumpe ${WeekSchedule.dayNames[day]}: $before → ${result.describeDay(day)} '
+            '– geschrieben und zurückgelesen.',
+        details: {'day': day, 'before': before, 'controller': result.describeDay(day), 'schedule': 'circulation'},
+      );
+      notifyListeners();
+    } finally {
+      _writeInProgress = false;
+    }
+  }
+
   /// Reads the weekly schedule and logs days changed outside the app
   /// (or app changes the controller no longer shows, as an error).
   Future<void> loadControllerSchedule() async {
@@ -846,6 +918,21 @@ class ECLProvider extends ChangeNotifier {
     await _writeHolidaySlot(slot, ControllerHolidayMode.off, now, now);
   }
 
+  Future<void> _checkControllerHolidayWriteLicense(String what) async {
+    if (!_licenseService.canWriteParameters) {
+      await _logService.logSecurityGate(
+        controllerId: _selectedControllerId,
+        message: 'Schreibbefehl blockiert: Heizungstrainer Pro erforderlich.',
+        details: {'parameterId': what, 'tier': _licenseService.currentTier.name},
+        errorCode: 'LICENSE_PRO_REQUIRED',
+      );
+      throw const LicenseRequiredException(
+        message: 'Das Verändern von Regler-Parametern erfordert Heizungstrainer Pro.',
+        featureName: 'Parametrierung schreiben',
+      );
+    }
+  }
+
   Future<void> _checkControllerHolidayWrite(String what) async {
     if (!supportsControllerHoliday) {
       throw ModbusCommunicationException(message: 'Urlaubsprogramme im Regler sind für diesen Regler nicht verfügbar.');
@@ -938,6 +1025,7 @@ class ECLProvider extends ChangeNotifier {
     if (!_scheduleLoadedThisConnection) {
       _scheduleLoadedThisConnection = true;
       await loadControllerSchedule();
+      await loadDhwSchedules();
     }
     _controllerApplication ??= await _modbusService.readApplicationName();
     await processAlarmMask(await _modbusService.readAlarmMask());
@@ -2159,6 +2247,13 @@ class ECLProvider extends ChangeNotifier {
       }
       if (value < caps.minShift || value > caps.maxShift) {
         return '$brand erlaubt eine Parallelverschiebung von ${caps.minShift} bis ${caps.maxShift}, nicht $value.';
+      }
+    } else if (ECLRegisters.dhwSettings.any((p) => p.id == parameter.id)) {
+      if (!supportsDhwSettings) {
+        return 'Warmwasser-Einstellungen sind nur beim verbundenen Danfoss ECL 310 (A247) änderbar.';
+      }
+      if (parameter.id == ECLRegisters.antiBacteriaTemp.id && value != 9 && (value < 60 || value > 75)) {
+        return 'Legionellenschutz: 60–75 °C oder aus.';
       }
     } else if (parameter.id == ECLRegisters.savingRoomTemp.id) {
       if (!supportsControllerSchedule) {

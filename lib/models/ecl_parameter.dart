@@ -224,8 +224,52 @@ abstract final class ECLRegisters {
   /// Hot-water comfort setpoint of circuit 2 (PNU 12190, ×0.1) – in DHW
   /// applications such as A247 (checked live: 55.0 °C).
   static const dhwComfortSetpoint = ECLParameter(
-    id: 'dhw_comfort_setpoint', name: 'Warmwasser-Sollwert', unit: '°C', modbusAddress: 12189, multiplier: 0.1,
+    id: 'dhw_comfort_setpoint', name: 'Warmwasser Komfort', unit: '°C', modbusAddress: 12189, multiplier: 0.1,
+    isWritable: true, minValue: 45, maxValue: 65,
   );
+
+  /// Hot-water saving setpoint (PNU 12191, ×0.1; live 50.0 °C).
+  static const dhwSavingSetpoint = ECLParameter(
+    id: 'dhw_saving_setpoint', name: 'Warmwasser Spar', unit: '°C', modbusAddress: 12190, multiplier: 0.1,
+    isWritable: true, minValue: 40, maxValue: 65,
+  );
+
+  /// Hot-water circuit mode (PNU 4202): 1 scheduled, 2 constant comfort,
+  /// 3 constant saving (manual/frost not offered).
+  static const dhwMode = ECLParameter(
+    id: 'dhw_mode', name: 'Betriebsart Warmwasser', unit: '', modbusAddress: 4201, multiplier: 1.0,
+    isWritable: true, minValue: 1, maxValue: 3,
+  );
+
+  /// Anti-bacteria (legionella) function of the DHW circuit (PNU 12122–12125,
+  /// Danfoss table 6-7; live: days 0, start 0, 120 min, 9 = off).
+  static const antiBacteriaDays = ECLParameter(
+    id: 'ab_days', name: 'Legionellenschutz Tage', unit: '', modbusAddress: 12121, multiplier: 1.0,
+    isWritable: true, minValue: 0, maxValue: 127,
+  );
+  static const antiBacteriaStart = ECLParameter(
+    id: 'ab_start', name: 'Legionellenschutz Start', unit: '', modbusAddress: 12122, multiplier: 1.0,
+    isWritable: true, minValue: 0, maxValue: 47,
+  );
+  static const antiBacteriaDuration = ECLParameter(
+    id: 'ab_duration', name: 'Legionellenschutz Dauer', unit: 'min', modbusAddress: 12123, multiplier: 1.0,
+    isWritable: true, minValue: 10, maxValue: 600,
+  );
+  static const antiBacteriaTemp = ECLParameter(
+    id: 'ab_temp', name: 'Legionellenschutz Temperatur', unit: '°C', modbusAddress: 12124, multiplier: 1.0,
+    isWritable: true, minValue: 9, maxValue: 75,
+  );
+
+  /// DHW settings the app reads and may change (A247).
+  static const List<ECLParameter> dhwSettings = [
+    dhwComfortSetpoint,
+    dhwSavingSetpoint,
+    dhwMode,
+    antiBacteriaDays,
+    antiBacteriaStart,
+    antiBacteriaDuration,
+    antiBacteriaTemp,
+  ];
 
   /// A247: hot-water charging flow (S4) and tank bottom (S8).
   static const dhwChargeFlow = ECLParameter(
@@ -238,7 +282,7 @@ abstract final class ECLRegisters {
   /// Additional sensors an application provides (read only for that
   /// application – on others the same inputs may mean something else).
   static List<ECLParameter> extraSensorsFor(String? application) =>
-      (application?.startsWith('A247') ?? false) ? const [dhwChargeFlow, dhwTankBottom, dhwComfortSetpoint] : const [];
+      (application?.startsWith('A247') ?? false) ? const [dhwChargeFlow, dhwTankBottom, ...dhwSettings] : const [];
 
   /// Human-readable sensor names for a mapping (for the log).
   static String describeMapping(Map<String, int> mapping) => mapping.entries

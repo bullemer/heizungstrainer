@@ -144,10 +144,10 @@ class ModbusService {
 
   /// Weekly comfort schedule of heating circuit 1, or null if the
   /// application has none.
-  Future<WeekSchedule?> readSchedule() async {
+  Future<WeekSchedule?> readSchedule({int basePnu = WeekSchedule.heatingBasePnu}) async {
     try {
       return WeekSchedule.fromRaw([
-        for (var day = 0; day < 7; day++) await _readRaw(WeekSchedule.address(day, 0, stop: false), 6),
+        for (var day = 0; day < 7; day++) await _readRaw(WeekSchedule.address(day, 0, stop: false, basePnu: basePnu), 6),
       ]);
     } catch (e) {
       debugPrint('[Modbus] Schedule not available: $e');
@@ -157,7 +157,8 @@ class ModbusService {
 
   /// Writes the three periods of [day] (P1 start, P1 stop, … in this order,
   /// as the Danfoss description requires) and returns the schedule read back.
-  Future<WeekSchedule?> writeScheduleDay(int day, List<SchedulePeriod> periods) async {
+  Future<WeekSchedule?> writeScheduleDay(int day, List<SchedulePeriod> periods,
+      {int basePnu = WeekSchedule.heatingBasePnu}) async {
     _ensureConnected();
     if (periods.length != 3) throw ArgumentError('3 periods expected');
     final valid = {for (var h = 0; h <= 24; h++) ...[h * 100, if (h < 24) h * 100 + 30]};
@@ -166,7 +167,7 @@ class ModbusService {
         if (!valid.contains(value)) {
           throw ModbusCommunicationException(message: 'Ungültige Uhrzeit $value im Zeitprogramm.');
         }
-        final address = WeekSchedule.address(day, p, stop: stop);
+        final address = WeekSchedule.address(day, p, stop: stop, basePnu: basePnu);
         final register = ModbusInt16Register(name: 's$address', type: ModbusElementType.holdingRegister, address: address);
         final response = await _client!.send(register.getWriteRequest(value)).timeout(_requestTimeout);
         if (response != ModbusResponseCode.requestSucceed) {
@@ -175,7 +176,7 @@ class ModbusService {
       }
     }
     await Future.delayed(const Duration(milliseconds: 200));
-    return readSchedule();
+    return readSchedule(basePnu: basePnu);
   }
 
   Future<int?> _readOne(int address) async {

@@ -67,6 +67,7 @@ class ControllerSettingsWatch {
     ...ECLRegisters.writableParameters,
     ...ECLRegisters.curveParameters,
     ...ECLRegisters.extraSettings,
+    ...ECLRegisters.dhwSettings,
   ];
 
   static String storageKey(String controllerId) => 'controller_known_settings_$controllerId';
