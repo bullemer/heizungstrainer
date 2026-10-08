@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:heizungstrainer/widgets/analysis_section.dart';
 import 'package:provider/provider.dart';
 
 import 'package:heizungstrainer/exceptions/modbus_exceptions.dart';
@@ -162,6 +163,8 @@ class ConfigCheckScreen extends StatelessWidget {
               ),
               for (final f in findings.where((f) => f.area == area)) _tile(context, provider, f),
             ],
+          const SizedBox(height: 4),
+          const SavingsGuideLink(label: 'Mehr Spartipps: Sparratgeber auf heizungstrainer.de'),
           if (provider.dismissedFindingsCount > 0)
             TextButton(
               onPressed: provider.resetDismissedFindings,

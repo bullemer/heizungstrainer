@@ -11,6 +11,7 @@ import 'package:heizungstrainer/providers/ecl_provider.dart';
 import 'package:heizungstrainer/screens/config_check_screen.dart';
 import 'package:heizungstrainer/services/activity_log_service.dart';
 import 'package:heizungstrainer/services/config_check.dart';
+import 'package:heizungstrainer/services/feedback_service.dart';
 import 'package:heizungstrainer/services/heating_curve_model.dart';
 
 /// The user's ECL 310 (A247.1), as read on 2026-10-08.
@@ -133,6 +134,8 @@ void main() {
     ));
     await tester.pump();
     expect(find.byKey(const Key('finding_max_flow_floor')), findsOneWidget);
+    expect(find.byKey(const Key('openSavingsGuide')), findsOneWidget);
+    expect(FeedbackService.savingsGuideUrl, 'https://heizungstrainer.de/ratgeber/heizung-einstellungen-energie-sparen.html');
     expect(find.text('Zirkulation läuft nachts (Di, Mi, Do, Fr)'), findsOneWidget);
     await tester.tap(find.descendant(of: find.byKey(const Key('finding_max_flow_floor')), matching: find.text('Ist so gewollt')));
     await tester.pump();

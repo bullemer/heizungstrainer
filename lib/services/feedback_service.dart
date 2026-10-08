@@ -24,6 +24,9 @@ class FeedbackService {
   static const String endpoint = 'https://bo.heizungstrainer.de/api/v1/feedback/bug';
   static const String forumUrl = 'https://heizungstrainer.de/forum/';
 
+  /// Website guide: which heating settings save energy and money.
+  static const String savingsGuideUrl = 'https://heizungstrainer.de/ratgeber/heizung-einstellungen-energie-sparen.html';
+
   // Same app key as diagnostics (backoffice APP_INGEST_KEY).
   static const String _appKey = 'ht_backoffice_secret_2026';
 

@@ -6,6 +6,8 @@ library;
 
 import 'package:heizungstrainer/utils/number_format.dart';
 import 'package:flutter/material.dart';
+import 'package:heizungstrainer/services/feedback_service.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'package:heizungstrainer/models/brunata_meter_data.dart';
 import 'package:heizungstrainer/screens/brunata_detail_screen.dart';
@@ -844,10 +846,29 @@ class HeatingSimulationCard extends StatelessWidget {
                 onPressed: onOpenAssistant,
               ),
             ),
+          const SavingsGuideLink(),
         ],
       ),
     );
   }
+}
+
+/// Link to the Sparratgeber on heizungstrainer.de (opens the browser).
+class SavingsGuideLink extends StatelessWidget {
+  const SavingsGuideLink({super.key, this.label = 'Sparratgeber: welche Einstellungen wie viel sparen'});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => Align(
+        alignment: Alignment.centerLeft,
+        child: TextButton.icon(
+          key: const Key('openSavingsGuide'),
+          icon: const Icon(Icons.menu_book_outlined, size: 18),
+          label: Text(label),
+          onPressed: () => launchUrl(Uri.parse(FeedbackService.savingsGuideUrl), mode: LaunchMode.externalApplication),
+        ),
+      );
 }
 
 /// "ca. X % weniger Heizenergie · ≈ Y kWh/Jahr · ≈ Z €/Jahr" with its basis.
