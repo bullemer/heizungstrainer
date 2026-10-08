@@ -74,6 +74,9 @@ class LicenseService extends ChangeNotifier {
   /// Whether the user has unlocked Pro features.
   bool get isPro => _freeLaunch || _currentInfo.isPro || _earlyAdopterSince != null;
 
+  /// Master licence: any number of controllers (not part of the free phase).
+  bool get isMaster => _currentInfo.isMaster;
+
   /// Free launch phase: no upgrade/purchase UI, everything unlocked.
   bool get isFreeLaunch => _freeLaunch;
 
@@ -291,7 +294,8 @@ class LicenseService extends ChangeNotifier {
   /// Activates an offline license key. Returns true if valid and activated.
   Future<bool> activateOfflineKey(String rawKey) async {
     final data = await verifyOfflineKey(rawKey);
-    if (data == null || data.edition != LicenseKeyCodec.editionProLifetime) {
+    if (data == null ||
+        (data.edition != LicenseKeyCodec.editionProLifetime && data.edition != LicenseKeyCodec.editionMaster)) {
       return false;
     }
 
@@ -299,6 +303,7 @@ class LicenseService extends ChangeNotifier {
       licenseKey: rawKey.trim(),
       activatedAt: DateTime.now(),
       customerReference: data.licenseId,
+      master: data.edition == LicenseKeyCodec.editionMaster,
     );
 
     await _persist(license);

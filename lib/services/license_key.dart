@@ -31,6 +31,10 @@ class LicenseKeyCodec {
   static const String prefix = 'HT2';
   static const int formatVersion = 1;
   static const int editionProLifetime = 1;
+
+  /// Master licence: Pro for any number of controllers (installers, housing
+  /// companies) – lifts the one-controller binding of the normal app.
+  static const int editionMaster = 2;
   static const int payloadLength = 10;
   static const int signatureLength = 64;
   static final DateTime epoch = DateTime.utc(2026, 1, 1);

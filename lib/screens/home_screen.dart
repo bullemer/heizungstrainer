@@ -13,6 +13,7 @@ import 'package:heizungstrainer/screens/curve_simulator_screen.dart';
 import 'package:heizungstrainer/screens/dhw_settings_screen.dart';
 import 'package:heizungstrainer/screens/live_view_screen.dart';
 import 'package:heizungstrainer/screens/settings_screen.dart';
+import 'package:heizungstrainer/services/controller_binding.dart';
 import 'package:heizungstrainer/services/heating_analytics_service.dart';
 import 'package:heizungstrainer/services/heating_curve_model.dart';
 import 'package:heizungstrainer/widgets/analysis_section.dart';
@@ -174,6 +175,10 @@ class HomeScreen extends StatelessWidget {
                 // ── Heizung ─────────────────────────────────
                 _SectionLabel(label: 'Heizung'),
                 const SizedBox(height: 10),
+                if (provider.controllerAccess == ControllerAccess.foreign) ...[
+                  _ForeignControllerCard(provider: provider),
+                  const SizedBox(height: 12),
+                ],
                 if (provider.supportsControllerSchedule) ...[
                   ConfigCheckCard(provider: provider),
                   const SizedBox(height: 12),
@@ -1448,6 +1453,84 @@ class _EfficiencyDeltaChip extends StatelessWidget {
 // ═══════════════════════════════════════════════════════════════════════════
 // Section Label
 // ═══════════════════════════════════════════════════════════════════════════
+
+/// Another controller than the app's own: shown read-only.
+class _ForeignControllerCard extends StatelessWidget {
+  const _ForeignControllerCard({required this.provider});
+
+  final ECLProvider provider;
+
+  @override
+  Widget build(BuildContext context) {
+    final next = provider.nextBindingChange;
+    const amber = Color(0xFFFFB74D);
+    return Container(
+      key: const Key('foreignControllerCard'),
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
+      decoration: BoxDecoration(
+        color: amber.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: amber.withValues(alpha: 0.6)),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Row(children: [
+          Icon(Icons.visibility_outlined, color: amber, size: 20),
+          SizedBox(width: 8),
+          Expanded(
+            child: Text('Anderer Regler – nur Anzeige',
+                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: Color(0xFFECECF0))),
+          ),
+        ]),
+        const SizedBox(height: 6),
+        Text(
+          'Verbunden: ${provider.connectedControllerLabel ?? '?'}\n'
+          'Dein Regler: ${provider.controllerBinding?.label ?? '?'}\n\n'
+          'Diese App ändert Einstellungen nur an deinem Regler. Für Heizungsbauer und Wohnungs'
+          'gesellschaften mit mehreren Anlagen gibt es die Master-Lizenz.',
+          style: const TextStyle(fontSize: 12.5, color: Color(0xFFD0D0D8), height: 1.35),
+        ),
+        Align(
+          alignment: Alignment.centerRight,
+          child: TextButton(
+            key: const Key('rebindController'),
+            onPressed: next != null ? null : () => _rebind(context),
+            child: Text(next != null
+                ? 'Wechsel wieder ab ${next.day}.${next.month}.${next.year}'
+                : 'Diesen Regler als meinen festlegen'),
+          ),
+        ),
+      ]),
+    );
+  }
+
+  Future<void> _rebind(BuildContext context) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF2A2A32),
+        title: const Text('Regler wechseln?', style: TextStyle(color: Color(0xFFECECF0), fontSize: 18)),
+        content: Text(
+          'Ab jetzt ist „${provider.connectedControllerLabel}“ dein Regler; '
+          '„${provider.controllerBinding?.label}“ kann dann nur noch angezeigt werden.\n\n'
+          'Ein Wechsel ist einmal in 12 Monaten möglich (z. B. neuer Regler oder Umzug).',
+          style: const TextStyle(color: Color(0xFFB0B0BA), fontSize: 13.5, height: 1.4),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Abbrechen')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Wechseln')),
+        ],
+      ),
+    );
+    if (ok != true || !context.mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await provider.rebindToConnectedController();
+      messenger.showSnackBar(const SnackBar(content: Text('Dieser Regler ist jetzt dein Regler.'), backgroundColor: Color(0xFF66BB6A)));
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(userFacingError(e)), backgroundColor: const Color(0xFFEF5350)));
+    }
+  }
+}
 
 /// Opens the live plant diagram.
 class _LiveViewTile extends StatelessWidget {

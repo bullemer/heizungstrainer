@@ -42,6 +42,7 @@ import 'package:heizungstrainer/models/live_snapshot.dart';
 import 'package:heizungstrainer/models/week_schedule.dart';
 import 'package:heizungstrainer/services/alert_center.dart';
 import 'package:heizungstrainer/services/config_check.dart';
+import 'package:heizungstrainer/services/controller_binding.dart';
 import 'package:heizungstrainer/services/controller_settings_watch.dart';
 import 'package:heizungstrainer/services/device_registry.dart';
 import 'package:heizungstrainer/services/discovery_service.dart';
@@ -463,7 +464,10 @@ class ECLProvider extends ChangeNotifier {
     bool? autoConnect,
     ControllerSettingsWatch? settingsWatch,
     AlertCenter? alerts,
+    ControllerBindingStore? bindingStore,
   })  : _autoConnect = autoConnect ?? autoLoadDatabase,
+        bindingStore = bindingStore ??
+            (autoLoadDatabase ? ControllerBindingStore(storage: secureStorage) : ControllerBindingStore(inMemoryStorage: {})),
         alerts = alerts ??
             (autoLoadDatabase ? AlertCenter(storage: secureStorage) : AlertCenter(inMemoryStorage: {})),
         settingsWatch = settingsWatch ??
@@ -520,6 +524,119 @@ class ECLProvider extends ChangeNotifier {
   /// Remembers the controller's settings to detect changes made outside the
   /// app and app changes the controller no longer shows.
   final ControllerSettingsWatch settingsWatch;
+
+  // ── One controller per app (Master licence: many) ───────────────────
+
+  final ControllerBindingStore bindingStore;
+  ControllerBinding? _binding;
+  ControllerAccess _access = ControllerAccess.unknown;
+  bool _accessChecked = false;
+  String? _currentIdentity;
+  String? _currentIdentityLabel;
+
+  /// Master licence: settings may be changed on any controller.
+  bool get isMasterLicense => _licenseService.isMaster;
+
+  /// What the app may do with the connected controller.
+  ControllerAccess get controllerAccess {
+    if (_isSimulationActive || isMasterLicense) return ControllerAccess.unrestricted;
+    return isConnected ? _access : ControllerAccess.unknown;
+  }
+
+  /// The controller this app is bound to ("dein Regler").
+  ControllerBinding? get controllerBinding => _binding;
+
+  /// Label of the connected controller (serial number for Danfoss).
+  String? get connectedControllerLabel => _currentIdentityLabel;
+
+  /// When the binding may be moved to another controller (null = now).
+  DateTime? get nextBindingChange => _binding?.nextChangeAllowed(DateTime.now());
+
+  Future<void> _checkControllerAccess() async {
+    if (_accessChecked || !isConnected) return;
+    _accessChecked = true;
+    if (_isSimulationActive) {
+      _access = ControllerAccess.unrestricted;
+      return;
+    }
+    final desc = currentControllerDescriptor;
+    String identity;
+    String label;
+    final serial = _selectedControllerId == 'danfoss_ecl_310' ? await _modbusService.readControllerSerial() : null;
+    if (serial != null) {
+      identity = 'danfoss:${serial.code}:${serial.serial}';
+      label = '${desc.brand} ${desc.model} · Serien-Nr. ${serial.serial}';
+    } else {
+      // no readable serial number: brand + address
+      identity = '$_selectedControllerId@${_controllerIp ?? '?'}';
+      label = '${desc.brand} ${desc.model} · ${_controllerIp ?? '?'}';
+    }
+    _currentIdentity = identity;
+    _currentIdentityLabel = label;
+    _binding ??= await bindingStore.load();
+    final bound = _binding;
+    if (bound == null) {
+      _binding = ControllerBinding(identity: identity, label: label, boundAt: DateTime.now());
+      await bindingStore.save(_binding!);
+      _access = ControllerAccess.own;
+      await _logService.logConnection(
+        controllerId: _selectedControllerId,
+        action: 'CONTROLLER_BOUND',
+        message: 'Dein Regler: $label. Änderungen sind mit dieser App nur an diesem Regler möglich.',
+        details: {'identity': identity},
+      );
+    } else if (bound.identity == identity) {
+      _access = ControllerAccess.own;
+    } else {
+      _access = ControllerAccess.foreign;
+      await _logService.logConnection(
+        controllerId: _selectedControllerId,
+        action: 'CONTROLLER_FOREIGN',
+        message: 'Anderer Regler ($label) – nur Anzeige. Dein Regler: ${bound.label}.',
+        details: {'identity': identity, 'bound': bound.identity},
+      );
+    }
+    notifyListeners();
+  }
+
+  /// Moves the binding to the connected controller (once per 12 months).
+  Future<void> rebindToConnectedController() async {
+    final identity = _currentIdentity, label = _currentIdentityLabel;
+    if (identity == null || label == null || _access != ControllerAccess.foreign) return;
+    final next = nextBindingChange;
+    if (next != null) {
+      throw ModbusCommunicationException(
+          message: 'Der Regler kann erst wieder ab ${next.day}.${next.month}.${next.year} gewechselt werden.');
+    }
+    final old = _binding;
+    _binding = ControllerBinding(identity: identity, label: label, boundAt: DateTime.now(), changedAt: DateTime.now());
+    await bindingStore.save(_binding!);
+    _access = ControllerAccess.own;
+    await _logService.logConnection(
+      controllerId: _selectedControllerId,
+      action: 'CONTROLLER_REBOUND',
+      message: 'Regler gewechselt: ${old?.label ?? '–'} → $label. Nächster Wechsel frühestens in 12 Monaten.',
+      details: {'from': old?.identity, 'to': identity},
+    );
+    notifyListeners();
+  }
+
+  /// Writes are only allowed on the own controller (or with Master/demo).
+  Future<void> _checkControllerAccessForWrite(String what) async {
+    await _checkControllerAccess();
+    if (controllerAccess != ControllerAccess.foreign) return;
+    await _logService.logSecurityGate(
+      controllerId: _selectedControllerId,
+      message: 'Schreibbefehl blockiert: anderer Regler ($_currentIdentityLabel) – diese App ändert nur '
+          '${_binding?.label ?? 'den eigenen Regler'}.',
+      details: {'what': what, 'identity': _currentIdentity, 'bound': _binding?.identity},
+      errorCode: 'CONTROLLER_NOT_BOUND',
+    );
+    throw ModbusCommunicationException(
+      message: 'Dieser Regler ist nicht dein Regler – nur Anzeige. Ändern geht nur an '
+          '${_binding?.label ?? 'deinem Regler'}. Für mehrere Anlagen gibt es die Master-Lizenz.',
+    );
+  }
 
   /// "Aktive Meldungen" at the top of the Logs tab.
   final AlertCenter alerts;
@@ -806,6 +923,7 @@ class ECLProvider extends ChangeNotifier {
         featureName: 'Parametrierung schreiben',
       );
     }
+    await _checkControllerAccessForWrite('schedule');
     final before = _controllerSchedule?.describeDay(day) ?? '?';
     final wanted = (_controllerSchedule ?? WeekSchedule(List.generate(7, (_) => List.filled(3, SchedulePeriod.unused))))
         .withDay(day, periods);
@@ -970,6 +1088,7 @@ class ECLProvider extends ChangeNotifier {
   }
 
   Future<void> _checkControllerHolidayWriteLicense(String what) async {
+    await _checkControllerAccessForWrite(what);
     if (!_licenseService.canWriteParameters) {
       await _logService.logSecurityGate(
         controllerId: _selectedControllerId,
@@ -985,6 +1104,7 @@ class ECLProvider extends ChangeNotifier {
   }
 
   Future<void> _checkControllerHolidayWrite(String what) async {
+    await _checkControllerAccessForWrite(what);
     if (!supportsControllerHoliday) {
       throw ModbusCommunicationException(message: 'Urlaubsprogramme im Regler sind für diesen Regler nicht verfügbar.');
     }
@@ -1330,6 +1450,10 @@ class ECLProvider extends ChangeNotifier {
     _controllerApplication = null;
     _controllerClockOffset = null;
     _sensorMappingChecked = false;
+    _accessChecked = false;
+    _access = ControllerAccess.unknown;
+    _currentIdentity = null;
+    _currentIdentityLabel = null;
   }
 
   Future<void> setSelectedController(String id) async {
@@ -1601,6 +1725,7 @@ class ECLProvider extends ChangeNotifier {
       _alarmsCheckedThisConnection = false;
       _scheduleLoadedThisConnection = false;
       _sensorMappingChecked = false;
+      _accessChecked = false;
       _isReconnecting = false;
       _consecutivePollErrors = 0;
       notifyListeners();
@@ -1778,6 +1903,7 @@ class ECLProvider extends ChangeNotifier {
       _alarmsCheckedThisConnection = false;
       _scheduleLoadedThisConnection = false;
       _sensorMappingChecked = false;
+      _accessChecked = false;
       _consecutivePollErrors = 0;
       _isReconnecting = false;
       notifyListeners();
@@ -1868,6 +1994,7 @@ class ECLProvider extends ChangeNotifier {
       _alarmsCheckedThisConnection = false;
       _scheduleLoadedThisConnection = false;
       _sensorMappingChecked = false;
+      _accessChecked = false;
       _consecutivePollErrors = 0;
       _isReconnecting = false;
       notifyListeners();
@@ -1973,6 +2100,7 @@ class ECLProvider extends ChangeNotifier {
         _controllerIp?.contains('Simulation') == true ||
         _selectedControllerId != 'danfoss_ecl_310') {
       try {
+        await _checkControllerAccess();
         final gen = _writeGeneration;
         final telemetry = await _activeController.readTelemetry();
         if (gen != _writeGeneration || _writeInProgress) return;
@@ -2059,6 +2187,7 @@ class ECLProvider extends ChangeNotifier {
 
     try {
       if (!_sensorMappingChecked) await _applySensorMapping();
+      await _checkControllerAccess();
       final gen = _writeGeneration;
       final newReadings = await _modbusService.readAllParameters();
       if (gen != _writeGeneration || _writeInProgress) return;
@@ -2264,6 +2393,9 @@ class ECLProvider extends ChangeNotifier {
         featureName: 'Parametrierung schreiben',
       );
     }
+
+    // One controller per app (Master licence: any)
+    await _checkControllerAccessForWrite(parameter.id);
 
     // Beta Gate: unverified drivers stay read-only until the user opts in
     if (isBetaWriteBlocked) {

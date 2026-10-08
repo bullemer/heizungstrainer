@@ -4029,7 +4029,9 @@ class _LicenseStatusCard extends StatelessWidget {
                 Row(
                   children: [
                     Text(
-                      isEarly
+                      license.isMaster
+                          ? 'Master-Lizenz'
+                          : isEarly
                           ? 'Early Adopter'
                           : isPro
                               ? 'Heizungstrainer Pro'
@@ -4071,6 +4073,16 @@ class _LicenseStatusCard extends StatelessWidget {
                     fontSize: 11.5,
                     color: Colors.white.withValues(alpha: 0.6),
                   ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  license.isMaster
+                      ? 'Mehrere Regler: Einstellungen an jedem verbundenen Regler änderbar.'
+                      : provider.controllerBinding == null
+                          ? 'Dein Regler: wird beim ersten Verbinden festgelegt.'
+                          : 'Dein Regler: ${provider.controllerBinding!.label}',
+                  key: const Key('bindingInfo'),
+                  style: const TextStyle(fontSize: 11.5, color: Color(0xFFBDBDC7)),
                 ),
               ],
             ),

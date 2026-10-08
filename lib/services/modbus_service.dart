@@ -284,6 +284,19 @@ class ModbusService {
     return ControllerHolidayEntry.fromRaw(slot, await _readRaw(ControllerHolidayEntry.address(slot, 0), 7));
   }
 
+  /// Controller identity from code no. (PNU 19, e.g. 3040 → 087H3040) and
+  /// serial number (PNU 36/37), e.g. ("087H3040", "2-39732"); null if not
+  /// readable. Registers are unsigned (39732 would be negative as int16).
+  Future<({String code, String serial})?> readControllerSerial() async {
+    try {
+      final code = (await _readRaw(18, 1)).first & 0xFFFF;
+      final serial = [for (final v in await _readRaw(35, 2)) v & 0xFFFF];
+      return (code: '087H$code', serial: '${serial[0]}-${serial[1]}');
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Controller clock (PNU 64045–64049), or null if not readable.
   Future<DateTime?> readControllerClock() async {
     try {

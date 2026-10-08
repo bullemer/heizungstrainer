@@ -38,8 +38,8 @@ void main() {
       logService: ActivityLogService(enablePersistence: false, enableRemoteDispatch: false),
       autoLoadDatabase: false,
     )..setConnectedForTesting(ip: '192.168.0.2');
-    expect(() => provider.writeParameter(ECLRegisters.dhwComfortSetpoint, 50), throwsA(isA<ModbusCommunicationException>()));
-    expect(() => provider.writeCirculationDay(0, List.filled(3, SchedulePeriod.unused)),
+    await expectLater(provider.writeParameter(ECLRegisters.dhwComfortSetpoint, 50), throwsA(isA<ModbusCommunicationException>()));
+    await expectLater(provider.writeCirculationDay(0, List.filled(3, SchedulePeriod.unused)),
         throwsA(isA<ModbusCommunicationException>()));
     provider.dispose();
   });

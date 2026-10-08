@@ -53,16 +53,25 @@ class LicenseInfo {
     required String licenseKey,
     DateTime? activatedAt,
     String? customerReference,
+    bool master = false,
   }) {
     return LicenseInfo(
       tier: LicenseTier.pro,
       source: LicenseSource.offlineKey,
       licenseKey: licenseKey,
+      productId: master ? masterProductId : null,
       activatedAt: activatedAt ?? DateTime.now(),
       customerReference: customerReference,
-      note: 'Offline-Lizenzschlüssel (heizungstrainer.de)',
+      note: master
+          ? 'Master-Lizenz: mehrere Regler (heizungstrainer.de)'
+          : 'Offline-Lizenzschlüssel (heizungstrainer.de)',
     );
   }
+
+  static const masterProductId = 'master';
+
+  /// Master licence (installers, housing companies): any number of controllers.
+  bool get isMaster => isPro && productId == masterProductId;
 
   /// Pro bought through Google Play Billing (Play build).
   factory LicenseInfo.proPlay({
