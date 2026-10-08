@@ -5,6 +5,7 @@ import 'package:heizungstrainer/exceptions/modbus_exceptions.dart';
 import 'package:heizungstrainer/models/ecl_parameter.dart';
 import 'package:heizungstrainer/models/week_schedule.dart';
 import 'package:heizungstrainer/providers/ecl_provider.dart';
+import 'package:heizungstrainer/services/circulation_profiles.dart';
 import 'package:heizungstrainer/utils/number_format.dart';
 
 /// Hot-water settings of the controller: mode, comfort/saving temperature,
@@ -150,9 +151,21 @@ class DhwSettingsScreen extends StatelessWidget {
                         ),
                       ),
                   const SizedBox(height: 6),
+                  if (circulation != null)
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: FilledButton.tonalIcon(
+                        key: const Key('circOptimal'),
+                        icon: const Icon(Icons.auto_awesome_outlined, size: 18),
+                        label: Text('Optimale Zeiten (jetzt ${circulationHoursPerDay(circulation).fixed(0)} Std./Tag)'),
+                        onPressed: () => _optimalCirculation(context, provider, circulation),
+                      ),
+                    ),
+                  const SizedBox(height: 6),
                   const Text(
-                    'Die Zirkulation hält warmes Wasser an den Zapfstellen bereit. Jede Stunde weniger '
-                    'spart Wärme- und Pumpenstrom – nachts lohnt sie sich meist nicht.',
+                    'Die Zirkulation hält nur die Leitung zur Zapfstelle warm. Außerhalb der Zeiten gibt es '
+                    'trotzdem Warmwasser – es dauert nur etwas länger, bis es warm aus dem Hahn kommt. '
+                    'Jede Stunde weniger spart Wärme und etwas Pumpenstrom.',
                     style: TextStyle(color: _muted, fontSize: 11.5),
                   ),
                 ]),
@@ -269,6 +282,87 @@ class DhwSettingsScreen extends StatelessWidget {
       await provider.writeParameter(ECLRegisters.antiBacteriaDuration, 120);
       await provider.writeParameter(ECLRegisters.antiBacteriaTemp, 60);
     }, 'Legionellenschutz eingeschaltet (Mo 03:00, 60 °C).');
+  }
+
+  static String _profileTimes(CirculationProfile p) =>
+      'Mo–Fr ${p.weekday.join(', ')} · Sa/So ${p.weekend.join(', ')}';
+
+  static Future<void> _optimalCirculation(BuildContext context, ECLProvider provider, WeekSchedule current) async {
+    final now = circulationHoursPerDay(current);
+    final price = provider.pricePerKwhCached;
+    final chosen = await showModalBottomSheet<CirculationProfile>(
+      context: context,
+      backgroundColor: _card,
+      isScrollControlled: true,
+      builder: (ctx) => SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Text('Optimale Zirkulationszeiten', style: TextStyle(color: _text, fontSize: 18, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 4),
+            Text('Jetzt läuft die Pumpe ${now.fixed(1)} Std. pro Tag. Wähle, was zu euch passt:',
+                style: const TextStyle(color: _muted, fontSize: 12.5)),
+            const SizedBox(height: 12),
+            for (final p in CirculationProfile.profiles) ...[
+              () {
+                final hours = circulationHoursPerDay(p.schedule);
+                final saving = circulationSavingKwh(now - hours);
+                final money = price == null || price <= 0
+                    ? ''
+                    : ' ≈ ${(saving.low * price).fixed(0)}–${(saving.high * price).fixed(0)} €';
+                return InkWell(
+                  key: Key('profile_${p.id}'),
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: () => Navigator.pop(ctx, p),
+                  child: Container(
+                    width: double.infinity,
+                    margin: const EdgeInsets.only(bottom: 10),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1E1E24),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: _border),
+                    ),
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text(p.title, style: const TextStyle(color: _text, fontWeight: FontWeight.w700, fontSize: 14.5)),
+                      Text(p.description, style: const TextStyle(color: _muted, fontSize: 12)),
+                      const SizedBox(height: 6),
+                      Text(_profileTimes(p), style: const TextStyle(color: _text, fontSize: 12.5)),
+                      const SizedBox(height: 4),
+                      Text(
+                        hours < now
+                            ? '${hours.fixed(1)} Std./Tag statt ${now.fixed(1)} · spart ca. '
+                                '${saving.low.fixed(0)}–${saving.high.fixed(0)} kWh Wärme/Jahr$money'
+                            : '${hours.fixed(1)} Std./Tag – nicht weniger als jetzt',
+                        style: TextStyle(color: hours < now ? const Color(0xFF66BB6A) : _muted, fontSize: 12.5, fontWeight: FontWeight.w600),
+                      ),
+                    ]),
+                  ),
+                );
+              }(),
+            ],
+            const Text(
+              'Schätzung: gedämmte Zirkulationsleitung von ca. 20 m verliert 100–200 W, solange die Pumpe läuft. '
+              'Dazu kommt etwas Pumpenstrom. Einzelne Tage kannst du danach weiter anpassen.',
+              style: TextStyle(color: _muted, fontSize: 11),
+            ),
+          ]),
+        ),
+      ),
+    );
+    if (chosen == null || !context.mounted) return;
+    if (!await _confirm(context, 'Zirkulationszeiten „${chosen.title}“ übernehmen?\n${_profileTimes(chosen)}') ||
+        !context.mounted) {
+      return;
+    }
+    await _run(context, () async {
+      for (var d = 0; d < 7; d++) {
+        final target = chosen.periodsFor(d);
+        final day = provider.circulationSchedule ?? current;
+        if (day.sameDay(chosen.schedule, d)) continue;
+        await provider.writeCirculationDay(d, target);
+      }
+    }, 'Zirkulationszeiten „${chosen.title}“ übernommen.');
   }
 
   static Future<void> _editCirculationDay(
