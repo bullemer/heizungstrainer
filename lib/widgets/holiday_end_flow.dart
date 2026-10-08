@@ -140,7 +140,11 @@ class _ActiveHolidayCardState extends State<ActiveHolidayCard> {
     final plan = _plan;
     if (plan == null) return const SizedBox.shrink();
     final armed = !plan.setbackApplied;
-    final what = armed
+    final heatUp = plan.preheatStartTime;
+    final controllerEnd = DateTime(heatUp.year, heatUp.month, heatUp.day);
+    final what = plan.runsInController
+        ? 'Im Regler (P${plan.controllerSlot}): Spar ${plan.targetRoomTemp.fixed(1)} °C statt ${plan.normalRoomTemp.fixed(1)} °C'
+        : armed
         ? 'Geplant ab ${_when(plan.startDateTime)}'
         : (plan.controlMode == 'room'
             ? 'Raum-Sollwert auf ${plan.targetRoomTemp.fixed(1)} °C (normal ${plan.normalRoomTemp.fixed(1)} °C)'
@@ -167,7 +171,9 @@ class _ActiveHolidayCardState extends State<ActiveHolidayCard> {
                 const SizedBox(height: 3),
                 Text(what, style: const TextStyle(fontSize: 12, color: Color(0xFFBDBDC7))),
                 Text(
-                  'Rückkehr ${_when(plan.endDateTime)} · Vorheizen ab ${_when(plan.preheatStartTime)}',
+                  plan.runsInController
+                      ? 'Rückkehr ${_when(plan.endDateTime)} · Normalbetrieb ab ${_when(controllerEnd)}'
+                      : 'Rückkehr ${_when(plan.endDateTime)} · Vorheizen ab ${_when(plan.preheatStartTime)}',
                   style: const TextStyle(fontSize: 12, color: Color(0xFFBDBDC7)),
                 ),
               ],
@@ -176,7 +182,7 @@ class _ActiveHolidayCardState extends State<ActiveHolidayCard> {
           TextButton(
             key: const Key('endHolidayFromHome'),
             onPressed: _busy ? null : _end,
-            child: Text(armed ? 'Verwerfen' : 'Beenden'),
+            child: Text(armed && !plan.runsInController ? 'Verwerfen' : 'Beenden'),
           ),
         ]),
       ),
