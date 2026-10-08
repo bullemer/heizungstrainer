@@ -161,6 +161,23 @@ class ControllerScheduleCard extends StatelessWidget {
     }
   }
 
+  /// Entry points for the Einstellungs-Check: same dialogs as the card.
+  static Future<void> fixSavingFor(BuildContext context, ECLProvider provider) async {
+    final comfort = provider.getReading(ECLRegisters.roomTargetTemp)?.displayValue;
+    final saving = provider.getReading(ECLRegisters.savingRoomTemp)?.displayValue;
+    if (comfort == null || saving == null) return;
+    await ControllerScheduleCard(provider: provider)._fixSaving(context, comfort, saving);
+  }
+
+  static Future<void> fixEmptyDaysFor(BuildContext context, ECLProvider provider) async {
+    final schedule = provider.controllerSchedule;
+    final template = schedule?.mostCommonDay;
+    if (schedule == null || template == null) return;
+    final empty = [for (var d = 0; d < 7; d++) if (!schedule.hasComfort(d)) d];
+    if (empty.isEmpty) return;
+    await ControllerScheduleCard(provider: provider)._fixDays(context, empty, template);
+  }
+
   Future<void> _fixDays(BuildContext context, List<int> days, List<SchedulePeriod> template) async {
     final names = days.map((d) => WeekSchedule.dayNames[d]).join(', ');
     final plan = template.where((p) => p.isActive).join(', ');

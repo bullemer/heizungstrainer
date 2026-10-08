@@ -8,6 +8,7 @@ import 'package:heizungstrainer/exceptions/license_exception.dart';
 import 'package:heizungstrainer/models/ecl_parameter.dart';
 import 'package:heizungstrainer/models/ecl_reading.dart';
 import 'package:heizungstrainer/providers/ecl_provider.dart';
+import 'package:heizungstrainer/screens/config_check_screen.dart';
 import 'package:heizungstrainer/screens/curve_simulator_screen.dart';
 import 'package:heizungstrainer/screens/dhw_settings_screen.dart';
 import 'package:heizungstrainer/screens/live_view_screen.dart';
@@ -173,6 +174,10 @@ class HomeScreen extends StatelessWidget {
                 // ── Heizung ─────────────────────────────────
                 _SectionLabel(label: 'Heizung'),
                 const SizedBox(height: 10),
+                if (provider.supportsControllerSchedule) ...[
+                  ConfigCheckCard(provider: provider),
+                  const SizedBox(height: 12),
+                ],
                 if (provider.supportsLiveView) ...[
                   _LiveViewTile(),
                   const SizedBox(height: 12),

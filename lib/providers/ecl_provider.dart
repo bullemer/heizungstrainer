@@ -41,6 +41,7 @@ import 'package:heizungstrainer/models/controller_holiday.dart';
 import 'package:heizungstrainer/models/live_snapshot.dart';
 import 'package:heizungstrainer/models/week_schedule.dart';
 import 'package:heizungstrainer/services/alert_center.dart';
+import 'package:heizungstrainer/services/config_check.dart';
 import 'package:heizungstrainer/services/controller_settings_watch.dart';
 import 'package:heizungstrainer/services/device_registry.dart';
 import 'package:heizungstrainer/services/discovery_service.dart';
@@ -1020,12 +1021,102 @@ class ECLProvider extends ChangeNotifier {
     );
   }
 
+  // ── Einstellungs-Check ──────────────────────────────────────────
+
+  Duration? _controllerClockOffset;
+  List<ControllerHolidayEntry> _heatingHolidaysForCheck = const [];
+  Set<String> _dismissedFindings = {};
+  bool _dismissedLoaded = false;
+  static const _dismissedKey = 'ht_config_dismissed';
+
+  ConfigCheckInput get configCheckInput {
+    double? v(ECLParameter p) {
+      final r = _readings[p.id];
+      return r == null || r.isSensorDisconnected ? null : r.displayValue;
+    }
+
+    return ConfigCheckInput(
+      comfort: v(ECLRegisters.roomTargetTemp),
+      saving: v(ECLRegisters.savingRoomTemp),
+      heatingMode: v(ECLRegisters.circuitMode)?.round(),
+      schedule: _controllerSchedule,
+      curve: ControllerHeatingCurve.fromReadings(getReading),
+      reference: buildingReference,
+      summerCutoff: v(ECLRegisters.summerCutoff),
+      maxFlow: v(ECLRegisters.curveMaxFlow),
+      dhwMode: supportsDhwSettings ? v(ECLRegisters.dhwMode)?.round() : null,
+      dhwComfort: supportsDhwSettings ? v(ECLRegisters.dhwComfortSetpoint) : null,
+      dhwSaving: supportsDhwSettings ? v(ECLRegisters.dhwSavingSetpoint) : null,
+      antiBacteriaTemp: supportsDhwSettings ? v(ECLRegisters.antiBacteriaTemp)?.round() : null,
+      antiBacteriaDays: supportsDhwSettings ? v(ECLRegisters.antiBacteriaDays)?.round() : null,
+      circulation: supportsDhwSettings ? _circulationSchedule : null,
+      alarms: _controllerAlarms,
+      clockOffset: _controllerClockOffset,
+      heatingHolidays: _heatingHolidaysForCheck,
+    );
+  }
+
+  /// Current findings without the ones the user marked as intended.
+  List<ConfigFinding> get configFindings {
+    if (_isSimulationActive || !isConnected) return const [];
+    return runConfigCheck(configCheckInput).where((f) => !_dismissedFindings.contains(f.id)).toList();
+  }
+
+  int get dismissedFindingsCount => _dismissedFindings.length;
+
+  Future<void> _loadDismissedFindings() async {
+    if (_dismissedLoaded) return;
+    _dismissedLoaded = true;
+    try {
+      final raw = await _secureStorage.read(key: _dismissedKey);
+      if (raw != null && raw.isNotEmpty) _dismissedFindings = raw.split(',').toSet();
+    } catch (_) {}
+  }
+
+  /// "Ist so gewollt": hide a finding until reset.
+  Future<void> dismissFinding(String id) async {
+    _dismissedFindings = {..._dismissedFindings, id};
+    notifyListeners();
+    try {
+      await _secureStorage.write(key: _dismissedKey, value: _dismissedFindings.join(','));
+    } catch (_) {}
+  }
+
+  Future<void> resetDismissedFindings() async {
+    _dismissedFindings = {};
+    notifyListeners();
+    try {
+      await _secureStorage.delete(key: _dismissedKey);
+    } catch (_) {}
+  }
+
+  Future<void> _refreshConfigCheckInputs() async {
+    await _loadDismissedFindings();
+    final clock = await _modbusService.readControllerClock();
+    _controllerClockOffset = clock?.difference(DateTime.now());
+    try {
+      _heatingHolidaysForCheck = await readControllerHolidays();
+    } catch (_) {}
+    final findings = configFindings;
+    await _logService.logRead(
+      controllerId: _selectedControllerId,
+      action: 'CONFIG_CHECK',
+      message: findings.isEmpty
+          ? 'Einstellungs-Check: keine Auffälligkeiten.'
+          : 'Einstellungs-Check: ${findings.length} Hinweis(e) – ${findings.map((f) => f.title).join('; ')}.',
+      level: findings.any((f) => f.severity != FindingSeverity.hint) ? ActivityLogLevel.warning : ActivityLogLevel.info,
+      details: {'findings': [for (final f in findings) f.id]},
+    );
+    notifyListeners();
+  }
+
   Future<void> _pollAlarms() async {
     if (_isSimulationActive || _selectedControllerId != 'danfoss_ecl_310') return;
     if (!_scheduleLoadedThisConnection) {
       _scheduleLoadedThisConnection = true;
       await loadControllerSchedule();
       await loadDhwSchedules();
+      await _refreshConfigCheckInputs();
     }
     _controllerApplication ??= await _modbusService.readApplicationName();
     await processAlarmMask(await _modbusService.readAlarmMask());

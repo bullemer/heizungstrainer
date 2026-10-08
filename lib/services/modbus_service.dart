@@ -278,6 +278,16 @@ class ModbusService {
     return ControllerHolidayEntry.fromRaw(slot, await _readRaw(ControllerHolidayEntry.address(slot, 0), 7));
   }
 
+  /// Controller clock (PNU 64045–64049), or null if not readable.
+  Future<DateTime?> readControllerClock() async {
+    try {
+      final c = await _readRaw(64044, 5);
+      return DateTime(c[4], c[3], c[2], c[0], c[1]);
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// ECL alarm bitmask as one 32-bit value (bit 0 = alarm 1 … bit 31 =
   /// alarm 32), or null if the application doesn't provide it.
   Future<int?> readAlarmMask() async {
