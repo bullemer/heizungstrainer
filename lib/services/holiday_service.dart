@@ -409,6 +409,9 @@ class HolidayService {
   Future<HolidayPlan?> _checkControllerPlan(HolidayPlan plan, ECLProvider provider, DateTime at) async {
     final slot = plan.controllerSlot;
     if (slot == null) return null;
+    // right after connecting the application (and so the slot layout) may not
+    // be known yet – never conclude "deleted" from that
+    if (!provider.supportsControllerHoliday) return null;
     final List<ControllerHolidayEntry> entries;
     try {
       entries = await provider.readControllerHolidays();

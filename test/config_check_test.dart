@@ -64,6 +64,16 @@ void main() {
   test('max flow 50 °C with floor heating offers the "Max. Vorlauf ändern" fix', () {
     final f = runConfigCheck(input()).firstWhere((x) => x.id == 'max_flow_floor');
     expect(f.action, FindingAction.setMaxFlow);
+    // user's curve needs 41.25 °C → the 50 °C limit never applies: only a hint
+    expect(f.severity, FindingSeverity.hint);
+    expect(f.detail, contains('41.3 °C'));
+    final steep = runConfigCheck(ConfigCheckInput(
+      comfort: 21,
+      curve: const ControllerHeatingCurve(outdoorTemps: [-30, -15, -5, 0, 5, 15], flowTemps: [49, 44, 40, 36, 32, 24], slope: 0.5),
+      reference: BuildingReference.floorAfter2010,
+      maxFlow: 50,
+    )).firstWhere((x) => x.id == 'max_flow_floor');
+    expect(steep.severity, FindingSeverity.warning);
     expect(ids(ConfigCheckInput(curve: curve, reference: BuildingReference.floorAfter2010, maxFlow: 45)),
         isNot(contains('max_flow_floor')));
   });

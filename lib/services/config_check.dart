@@ -227,15 +227,24 @@ List<ConfigFinding> runConfigCheck(ConfigCheckInput i) {
     }
     final maxFlow = i.maxFlow;
     if (maxFlow != null && ref.isFloorHeating && maxFlow > 45) {
+      // what the curve can actually ask for (coldest point + room correction)
+      final needed = curve.flowTemps.reduce((a, b) => a > b ? a : b) + curve.roomCorrection(comfort ?? 20);
+      final limiting = needed >= maxFlow - 2;
       out.add(ConfigFinding(
         id: 'max_flow_floor',
         area: FindingArea.heating,
-        severity: FindingSeverity.warning,
-        title: 'Max. Vorlauf ${t(maxFlow)} bei Fußbodenheizung',
-        detail: 'Fußbodenheizungen brauchen selten mehr als 35–40 °C; viele Estriche vertragen dauerhaft '
-            'höchstens 45–55 °C. Die Begrenzung im Regler schützt vor zu heißem Vorlauf – ein Wert knapp über '
-            'dem höchsten Punkt der Heizkurve (z. B. 45 °C) reicht. Im Zweifel den Installateur fragen.',
-        action: FindingAction.setMaxFlow,
+        severity: limiting ? FindingSeverity.warning : FindingSeverity.hint,
+        title: limiting
+            ? 'Heizkurve reicht bis an die Max.-Vorlaufgrenze (${t(maxFlow)})'
+            : 'Max.-Vorlaufgrenze ${t(maxFlow)} höher als nötig',
+        detail: limiting
+            ? 'Deine Heizkurve fordert bis zu ${t(needed)} – bei Fußbodenheizung ist das viel. Viele Estriche '
+                'vertragen dauerhaft höchstens 45–55 °C. Heizkurve und Grenze prüfen, im Zweifel den Installateur fragen.'
+            : 'Deine Heizkurve braucht höchstens ${t(needed)} (bei −30 °C) – die Grenze greift im Normalbetrieb nie. '
+                'Sie schützt nur bei Sonderfällen (höherer Sollwert, Boost, Störung). Für Fußbodenheizung reicht '
+                'eine Grenze knapp darüber, z. B. 45 °C.',
+        // limiting: the limit can't go lower than the curve needs → curve first
+        action: limiting ? FindingAction.openCurveAssistant : FindingAction.setMaxFlow,
       ));
     }
   }

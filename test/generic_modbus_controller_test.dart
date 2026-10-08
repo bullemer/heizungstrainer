@@ -36,6 +36,13 @@ void main() {
     });
 
     test('luxtronik preset has 32-bit register and word-swap (CDAB)', () {
+      final trovis = GenericModbusConfig.presets.firstWhere((p) => p.id == 'samson_trovis');
+      // HR 40010/40013/40017/40023 → protocol address HR − 40001; read-only
+      expect([trovis.outdoorRegister, trovis.flowRegister, trovis.returnRegister, trovis.hotWaterRegister], [9, 12, 16, 22]);
+      expect(trovis.roomTargetRegister, isNull);
+      expect(trovis.heatingCurveShiftRegister, isNull);
+      expect(trovis.defaultUnitId, 255);
+      expect(GenericModbusConfig.presets.first.id, 'standard');
       final preset = GenericModbusConfig.presets.firstWhere((p) => p.id == 'luxtronik');
       expect(preset.wordOrder, ModbusWordOrder.wordSwap);
       expect(preset.dataType, ModbusRegisterDataType.int32);

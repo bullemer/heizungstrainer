@@ -92,7 +92,9 @@ abstract final class ControllerHolidayLayout {
   static ({DateTime start, DateTime end})? datesFor({required DateTime start, required DateTime heatUpFrom}) {
     final s = DateTime(start.year, start.month, start.day);
     final e = DateTime(heatUpFrom.year, heatUpFrom.month, heatUpFrom.day);
-    if (e.difference(s).inHours < 24) return null;
+    // calendar days (UTC) – a local difference is 23 h on the spring DST day
+    final days = DateTime.utc(e.year, e.month, e.day).difference(DateTime.utc(s.year, s.month, s.day)).inDays;
+    if (days < 1) return null;
     if (e.year > 2050) return null;
     return (start: s, end: e);
   }

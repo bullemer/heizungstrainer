@@ -232,8 +232,11 @@ class ModbusService {
     for (var slot = 1; slot <= max; slot++) {
       try {
         out.add(ControllerHolidayEntry.fromRaw(slot, await _readRaw(ControllerHolidayEntry.address(slot, 0), 7)));
-      } catch (_) {
-        break;
+      } catch (e) {
+        // only "register does not exist" ends the list; timeouts etc. must
+        // surface, or callers would think the schedules are empty
+        if (e.toString().contains('illegalDataAddress')) break;
+        rethrow;
       }
     }
     return out;
@@ -259,12 +262,15 @@ class ModbusService {
     }
 
     if (mode != ControllerHolidayMode.off) {
-      await write(3, start.year);
-      await write(2, start.month);
-      await write(1, start.day);
-      await write(6, end.year);
-      await write(5, end.month);
-      await write(4, end.day);
+      // switch the schedule off first so no half-written period can be active,
+      // then day 1 (valid in every month) before year/month, the day last
+      await write(0, ControllerHolidayMode.off.code);
+      for (final (dayIndex, date) in [(1, start), (4, end)]) {
+        await write(dayIndex, 1);
+        await write(dayIndex + 2, date.year);
+        await write(dayIndex + 1, date.month);
+        await write(dayIndex, date.day);
+      }
       await write(0, mode.code);
     } else {
       // off first, then back to the unused default 01.01.2015 (day/month

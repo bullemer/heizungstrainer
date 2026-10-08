@@ -15,7 +15,6 @@ import 'package:heizungstrainer/controllers/weishaupt_wem_controller.dart';
 import 'package:heizungstrainer/controllers/nibe_modbus_controller.dart';
 import 'package:heizungstrainer/controllers/generic_modbus_controller.dart';
 import 'package:heizungstrainer/controllers/mock_heating_controller.dart';
-import 'package:heizungstrainer/controllers/heating_controller.dart';
 
 import 'package:heizungstrainer/models/bosch_buderus_ems_config.dart';
 import 'package:heizungstrainer/models/generic_modbus_config.dart';
@@ -749,6 +748,35 @@ void main() {
 
       await controller.disconnect();
       expect(controller.isConnected, isFalse);
+    });
+  });
+
+  group('7b. Samson TROVIS 557x (generic Modbus preset, read-only)', () {
+    late VirtualModbusServer trovis;
+    setUp(() async {
+      trovis = VirtualModbusServer();
+      await trovis.start();
+    });
+    tearDown(() async => trovis.stop());
+
+    test('reads AF1/VF1/RüF1/SF1 (HR 40010/40013/40017/40023) and offers no writes', () async {
+      trovis.holdingRegisters[9] = -32; // AF1 −3.2 °C
+      trovis.holdingRegisters[12] = 512; // VF1 51.2 °C
+      trovis.holdingRegisters[16] = 418; // RüF1 41.8 °C
+      trovis.holdingRegisters[22] = 553; // SF1 55.3 °C
+      final preset = GenericModbusConfig.presets.firstWhere((p) => p.id == 'samson_trovis');
+      final config = GenericModbusConfig.fromPreset(preset).copyWith(host: '127.0.0.1', port: trovis.port);
+      final controller = GenericModbusController(config: config);
+      await controller.connect(host: '127.0.0.1', port: trovis.port);
+      final t = await controller.readTelemetry();
+      expect(t.outdoorTemp, closeTo(-3.2, 0.001));
+      expect(t.flowTemp, closeTo(51.2, 0.001));
+      expect(t.returnTemp, closeTo(41.8, 0.001));
+      expect(t.hotWaterTemp, closeTo(55.3, 0.001));
+      expect(t.roomTarget, isNull);
+      expect(controller.capabilities.supportsRoomTarget, isFalse);
+      expect(controller.capabilities.supportsHeatingCurveShift, isFalse);
+      await controller.disconnect();
     });
   });
 

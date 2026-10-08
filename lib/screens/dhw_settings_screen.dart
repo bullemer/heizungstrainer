@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -239,7 +241,8 @@ class DhwSettingsScreen extends StatelessWidget {
 
   static Future<void> _pickTemperature(
       BuildContext context, ECLProvider provider, ECLParameter p, double current, double min, double max) async {
-    var value = current.clamp(min, max).roundToDouble();
+    final hi = math.max(min, max);
+    var value = current.clamp(min, hi).roundToDouble();
     final chosen = await showDialog<double>(
       context: context,
       builder: (ctx) => StatefulBuilder(
@@ -251,8 +254,8 @@ class DhwSettingsScreen extends StatelessWidget {
             Slider(
               value: value,
               min: min,
-              max: max,
-              divisions: (max - min).round(),
+              max: hi > min ? hi : min + 1,
+              divisions: math.max(1, (hi - min).round()),
               onChanged: (v) => setState(() => value = v.roundToDouble()),
             ),
             const Text('Je 5 °C weniger spart etwa 5–8 % Warmwasser-Energie (Speicher- und Leitungsverluste).',
@@ -410,6 +413,14 @@ class DhwSettingsScreen extends StatelessWidget {
     );
     if (result == null || !context.mounted) return;
     // Danfoss rules: chronological, inactive periods as 2400/2400 at the end
+    if (result.$1.any((p) => p.start > p.stop)) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Zeiträume über Mitternacht gehen nicht – bitte aufteilen, z. B. 22:00–24:00 '
+            'und am nächsten Tag 00:00–06:00.'),
+        backgroundColor: Color(0xFFEF5350),
+      ));
+      return;
+    }
     final active = [for (final p in result.$1) if (p.isActive) p]..sort((a, b) => a.start.compareTo(b.start));
     for (var i = 1; i < active.length; i++) {
       if (active[i].start < active[i - 1].stop) {

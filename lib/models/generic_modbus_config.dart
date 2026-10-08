@@ -249,6 +249,30 @@ class GenericModbusConfig {
       dataType: ModbusRegisterDataType.int16,
       pollingIntervalSeconds: 10,
     ),
+    // Samson TROVIS 5573/5576/5578/5579/5578-E – register list from the
+    // manufacturer-format export "5578 rev 2.62" (github.com/Tom-Bom-badil/
+    // samson_trovis_557x) and the trovis-modbus library; NOT verified on
+    // hardware. Holding registers 4xxxx → protocol address HR − 40001, int16
+    // ×0.1: AF1 40010, VF1 40013, RüF1 40017, SF1 40023. Read-only on purpose:
+    // writes need the write-enable key in HR 40145 (default 1732, 30 min).
+    // 5578-E: Modbus TCP built in; others via SAM HOME/LAN/MOBILE gateway or an
+    // RS-485→TCP converter. Factory station address 255 (set on the controller).
+    GenericModbusPreset(
+      id: 'samson_trovis',
+      name: 'Samson TROVIS 557x (Fernwärme/Kessel)',
+      description: 'TROVIS 5573/5576/5578/5579/5578-E: AF1=Außen, VF1=Vorlauf, RüF1=Rücklauf, SF1=Speicher (nur lesen; '
+          '5578-E direkt per Modbus TCP, andere über SAM-Gateway/RS-485-Wandler; Stationsadresse ab Werk 255)',
+      defaultUnitId: 255,
+      outdoorRegister: 9,
+      flowRegister: 12,
+      returnRegister: 16,
+      hotWaterRegister: 22,
+      multiplier: 0.1,
+      isHoldingRegister: true,
+      wordOrder: ModbusWordOrder.bigEndian,
+      dataType: ModbusRegisterDataType.int16,
+      pollingIntervalSeconds: 15,
+    ),
   ];
 
   const GenericModbusConfig({

@@ -183,7 +183,7 @@ class HomeScreen extends StatelessWidget {
                   const SizedBox(height: 12),
                 ],
                 _HeatingComfortCard(provider: provider),
-                if (provider.controllerSchedule != null) ...[
+                if (provider.supportsControllerSchedule && provider.controllerSchedule != null) ...[
                   const SizedBox(height: 12),
                   ControllerScheduleCard(provider: provider),
                 ],

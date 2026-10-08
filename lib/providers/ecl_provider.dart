@@ -528,7 +528,12 @@ class ECLProvider extends ChangeNotifier {
   /// disappear when the sensor reads again.
   Future<void> _updateSensorAlerts() async {
     if (_isSimulationActive) return;
+    final usesHotWater = _selectedControllerId != 'danfoss_ecl_310' || supportsDhwSettings;
     for (final p in ECLRegisters.sensorParameters) {
+      if (p.id == ECLRegisters.hotWaterTemp.id && !usesHotWater) {
+        await alerts.resolve('sensor_${p.id}');
+        continue;
+      }
       final r = _readings[p.id];
       if (r == null) continue;
       if (r.isSensorDisconnected) {
@@ -549,6 +554,11 @@ class ECLProvider extends ChangeNotifier {
   /// A write is running: a poll in between must not report the app's own
   /// change as "changed outside the app".
   bool _writeInProgress = false;
+
+  /// Bumped at the start and end of every write: a poll that overlapped a
+  /// write (its values may predate it) is discarded instead of reporting a
+  /// false "app change missing" or showing the old value.
+  int _writeGeneration = 0;
 
   /// Compares the polled settings with what the app knew and logs every
   /// difference. Runs after each successful poll (no extra Modbus traffic).
@@ -684,7 +694,9 @@ class ECLProvider extends ChangeNotifier {
     final before = _circulationSchedule?.describeDay(day) ?? '?';
     final wanted = (_circulationSchedule ?? WeekSchedule(List.generate(7, (_) => List.filled(3, SchedulePeriod.unused))))
         .withDay(day, periods);
+    var notConfirmedLogged = false;
     _writeInProgress = true;
+    _writeGeneration++;
     try {
       final result = await _modbusService.writeScheduleDay(day, periods, basePnu: WeekSchedule.circulationBasePnu);
       if (result != null) _circulationSchedule = result;
@@ -706,6 +718,7 @@ class ECLProvider extends ChangeNotifier {
           message: message,
         );
         notifyListeners();
+        notConfirmedLogged = true;
         throw ModbusCommunicationException(message: 'Der Regler hat die Zirkulationszeiten nicht übernommen.');
       }
       await _logService.logWrite(
@@ -716,8 +729,15 @@ class ECLProvider extends ChangeNotifier {
         details: {'day': day, 'before': before, 'controller': result.describeDay(day), 'schedule': 'circulation'},
       );
       notifyListeners();
+    } catch (e) {
+      if (!notConfirmedLogged) {
+        await _logFailedMultiWrite('Zirkulation ${WeekSchedule.dayNames[day]}', e,
+            readBack: () async => (await _modbusService.readSchedule(basePnu: WeekSchedule.circulationBasePnu))?.describeDay(day));
+      }
+      rethrow;
     } finally {
       _writeInProgress = false;
+      _writeGeneration++;
     }
   }
 
@@ -789,7 +809,9 @@ class ECLProvider extends ChangeNotifier {
     final before = _controllerSchedule?.describeDay(day) ?? '?';
     final wanted = (_controllerSchedule ?? WeekSchedule(List.generate(7, (_) => List.filled(3, SchedulePeriod.unused))))
         .withDay(day, periods);
+    var notConfirmedLogged = false;
     _writeInProgress = true;
+    _writeGeneration++;
     try {
       final result = await _modbusService.writeScheduleDay(day, periods);
       if (result == null || !result.sameDay(wanted, day)) {
@@ -810,6 +832,7 @@ class ECLProvider extends ChangeNotifier {
         );
         if (result != null) _controllerSchedule = result;
         notifyListeners();
+        notConfirmedLogged = true;
         throw ModbusCommunicationException(message: 'Der Regler hat das Zeitprogramm nicht übernommen ($got).');
       }
       _controllerSchedule = result;
@@ -822,9 +845,10 @@ class ECLProvider extends ChangeNotifier {
         details: {'day': day, 'before': before, 'controller': result.describeDay(day)},
       );
       notifyListeners();
-    } on ModbusCommunicationException {
-      rethrow;
     } catch (e) {
+      if (notConfirmedLogged) rethrow;
+      await _logFailedMultiWrite('Zeitprogramm ${WeekSchedule.dayNames[day]}', e,
+          readBack: () async => (await _modbusService.readSchedule())?.describeDay(day));
       await _logService.logWrite(
         controllerId: _selectedControllerId,
         action: 'WRITE_PARAMETER_FAILED',
@@ -836,7 +860,33 @@ class ECLProvider extends ChangeNotifier {
       rethrow;
     } finally {
       _writeInProgress = false;
+      _writeGeneration++;
     }
+  }
+
+  /// A multi-register write (schedule, holiday) failed midway: read back what
+  /// the controller now has and report it, so a half-written state is visible.
+  Future<void> _logFailedMultiWrite(String what, Object error, {required Future<String?> Function() readBack}) async {
+    String? state;
+    try {
+      state = await readBack();
+    } catch (_) {}
+    final message = '$what: Schreiben abgebrochen (${userFacingError(error)}). '
+        'Stand im Regler jetzt: ${state ?? 'nicht lesbar'} – bitte prüfen.';
+    await _logService.logWrite(
+      controllerId: _selectedControllerId,
+      action: 'WRITE_PARAMETER_FAILED',
+      message: message,
+      details: {'what': what, 'error': error.toString(), 'controller': state},
+      success: false,
+      errorCode: 'WRITE_FAILED',
+    );
+    await alerts.raise(
+      key: 'write_failed_${DateTime.now().millisecondsSinceEpoch}',
+      severity: AlertSeverity.error,
+      title: 'Schreiben abgebrochen',
+      message: message,
+    );
   }
 
   /// Plant diagram data is available (real ECL; simulation gets demo data).
@@ -955,7 +1005,9 @@ class ECLProvider extends ChangeNotifier {
   Future<ControllerHolidayEntry> _writeHolidaySlot(
       int slot, ControllerHolidayMode mode, DateTime start, DateTime end) async {
     final wanted = ControllerHolidayEntry(slot: slot, mode: mode, start: start, end: end);
+    var notConfirmedLogged = false;
     _writeInProgress = true;
+    _writeGeneration++;
     try {
       final back = await _modbusService.writeHolidaySchedule(slot, mode: mode, start: start, end: end);
       final ok = back.mode == mode &&
@@ -976,6 +1028,7 @@ class ECLProvider extends ChangeNotifier {
           title: 'Schreiben nicht bestätigt',
           message: message,
         );
+        notConfirmedLogged = true;
         throw ModbusCommunicationException(message: 'Der Regler hat das Urlaubsprogramm nicht übernommen.');
       }
       await _logService.logWrite(
@@ -987,8 +1040,17 @@ class ECLProvider extends ChangeNotifier {
         details: {'slot': slot, 'controller': back.describe()},
       );
       return back;
+    } catch (e) {
+      if (!notConfirmedLogged) {
+        await _logFailedMultiWrite('Urlaubsprogramm P$slot', e, readBack: () async {
+          final all = await _modbusService.readHolidaySchedules(max: slot);
+          return all.where((x) => x.slot == slot).firstOrNull?.describe();
+        });
+      }
+      rethrow;
     } finally {
       _writeInProgress = false;
+      _writeGeneration++;
     }
   }
 
@@ -1118,7 +1180,11 @@ class ECLProvider extends ChangeNotifier {
       await loadDhwSchedules();
       await _refreshConfigCheckInputs();
     }
-    _controllerApplication ??= await _modbusService.readApplicationName();
+    if (_controllerApplication == null) {
+      _controllerApplication = await _modbusService.readApplicationName();
+      // connect-time read failed: apply the right flow/return mapping now
+      if (_controllerApplication != null) _sensorMappingChecked = false;
+    }
     await processAlarmMask(await _modbusService.readAlarmMask());
   }
 
@@ -1215,7 +1281,10 @@ class ECLProvider extends ChangeNotifier {
         if (allowed == 'true') _betaWritesAllowed.add(desc.id);
       }
       final savedCtrl = await _secureStorage.read(key: _controllerStorageKey);
-      if (savedCtrl != null && savedCtrl.isNotEmpty && savedCtrl != _selectedControllerId) {
+      if (savedCtrl != null &&
+          savedCtrl.isNotEmpty &&
+          savedCtrl != _selectedControllerId &&
+          _connectionState == ECLConnectionState.disconnected) {
         _selectedControllerId = savedCtrl;
       }
       if (_connectionState == ECLConnectionState.disconnected &&
@@ -1250,8 +1319,25 @@ class ECLProvider extends ChangeNotifier {
   }
 
   /// Sets the active heating controller hardware or simulation.
+  /// Schedules, alarms, application etc. belong to the controller that was
+  /// connected – never show them for another one.
+  void _clearControllerSpecificState() {
+    _controllerSchedule = null;
+    _dhwSchedule = null;
+    _circulationSchedule = null;
+    _controllerAlarms = {};
+    _heatingHolidaysForCheck = const [];
+    _controllerApplication = null;
+    _controllerClockOffset = null;
+    _sensorMappingChecked = false;
+  }
+
   Future<void> setSelectedController(String id) async {
     if (_selectedControllerId == id) return;
+    _clearControllerSpecificState();
+    for (final key in [for (final a in alerts.alerts) if (a.isCondition) a.key]) {
+      await alerts.resolve(key);
+    }
     // Also from the error state: the old driver may still hold a socket/timer.
     if (_connectionState != ECLConnectionState.disconnected) {
       disconnect();
@@ -1868,6 +1954,7 @@ class ECLProvider extends ChangeNotifier {
     _controllerIp = null;
     _errorMessage = null;
     _consecutivePollErrors = 0;
+    _clearControllerSpecificState();
     _isReconnecting = false;
     _lastSuccessfulPoll = null;
     _readings = {};
@@ -1886,7 +1973,9 @@ class ECLProvider extends ChangeNotifier {
         _controllerIp?.contains('Simulation') == true ||
         _selectedControllerId != 'danfoss_ecl_310') {
       try {
+        final gen = _writeGeneration;
         final telemetry = await _activeController.readTelemetry();
+        if (gen != _writeGeneration || _writeInProgress) return;
         _applyTelemetry(telemetry);
         _consecutivePollErrors = 0;
         _isReconnecting = false;
@@ -1970,7 +2059,9 @@ class ECLProvider extends ChangeNotifier {
 
     try {
       if (!_sensorMappingChecked) await _applySensorMapping();
+      final gen = _writeGeneration;
       final newReadings = await _modbusService.readAllParameters();
+      if (gen != _writeGeneration || _writeInProgress) return;
       // Parameters the controller doesn't provide (e.g. no "Verschieben" in
       // this application) must not keep showing a cached or stale value.
       _readings.removeWhere((id, _) => !newReadings.containsKey(id));
@@ -2224,6 +2315,7 @@ class ECLProvider extends ChangeNotifier {
 
     final previous = _readings[parameter.id]?.displayValue;
     _writeInProgress = true;
+    _writeGeneration++;
     String change(double confirmed) =>
         '${previous == null ? '' : '${_fmtSetting(previous)} → '}${_fmtSetting(value)} ${parameter.unit}'
         ' (Regler meldet ${_fmtSetting(confirmed)} ${parameter.unit})';
@@ -2311,6 +2403,7 @@ class ECLProvider extends ChangeNotifier {
       rethrow;
     } finally {
       _writeInProgress = false;
+      _writeGeneration++;
     }
   }
 

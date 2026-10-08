@@ -73,6 +73,14 @@ Future<void> _setMaxFlow(BuildContext context, ECLProvider provider) async {
   if (current == null || curve == null) return;
   final needed = (curve.flowTemps.reduce(math.max) + curve.roomCorrection(comfort)).ceilToDouble();
   final min = math.max(30.0, needed);
+  if (min >= current) {
+    // only lowering is offered here – the curve itself must come down first
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text('Die Heizkurve braucht bis zu ${needed.fixed(0)} °C – erst die Heizkurve absenken.'),
+      backgroundColor: const Color(0xFFFFB74D),
+    ));
+    return;
+  }
   var value = math.max(min, 45.0).clamp(min, math.max(min, current)).toDouble();
   final chosen = await showDialog<double>(
     context: context,
