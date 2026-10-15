@@ -94,6 +94,16 @@ class ECLProvider extends ChangeNotifier {
   String? _errorMessage;
   Map<String, ECLReading> _readings = {};
   Timer? _pollingTimer;
+  int _connectionEpoch = 0;
+  bool _pollInProgress = false;
+  bool _disposed = false;
+
+  bool _isCurrentConnection(int epoch) => !_disposed && epoch == _connectionEpoch;
+
+  @override
+  void notifyListeners() {
+    if (!_disposed) super.notifyListeners();
+  }
   double _discoveryProgress = 0.0;
   bool _isReconnecting = false;
   bool _isOfflineMode = false;
@@ -509,16 +519,19 @@ class ECLProvider extends ChangeNotifier {
       secureStorage: _secureStorage,
     );
     _brunataScraper.onStateChange = (state) {
+      if (_selectedBillingId != 'brunata_hamburg') return;
       _brunataSyncState = state;
       notifyListeners();
     };
     if (autoLoadDatabase) {
-      _initFromDatabase();
       _logService.init();
       _licenseService.init();
       this.alerts.load();
     }
-    _initHardwareSettings();
+    _initHardwareSettings(reconnect: false).then((_) async {
+      if (autoLoadDatabase && !_disposed) await _initFromDatabase();
+      if (!_disposed) await _autoConnectAtStartup();
+    });
   }
 
   /// Remembers the controller's settings to detect changes made outside the
@@ -1387,7 +1400,7 @@ class ECLProvider extends ChangeNotifier {
   /// Re-reads all persisted settings, e.g. after a settings import.
   Future<void> reloadSettings() => _initHardwareSettings();
 
-  Future<void> _initHardwareSettings() async {
+  Future<void> _initHardwareSettings({bool reconnect = true}) async {
     try {
       _genericModbusConfig = await GenericModbusConfig.load(_secureStorage);
       _boschBuderusConfig = await BoschBuderusEmsConfig.load(_secureStorage);
@@ -1432,7 +1445,7 @@ class ECLProvider extends ChangeNotifier {
       }
       notifyListeners();
       await refreshSavingsInputs();
-      await _autoConnectAtStartup();
+      if (reconnect) await _autoConnectAtStartup();
     } catch (e) {
       debugPrint('[Provider] Error loading hardware settings from storage: $e');
     }
@@ -1505,7 +1518,7 @@ class ECLProvider extends ChangeNotifier {
   /// Reconnects to the controller that last connected successfully, so the
   /// app doesn't open on the search screen every time.
   Future<void> _autoConnectAtStartup() async {
-    if (!_autoConnect || _connectionState != ECLConnectionState.disconnected) return;
+    if (_disposed || !_autoConnect || _connectionState != ECLConnectionState.disconnected) return;
     final lastId = await _secureStorage.read(key: _autoConnectKey);
     if (lastId == null || lastId != _selectedControllerId) {
       debugPrint('[Provider] Auto-connect skipped (last: $lastId, selected: $_selectedControllerId)');
@@ -1674,6 +1687,11 @@ class ECLProvider extends ChangeNotifier {
   Future<void> setSelectedBillingProvider(String id) async {
     if (_selectedBillingId == id) return;
     _selectedBillingId = id;
+    // Consumption, errors and timestamps belong to the selected provider.
+    _brunataData = null;
+    _brunataSyncState = BrunataSyncState.idle;
+    _brunataSyncError = null;
+    _lastBillingSyncTime = null;
     _activeBillingProvider = DeviceRegistry.createBillingProvider(
       id,
       scraperService: _brunataScraper,
@@ -1698,6 +1716,9 @@ class ECLProvider extends ChangeNotifier {
 
   /// Starts simulation mode for previewing controllers.
   Future<void> startSimulation() async {
+    if (_disposed) return;
+    disconnect();
+    final epoch = _connectionEpoch;
     _connectionState = ECLConnectionState.connecting;
     _controllerIp = 'Simulation (${currentControllerDescriptor.brand})';
     _errorMessage = null;
@@ -1709,6 +1730,7 @@ class ECLProvider extends ChangeNotifier {
       message: 'Starte Simulationsmodus für ${currentControllerDescriptor.brand}...',
     );
 
+    if (!_isCurrentConnection(epoch)) return;
     try {
       if (_activeController is! MockHeatingController) {
         final desc = currentControllerDescriptor;
@@ -1720,6 +1742,7 @@ class ECLProvider extends ChangeNotifier {
         );
       }
       await _activeController.connect(host: '127.0.0.1');
+      if (!_isCurrentConnection(epoch)) return;
       _connectionState = ECLConnectionState.connected;
       _settingsCheckedThisConnection = false;
       _alarmsCheckedThisConnection = false;
@@ -1738,8 +1761,9 @@ class ECLProvider extends ChangeNotifier {
       );
 
       await refreshReadings();
-      _startPolling();
+      if (_isCurrentConnection(epoch)) _startPolling();
     } catch (e) {
+      if (!_isCurrentConnection(epoch)) return;
       _logService.logConnection(
         controllerId: _selectedControllerId,
         action: 'SIMULATION_START_FAILED',
@@ -1769,21 +1793,26 @@ class ECLProvider extends ChangeNotifier {
         notifyListeners();
       }
 
-      final cachedBrunata = await _databaseService.getCachedBrunataData();
+      final billing = _activeBillingProvider;
+      final billingId = _selectedBillingId;
+      final cachedBrunata = await _databaseService.getCachedBrunataData(providerId: billingId);
+      if (!identical(billing, _activeBillingProvider)) return;
       if (cachedBrunata != null && _brunataData == null) {
         if (cachedBrunata.pricePerKwh == 0.10) {
           final effectivePrice = await _energyPriceService.getEffectivePrice(
             billingProviderId: _selectedBillingId,
           );
+          if (!identical(billing, _activeBillingProvider)) return;
           _brunataData = cachedBrunata.copyWithPrice(effectivePrice);
-          await _databaseService.cacheBrunataData(_brunataData!);
+          await _databaseService.cacheBrunataData(_brunataData!, providerId: billingId);
         } else {
           _brunataData = cachedBrunata;
         }
         notifyListeners();
       }
 
-      final cachedSyncTime = await _databaseService.getLastBillingSyncTime();
+      final cachedSyncTime = await _databaseService.getLastBillingSyncTime(providerId: billingId);
+      if (!identical(billing, _activeBillingProvider)) return;
       if (cachedSyncTime != null) {
         _lastBillingSyncTime = cachedSyncTime;
         notifyListeners();
@@ -1852,6 +1881,9 @@ class ECLProvider extends ChangeNotifier {
       return;
     }
 
+    if (_disposed) return;
+    final epoch = ++_connectionEpoch;
+    _stopPolling();
     _connectionState = ECLConnectionState.discovering;
     _errorMessage = null;
     _discoveryProgress = 0.0;
@@ -1865,6 +1897,7 @@ class ECLProvider extends ChangeNotifier {
 
     try {
       final hasPermission = await _ensureLocationPermission();
+      if (!_isCurrentConnection(epoch)) return;
       if (!hasPermission) {
         _logService.logConnection(
           controllerId: _selectedControllerId,
@@ -1880,11 +1913,13 @@ class ECLProvider extends ChangeNotifier {
 
       final ip = await _discoveryService.discoverController(
         onProgress: (scanned, total) {
+          if (!_isCurrentConnection(epoch)) return;
           _discoveryProgress = scanned / total;
           notifyListeners();
         },
       );
 
+      if (!_isCurrentConnection(epoch)) return;
       _logService.logConnection(
         controllerId: _selectedControllerId,
         action: 'CONTROLLER_DISCOVERED',
@@ -1897,7 +1932,9 @@ class ECLProvider extends ChangeNotifier {
       notifyListeners();
 
       await _modbusService.connect(ip);
+      if (!_isCurrentConnection(epoch)) return;
       await _rememberSuccessfulConnection();
+      if (!_isCurrentConnection(epoch)) return;
       _connectionState = ECLConnectionState.connected;
       _settingsCheckedThisConnection = false;
       _alarmsCheckedThisConnection = false;
@@ -1917,8 +1954,9 @@ class ECLProvider extends ChangeNotifier {
       );
 
       await refreshReadings();
-      _startPolling();
+      if (_isCurrentConnection(epoch)) _startPolling();
     } on ControllerNotFoundException catch (e) {
+      if (!_isCurrentConnection(epoch)) return;
       _logService.logConnection(
         controllerId: _selectedControllerId,
         action: 'CONTROLLER_NOT_FOUND',
@@ -1929,6 +1967,7 @@ class ECLProvider extends ChangeNotifier {
       );
       _setError(e.message);
     } on ModbusCommunicationException catch (e) {
+      if (!_isCurrentConnection(epoch)) return;
       _logService.logConnection(
         controllerId: _selectedControllerId,
         action: 'MODBUS_CONNECT_FAILED',
@@ -1939,6 +1978,7 @@ class ECLProvider extends ChangeNotifier {
       );
       _setError(e.message);
     } catch (e) {
+      if (!_isCurrentConnection(epoch)) return;
       debugPrint('[Provider] Unexpected error: $e');
       final errLower = e.toString().toLowerCase();
       final isLanIssue = errLower.contains('network is unreachable') ||
@@ -1967,6 +2007,9 @@ class ECLProvider extends ChangeNotifier {
   }
 
   Future<void> connectToIp(String ip, {int? port}) async {
+    if (_disposed) return;
+    final epoch = ++_connectionEpoch;
+    _stopPolling();
     _connectionState = ECLConnectionState.connecting;
     _errorMessage = null;
     _controllerIp = ip;
@@ -1987,8 +2030,11 @@ class ECLProvider extends ChangeNotifier {
       } else {
         await _activeController.connect(host: ip, port: port);
       }
+      if (!_isCurrentConnection(epoch)) return;
       await _discoveryService.saveControllerIp(ip);
+      if (!_isCurrentConnection(epoch)) return;
       await _rememberSuccessfulConnection();
+      if (!_isCurrentConnection(epoch)) return;
       _connectionState = ECLConnectionState.connected;
       _settingsCheckedThisConnection = false;
       _alarmsCheckedThisConnection = false;
@@ -2008,8 +2054,9 @@ class ECLProvider extends ChangeNotifier {
       );
 
       await refreshReadings();
-      _startPolling();
+      if (_isCurrentConnection(epoch)) _startPolling();
     } on ModbusCommunicationException catch (e) {
+      if (!_isCurrentConnection(epoch)) return;
       _logService.logConnection(
         controllerId: _selectedControllerId,
         action: 'CONNECT_FAILED',
@@ -2020,6 +2067,7 @@ class ECLProvider extends ChangeNotifier {
       );
       _setError(e.message);
     } catch (e) {
+      if (!_isCurrentConnection(epoch)) return;
       debugPrint('[Provider] Connection error: $e');
       final errLower = e.toString().toLowerCase();
       final isLanIssue = errLower.contains('network is unreachable') ||
@@ -2053,12 +2101,9 @@ class ECLProvider extends ChangeNotifier {
   }
 
   void disconnect() {
+    _connectionEpoch++;
     _stopPolling();
-    if (_selectedControllerId == 'danfoss_ecl_310') {
-      _modbusService.disconnect();
-    } else {
-      _activeController.disconnect();
-    }
+    _releaseDriver();
     _logService.logConnection(
       controllerId: _selectedControllerId,
       action: 'DISCONNECTED',
@@ -2094,16 +2139,27 @@ class ECLProvider extends ChangeNotifier {
   // ──────────────────────────────────────────────────────────────────
 
   Future<void> refreshReadings() async {
-    if (!isConnected) return;
+    if (!isConnected || _pollInProgress) return;
+    _pollInProgress = true;
+    try {
+      await _refreshReadings(_connectionEpoch);
+    } finally {
+      _pollInProgress = false;
+    }
+  }
+
+  Future<void> _refreshReadings(int epoch) async {
+    bool isCurrent() => epoch == _connectionEpoch && isConnected;
 
     if (_activeController is MockHeatingController ||
         _controllerIp?.contains('Simulation') == true ||
         _selectedControllerId != 'danfoss_ecl_310') {
       try {
         await _checkControllerAccess();
+        if (!isCurrent()) return;
         final gen = _writeGeneration;
         final telemetry = await _activeController.readTelemetry();
-        if (gen != _writeGeneration || _writeInProgress) return;
+        if (!isCurrent() || gen != _writeGeneration || _writeInProgress) return;
         _applyTelemetry(telemetry);
         _consecutivePollErrors = 0;
         _isReconnecting = false;
@@ -2151,10 +2207,14 @@ class ECLProvider extends ChangeNotifier {
         }
 
         await _persistReadings(_readings);
+        if (!isCurrent()) return;
         await _updateSensorAlerts();
+        if (!isCurrent()) return;
         await _checkSettings();
+        if (!isCurrent()) return;
         notifyListeners();
       } catch (e) {
+        if (!isCurrent()) return;
         debugPrint('[Provider] Controller reading error: $e');
         final errLower = e.toString().toLowerCase();
         final isTimeout = errLower.contains('timeout') || errLower.contains('timed out');
@@ -2188,9 +2248,10 @@ class ECLProvider extends ChangeNotifier {
     try {
       if (!_sensorMappingChecked) await _applySensorMapping();
       await _checkControllerAccess();
+      if (!isCurrent()) return;
       final gen = _writeGeneration;
       final newReadings = await _modbusService.readAllParameters();
-      if (gen != _writeGeneration || _writeInProgress) return;
+      if (!isCurrent() || gen != _writeGeneration || _writeInProgress) return;
       // Parameters the controller doesn't provide (e.g. no "Verschieben" in
       // this application) must not keep showing a cached or stale value.
       _readings.removeWhere((id, _) => !newReadings.containsKey(id));
@@ -2241,11 +2302,15 @@ class ECLProvider extends ChangeNotifier {
       // Persist latest state & telemetry to SQLite
       _persistReadings(_readings);
       await _updateSensorAlerts();
+      if (!isCurrent()) return;
       await _checkSettings();
+      if (!isCurrent()) return;
       await _pollAlarms();
+      if (!isCurrent()) return;
 
       notifyListeners();
     } on ModbusCommunicationException catch (e) {
+      if (!isCurrent()) return;
       _consecutivePollErrors++;
       debugPrint(
         '[Provider] Polling error ($_consecutivePollErrors/$_maxConsecutivePollErrors): $e',
@@ -2279,6 +2344,22 @@ class ECLProvider extends ChangeNotifier {
   /// is removed rather than replaced by a default, so the UI shows "—" and no
   /// made-up number reaches history, holiday baselines or backups.
   void _applyTelemetry(ControllerTelemetry telemetry) {
+    // Make the advertised curve simulator usable in the Danfoss demo too.
+    // These examples never enter a real controller connection.
+    if (_isSimulationActive && _selectedControllerId == 'danfoss_ecl_310') {
+      final example = <ECLParameter, double>{
+        ECLRegisters.curveSlope: danfossFactoryCurve.slope,
+        for (var i = 0; i < ECLRegisters.curvePoints.length; i++)
+          ECLRegisters.curvePoints[i]: danfossFactoryCurve.flowTemps[i],
+      };
+      for (final entry in example.entries) {
+        _readings[entry.key.id] = ECLReading(
+          parameter: entry.key,
+          rawValue: entry.key.displayToRaw(entry.value),
+          timestamp: telemetry.timestamp,
+        );
+      }
+    }
     final values = <ECLParameter, double?>{
       ECLRegisters.outdoorTemp: telemetry.outdoorTemp,
       ECLRegisters.flowTemp: telemetry.flowTemp,
@@ -2301,6 +2382,7 @@ class ECLProvider extends ChangeNotifier {
   }
 
   Future<void> _persistReadings(Map<String, ECLReading> currentReadings) async {
+    if (_isSimulationActive) return;
     try {
       await _databaseService.cacheControllerReadings(currentReadings);
 
@@ -2542,6 +2624,7 @@ class ECLProvider extends ChangeNotifier {
   /// The SQLite reading cache is a convenience; failing to update it must not
   /// turn a write the controller accepted into a reported failure.
   Future<void> _cacheReadingsQuietly() async {
+    if (_isSimulationActive) return;
     try {
       await _databaseService.cacheControllerReadings(_readings);
     } catch (e) {
@@ -2643,6 +2726,7 @@ class ECLProvider extends ChangeNotifier {
   // ──────────────────────────────────────────────────────────────────
 
   void _startPolling() {
+    if (_disposed || !isConnected) return;
     _stopPolling();
     _pollingTimer = Timer.periodic(_pollingInterval, (_) => refreshReadings());
   }
@@ -2655,6 +2739,10 @@ class ECLProvider extends ChangeNotifier {
   /// Closes the active driver's socket and its own polling timer (REST/eBUS/
   /// generic drivers poll independently of [_pollingTimer]).
   void _releaseDriver() {
+    if (_activeController is MockHeatingController) {
+      _activeController.disconnect();
+      return;
+    }
     if (_selectedControllerId == 'danfoss_ecl_310') {
       _modbusService.disconnect();
       return;
@@ -2702,6 +2790,8 @@ class ECLProvider extends ChangeNotifier {
   Future<void> syncBillingData() async {
     if (isBrunataSyncing) return;
 
+    final billing = _activeBillingProvider;
+    final billingId = _selectedBillingId;
     _brunataSyncError = null;
     _brunataSyncState = BrunataSyncState.initializing;
     notifyListeners();
@@ -2714,14 +2804,15 @@ class ECLProvider extends ChangeNotifier {
     );
 
     try {
-      final result = await _activeBillingProvider.syncData();
+      final result = await billing.syncData();
+      if (!identical(billing, _activeBillingProvider)) return;
 
       if (result.success && result.data != null) {
         _brunataData = result.data;
         _brunataSyncState = BrunataSyncState.complete;
         _brunataSyncError = null;
         _lastBillingSyncTime = DateTime.now();
-        await _databaseService.cacheBrunataData(result.data!);
+        await _databaseService.cacheBrunataData(result.data!, providerId: billingId);
 
         _logService.logBilling(
           billingId: _selectedBillingId,
@@ -2761,6 +2852,7 @@ class ECLProvider extends ChangeNotifier {
         );
       }
     } catch (e) {
+      if (!identical(billing, _activeBillingProvider)) return;
       _brunataSyncError = e.toString();
       _brunataSyncState = BrunataSyncState.error;
 
@@ -2857,7 +2949,7 @@ class ECLProvider extends ChangeNotifier {
     final existing = _brunataData;
     if (existing != null) {
       _brunataData = existing.copyWithPrice(price);
-      await _databaseService.cacheBrunataData(_brunataData!);
+      await _databaseService.cacheBrunataData(_brunataData!, providerId: _selectedBillingId);
     }
     _cachedPricePerKwh = price;
     notifyListeners();
@@ -2904,7 +2996,7 @@ class ECLProvider extends ChangeNotifier {
     final existing = _brunataData;
     if (existing != null) {
       _brunataData = existing.copyWithPrice(pricePerKwh);
-      await _databaseService.cacheBrunataData(_brunataData!);
+      await _databaseService.cacheBrunataData(_brunataData!, providerId: _selectedBillingId);
     }
     _cachedPricePerKwh = pricePerKwh;
     notifyListeners();
@@ -2933,6 +3025,9 @@ class ECLProvider extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
+    _connectionEpoch++;
+    _brunataScraper.onStateChange = null;
     _stopPolling();
     _releaseDriver();
     super.dispose();

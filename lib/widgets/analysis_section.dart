@@ -83,7 +83,7 @@ class AnalysisSection extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // ── Section Header ──────────────────────────────────
-        Row(
+        Wrap(
           children: [
             Container(
               width: 30,
@@ -639,8 +639,8 @@ class HeatingSimulationCard extends StatelessWidget {
     this.onPickBuildingReference,
   });
 
-  Widget _legendItem(Color color, String label, {bool dashed = false, bool band = false}) => Row(
-        mainAxisSize: MainAxisSize.min,
+  Widget _legendItem(Color color, String label, {bool dashed = false, bool band = false}) => Wrap(
+        crossAxisAlignment: WrapCrossAlignment.center,
         children: [
           Container(
             width: 16,
@@ -741,13 +741,10 @@ class HeatingSimulationCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(children: [
+          Wrap(spacing: 8, runSpacing: 4, children: [
             const Icon(Icons.show_chart_rounded, color: Color(0xFFFFA726), size: 18),
-            const SizedBox(width: 8),
-            const Expanded(
-              child: Text('Heizkurve & Sparpotenzial',
-                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5, color: Color(0xFFECECF0))),
-            ),
+            const Text('Heizkurve & Sparpotenzial',
+                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5, color: Color(0xFFECECF0))),
             Text('Raum-Soll ${roomSetpoint.fixed(1)} °C',
                 style: const TextStyle(color: Color(0xFFFFA726), fontSize: 11, fontWeight: FontWeight.w600)),
           ]),

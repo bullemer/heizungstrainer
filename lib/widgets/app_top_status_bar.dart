@@ -19,14 +19,14 @@ import 'package:heizungstrainer/screens/settings_screen.dart';
 class AppTopStatusBar extends StatelessWidget {
   const AppTopStatusBar({super.key});
 
-  static String formatSyncTime(DateTime time) {
-    final now = DateTime.now();
+  static String formatSyncTime(DateTime time, {DateTime? now}) {
+    now ??= DateTime.now();
     final isToday = now.year == time.year &&
         now.month == time.month &&
         now.day == time.day;
-    final isYesterday = now.year == time.year &&
-        now.month == time.month &&
-        now.day - time.day == 1;
+    final yesterday = DateTime(now.year, now.month, now.day - 1);
+    final isYesterday = yesterday.year == time.year &&
+        yesterday.month == time.month && yesterday.day == time.day;
 
     final hh = time.hour.toString().padLeft(2, '0');
     final mm = time.minute.toString().padLeft(2, '0');
@@ -56,17 +56,19 @@ class AppTopStatusBar extends StatelessWidget {
         final IconData controllerIcon;
         final Color controllerColor;
 
-        if (isConnected) {
+        if (provider.isReconnecting) {
+          controllerText = 'Verbindung gestört: Erneuter Leseversuch...';
+          controllerIcon = Icons.sync_problem_rounded;
+          controllerColor = const Color(0xFFFFB74D);
+        } else if (isConnected) {
           final ipStr = (controllerIp != null && controllerIp.isNotEmpty)
               ? controllerIp
               : '127.0.0.1';
-          controllerText = 'Verbunden: $controllerName ($ipStr)';
+          controllerText = provider.isSimulatedController
+              ? 'Demo: $controllerName (simulierte Werte)'
+              : 'Verbunden: $controllerName ($ipStr)';
           controllerIcon = Icons.check_circle_rounded;
-          controllerColor = const Color(0xFF81C784); // Soft green
-        } else if (provider.isReconnecting) {
-          controllerText = 'Verbindung verloren: Reconnect läuft...';
-          controllerIcon = Icons.sync_problem_rounded;
-          controllerColor = const Color(0xFFFFB74D); // Amber
+          controllerColor = const Color(0xFF81C784);
         } else if (provider.connectionState == ECLConnectionState.discovering ||
             provider.connectionState == ECLConnectionState.connecting) {
           controllerText = 'Verbinde mit $controllerName...';

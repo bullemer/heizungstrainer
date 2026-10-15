@@ -259,12 +259,12 @@ class DatabaseService {
   // ──────────────────────────────────────────────────────────────────────────
 
   /// Persists scraped Brunata data for offline and instant display.
-  Future<void> cacheBrunataData(BrunataMeterData data) async {
+  Future<void> cacheBrunataData(BrunataMeterData data, {String providerId = 'brunata_hamburg'}) async {
     final db = await database;
     await db.insert(
       'brunata_cache',
       {
-        'key': 'latest',
+        'key': providerId,
         'json_data': jsonEncode(data.toJson()),
         'updated_at': DateTime.now().millisecondsSinceEpoch,
       },
@@ -273,12 +273,12 @@ class DatabaseService {
   }
 
   /// Loads cached Brunata data if available.
-  Future<BrunataMeterData?> getCachedBrunataData() async {
+  Future<BrunataMeterData?> getCachedBrunataData({String providerId = 'brunata_hamburg'}) async {
     final db = await database;
     final rows = await db.query(
       'brunata_cache',
       where: 'key = ?',
-      whereArgs: ['latest'],
+      whereArgs: [providerId],
       limit: 1,
     );
     if (rows.isEmpty) return null;
@@ -293,13 +293,13 @@ class DatabaseService {
   }
 
   /// Returns the timestamp of the last successful billing data sync, or null if never synced.
-  Future<DateTime?> getLastBillingSyncTime() async {
+  Future<DateTime?> getLastBillingSyncTime({String providerId = 'brunata_hamburg'}) async {
     final db = await database;
     final rows = await db.query(
       'brunata_cache',
       columns: ['updated_at'],
       where: 'key = ?',
-      whereArgs: ['latest'],
+      whereArgs: [providerId],
       limit: 1,
     );
     if (rows.isEmpty) return null;

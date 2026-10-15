@@ -52,6 +52,12 @@ android {
 
     flavorDimensions += "store"
     productFlavors {
+        // USB testing alongside a Play-signed installation, with separate data.
+        create("qa") {
+            dimension = "store"
+            applicationIdSuffix = ".qa"
+            signingConfig = signingConfigs.getByName("debug")
+        }
         // Website APK: keeps the debug key so existing installs keep updating.
         create("direct") {
             dimension = "store"

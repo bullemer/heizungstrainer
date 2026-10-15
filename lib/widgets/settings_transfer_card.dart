@@ -153,7 +153,7 @@ class SettingsTransferCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Row(
+          const Wrap(
             children: [
               Icon(Icons.import_export_rounded, color: _accent, size: 20),
               SizedBox(width: 8),

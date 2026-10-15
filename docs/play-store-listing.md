@@ -1,8 +1,8 @@
 # Google Play – Store-Eintrag & Data safety
 
-Stand: 2026-10-07, App 1.1.8 (Build 10), Paket `com.heizungstrainer.heizungstrainer`.
-Alles hier entspricht dem, was die App tatsächlich tut (geprüft am Code). Bei
-Änderungen an Netzwerkzugriffen oder Berechtigungen diese Datei mit anpassen.
+Stand: 2026-10-14, App 1.2.1 (Build 32), Paket `com.heizungstrainer.heizungstrainer`.
+Store-Texte anhand des Codes aktualisiert. Die Data-safety-Angaben in Abschnitt 6
+sind ein Arbeitsentwurf und vor Produktion mit den tatsächlichen Diensten abzugleichen.
 
 ---
 
@@ -22,50 +22,66 @@ Alles hier entspricht dem, was die App tatsächlich tut (geprüft am Code). Bei
 **Kurzbeschreibung** (max. 80):
 
 ```
-Heizkurve verstehen und einstellen – direkt am Regler, lokal im Heimnetz.
+Heizung verstehen, Heizkurve optimieren und Verbrauch mit Brunata vergleichen.
 ```
 
 **Vollständige Beschreibung** (max. 4000):
 
 ```
-Heizungstrainer zeigt dir, was deine Heizung gerade tut – und hilft dir, sie sparsamer einzustellen. Die App verbindet sich direkt im Heimnetz mit deinem Heizungsregler, ohne Cloud und ohne Benutzerkonto.
+Warum läuft die Heizung so warm? Passt die Heizkurve zum Haus? Und wie entwickelt sich dein Verbrauch?
 
-UNTERSTÜTZTE REGLER
-• Danfoss ECL Comfort 310 (Modbus TCP über Ethernet): vollständig unterstützt und an echter Hardware getestet.
-• Viessmann (ViCare), Bosch/Buderus (KM200), Vaillant (ebusd), NIBE, Weishaupt und generisches Modbus: als Beta. Diese Regler werden standardmäßig nur gelesen; Schreiben musst du pro Regler ausdrücklich freischalten.
-• Ohne passenden Regler kannst du alles im Simulationsmodus ausprobieren.
+Heizungstrainer macht deine Heizungsanlage verständlich. Sieh aktuelle Temperaturen, prüfe Einstellungen und vergleiche deine Verbrauchswerte – direkt auf deinem Android-Smartphone.
 
-WAS DIE APP KANN
-• Live-Messwerte: Außen-, Vorlauf-, Rücklauf- und Warmwassertemperatur.
-• Deine echte Heizkurve als Diagramm – mit Werkseinstellung und Richtwert-Bereich für deinen Gebäudetyp (Heizkörper, Fußbodenheizung, Baujahr).
-• Heizkurve einstellen: Komfort-Raumsollwert bzw. Parallelverschiebung vom Sofa aus. Jede Änderung wird gegen Grenzwerte geprüft und anschließend vom Regler zurückgelesen.
-• Heizkurven-Simulator: Siehst du, wie sich eine Änderung auswirkt, bevor du sie an den Regler schickst – mit geschätzter Ersparnis in kWh und Euro.
-• Optimierungs-Assistent: findet in kleinen Schritten die niedrigste Einstellung, die sich noch angenehm anfühlt.
-• Urlaubsmodus: senkt während deiner Abwesenheit ab und stellt rechtzeitig vor der Rückkehr zurück (solange die App läuft und den Regler erreicht).
-• Sicherungen: Reglereinstellungen speichern und wiederherstellen.
-• Verbrauchsanalyse: Monatswerte aus dem Mieterportal von Brunata Hamburg, mit Vorjahres- und Liegenschaftsvergleich. Weitere Portale sind in Vorbereitung.
-• Aktivitätsprotokoll: Jeder Lese- und Schreibbefehl wird lokal protokolliert.
+DEINE HEIZUNG AUF EINEN BLICK
+• Live-Werte für Außen-, Vorlauf-, Rücklauf- und Warmwassertemperatur, abhängig von Regler und Sensoren.
+• Anlagenbild für unterstützte Danfoss-Anwendungen: Temperaturen, Pumpen und Ventile im Zusammenhang sehen.
+• Einstellungs-Check: Hinweise auf auffällige Einstellungen und mögliche Verbesserungen.
 
-STARTPHASE: ALLES KOSTENLOS
-Heizungstrainer ist neu. Deshalb sind in der Startphase alle Funktionen kostenlos – ohne Werbung, ohne Abo. Wer die App jetzt installiert, behält alle Funktionen dauerhaft, auch falls später eine kostenpflichtige Pro-Version kommt.
+HEIZKURVE VERSTEHEN UND GEZIELT ANPASSEN
+• Heizkurve als Diagramm mit Orientierung für deinen Gebäudetyp.
+• Änderungen zuerst im Simulator ausprobieren.
+• Bei unterstützten Reglern den Komfort-Raumsollwert oder die Parallelverschiebung anpassen.
+• Änderungen werden gegen Grenzwerte geprüft und anschließend vom Regler zurückgelesen.
+• Einstellungen sichern und bei Bedarf wiederherstellen.
 
-DATENSCHUTZ
-Deine Messwerte und Zugangsdaten bleiben auf deinem Handy (verschlüsselt im Android-Schlüsselspeicher). Die App verbindet sich direkt mit deinem Regler bzw. mit dem Portal deines Messdienstleisters. An uns geht nur etwas, wenn du selbst Feedback oder einen Diagnosebericht schickst.
+VERBRAUCH VERGLEICHEN
+Verbinde dein Brunata-Hamburg-Konto und behalte deine monatlichen Verbrauchswerte im Blick. Vergleiche sie mit dem Vorjahr und – soweit im Portal verfügbar – mit deiner Liegenschaft. Gemessene Werte und Hochrechnungen werden getrennt dargestellt. Euro-Beträge sind Schätzungen auf Basis des eingestellten Energiepreises, keine Abrechnung.
 
-DEINE MEINUNG ZÄHLT
-Sag uns, was gut läuft und was fehlt: in der App unter Einstellungen → Feedback senden oder im Forum auf heizungstrainer.de.
+URLAUB UND ABWESENHEIT PLANEN
+Plane die Absenkung und Rückkehr zum normalen Heizbetrieb. Bei unterstützten Danfoss-ECL-Anwendungen wird der Plan im Regler gespeichert. Bei anderen Reglern muss die App laufen und den Regler erreichen.
 
-HINWEISE
-• Für die Verbindung muss dein Regler im selben Netzwerk erreichbar sein (beim Danfoss ECL 310: Ethernet, Modbus TCP Port 502). Von unterwegs geht das über dein eigenes VPN, z. B. WireGuard auf der FRITZ!Box.
-• Android verlangt die Standortberechtigung, damit die App das WLAN erkennen und den Regler im Heimnetz finden kann. Dein Standort wird weder gespeichert noch übertragen. Alternativ kannst du die IP-Adresse des Reglers von Hand eingeben.
-• Heizungstrainer ist ein Angebot der Navisense GmbH, Hamburg, und steht in keiner Verbindung zu den genannten Herstellern und Messdienstleistern.
+PASST HEIZUNGSTRAINER ZU DEINER ANLAGE?
+• An echter Hardware getestet: Danfoss ECL Comfort 310 über Ethernet und Modbus TCP.
+• Als Beta vorhanden: Viessmann, Bosch/Buderus, Vaillant, NIBE, Weishaupt und generisches Modbus. Je nach System sind ein kompatibles Gateway, ein Adapter oder ein Herstellerkonto erforderlich. Diese Anbindungen sind noch nicht an echter Hardware verifiziert.
+• Verbrauchsanalyse: Brunata Hamburg. Weitere Abrechnungsportale sind in Vorbereitung.
+• Noch kein passender Regler? Lerne die App im Demo-Modus kennen.
+
+LOKAL IM HEIMNETZ
+Für lokale Regler verbindet sich die App direkt mit deiner Anlage. Du brauchst kein Heizungstrainer-Konto. Optionale Hersteller-Clouds und Abrechnungsportale benötigen eigene Zugangsdaten. Fernzugriff auf lokale Regler ist über dein eigenes VPN möglich, etwa WireGuard auf der FRITZ!Box.
+
+Android kann für die WLAN-Erkennung eine Standortberechtigung verlangen. Alternativ kannst du die IP-Adresse des Reglers manuell eingeben.
+
+IN DER STARTPHASE KOSTENLOS
+Alle Funktionen sind während der Startphase kostenlos nutzbar, ohne Werbung und ohne Abo.
+
+Einsparpotenziale sind Schätzungen. Das Ergebnis hängt unter anderem von Gebäude, Anlage, Wetter und Nutzung ab.
+
+Fragen oder Ideen? Nutze das Feedback in der App oder besuche heizungstrainer.de.
+
+Ein Angebot der Navisense GmbH. Keine Verbindung zu den genannten Geräteherstellern oder Messdienstleistern.
 ```
 
-**Grafiken** (Pflicht):
-- App-Symbol 512×512 PNG (32-bit, Alpha)
-- Feature-Grafik 1024×500 JPG/PNG
-- Screenshots für Play: assets/branding/screenshots/play/01–08 (1080×1920 = 9:16, Play verlangt 16:9/9:16; 2026-10-08: Startseite+Check, Einstellungs-Check, Anlage live, Heizkurve, Urlaub im Regler, Warmwasser, Sparpotenzial, Vergleich; Quelle: screenshots/01–08 1080×2109, echte Daten: Danfoss ECL 310 + Brunata Hamburg, 2026-10-07; Status-/Navigationsleiste abgeschnitten wegen Play-Limit 2:1; Liegenschaftsvergleich-Tabelle NICHT verwenden – zeigt den Namen des Mieters)
-- Icon: assets/branding/play_icon_512.png · Feature-Grafik: assets/branding/play_feature_1024x500.png
+**Grafiken**:
+- App-Symbol: `assets/branding/play_icon_512.png` (512×512).
+- Feature-Grafik: `assets/branding/play_feature_1024x500.png` (1024×500).
+- Aktuelle Screenshots: `build/play-release/screenshots/01–05` (1080×1920).
+  Direkt aus den Widgets von 1.2.1 mit Demo-Daten gerendert; keine Aufnahme eines Android-Geräts.
+  Reihenfolge: Zuhause, Heizkurve, Anlage live, Urlaub, Sicherungen.
+- Ältere Hardware-Screenshots unter `assets/branding/screenshots/play/` sind Referenzmaterial,
+  nicht als neu aufgenommen kennzeichnen. Keine privaten Mieter-/Abrechnungsdaten veröffentlichen.
+- Google erlaubt bis zu acht Bilder je Gerätetyp. Die 9:16-Bilder erfüllen auch die
+  Empfehlung für die Bewerbung; das Seitenverhältnis ist nicht die einzige allgemeine Zulassungsbedingung.
+  [Offizielle Bildanforderungen](https://support.google.com/googleplay/android-developer/answer/9866151?hl=de).
 
 ## 3. Store-Einstellungen
 
@@ -111,51 +127,46 @@ Kein Benutzerkonto und kein Login nötig. Die App steuert einen Heizungsregler i
 
 Erwartetes Ergebnis: USK 0 / PEGI 3.
 
-## 6. Data safety (Datensicherheit)
+## 6. Data safety – vor Produktion bestätigen
 
-### Grundfragen
+Der bisherige Entwurf setzte „nicht an uns“ mit „nicht erhoben“ gleich. Das ist nicht
+korrekt: Google betrachtet auch Übertragungen an Dritte und kontrollierte WebViews.
+Lokale Verarbeitung ist ausgenommen. Nutzerinitiierte Weitergabe kann eine Ausnahme
+von „geteilt“ sein, ist aber nicht automatisch eine Ausnahme von „erhoben“.
+[Google Data-safety-Leitfaden](https://support.google.com/googleplay/android-developer/answer/10787469?hl=de).
 
-| Frage | Antwort |
-|---|---|
-| Erhebt oder teilt deine App erforderliche Nutzerdatentypen? | **Ja** |
-| Werden alle Daten bei der Übertragung verschlüsselt? | **Ja** (alle Übertragungen an uns per HTTPS) |
-| Bietest du eine Möglichkeit an, die Löschung der Daten anzufordern? | **Ja** – per E-Mail an support@heizungstrainer.de oder Kontaktformular |
-| Konten | Die App hat keine Benutzerkonten → keine Konto-Lösch-URL nötig |
+Am App-Code bestätigte Datenflüsse:
 
-### Erhobene Datentypen
-
-Alle **„erhoben“ = Ja, „geteilt“ = Nein, „nur vorübergehend verarbeitet“ = Nein,
-„optional“ = Ja** (Nutzer entscheidet selbst, ob er sendet).
-
-| Kategorie → Datentyp | Wann | Zwecke |
+| Funktion | Daten und Übertragung | Zu prüfen/anzugeben |
 |---|---|---|
-| Personenbezogene Daten → **E-Mail-Adresse** | nur wenn im Feedback-Formular angegeben | App-Funktionen (Antwort auf Feedback) |
-| App-Aktivität → **Andere nutzergenerierte Inhalte** | Text einer Feedback-Nachricht | App-Funktionen, Analysen (Verbesserung der App) |
-| App-Informationen und -Leistung → **Absturzprotokolle** | Fehlereinträge im Diagnosebericht (nur nach ausdrücklicher Zustimmung im Protokoll-Tab) | App-Funktionen, Analysen |
-| App-Informationen und -Leistung → **Diagnosedaten** | Diagnosebericht; App-/Android-Version + Reglertyp beim Feedback | App-Funktionen, Analysen |
+| Feedback | Freitext, optional E-Mail, App-/OS-Version, Reglertyp per HTTPS an Backoffice | E-Mail, nutzergenerierte Inhalte, Diagnosedaten; optional; Support/App-Funktion |
+| Diagnosebericht | Nutzerbestätigter Bericht mit Fehlern und Aktivitäten per HTTPS | Absturz-/Diagnosedaten; tatsächlichen Payload und Server-Aufbewahrung abgleichen |
+| Brunata-Portal | Login über gesteuerte WebView; Verbrauch und Abrechnung werden abgerufen | Zugangsdaten/Identifikatoren und Datenverarbeitung beim Dienst nicht pauschal ausnehmen |
+| Viessmann/andere Gateways | Zugangstoken bzw. Gateway-Zugangsdaten; je nach Konfiguration Cloud oder LAN | Empfänger und Übertragungsweg pro unterstützter Konfiguration prüfen |
+| Lokaler Verlauf | Messwerte in SQLite im privaten App-Verzeichnis | Keine eigene SQLite-Verschlüsselung behaupten |
+| WLAN-Erkennung | Standortberechtigung für WLAN-Erkennung; keine GPS-Positionsabfrage im geprüften Code | Berechtigung ist nicht gleich Erhebung von GPS-Daten |
+| Energiepreis-Probe | Öffentliche HTTPS-Abfrage; Ergebnis bleibt ein hinterlegter Richtwert | Keine Echtzeit-Tarifdaten versprechen; Anbieter-Serverlogs berücksichtigen |
 
-Alles andere: **nicht erhoben**. Insbesondere:
-- **Standort: nicht erheben.** Die Berechtigung dient nur der WLAN-/Geräteerkennung; nichts verlässt das Gerät.
-- **Geräte-IDs, Werbe-ID, Kontakte, Fotos, Finanzdaten: nicht erhoben.**
-- **Zugangsdaten für Brunata/Viessmann:** werden nur auf dem Gerät gespeichert und gehen direkt an den Dienst, den der Nutzer selbst ausgewählt hat. Navisense erhält sie nie → keine Erhebung durch uns.
-- **Messwerte des Reglers:** bleiben lokal (Modbus im Heimnetz).
-- **Energiepreis-Abfrage** (api.energy-charts.info): reine Abfrage öffentlicher Preisdaten, keine Nutzerdaten.
+„Alle Daten bei Übertragung verschlüsselt“ nicht allein aus dem HTTPS-Backoffice
+ableiten: Modbus TCP und mehrere lokale HTTP-Gateways sind unverschlüsselt. Die
+Ausnahme für vom Nutzer gewählte Dienste gemäß Googles Leitfaden anhand des gesamten
+Datenflusses prüfen. „Geteilt: Nein“ und Aufbewahrungs-/Löschangaben ebenfalls mit dem
+Backendbetrieb abgleichen. Ohne diese Angaben ist hier keine endgültige Console-Antwort bestätigt.
 
-### Vorschau, wie es im Store erscheint
-
-- Keine Daten werden an Dritte weitergegeben
-- Erhobene Daten: Personenbezogene Daten, App-Aktivität, App-Informationen und -Leistung
-- Daten werden bei der Übertragung verschlüsselt
-- Du kannst die Löschung der Daten anfordern
+Öffentliche Datenschutzerklärung: https://heizungstrainer.de/datenschutz.html
+(am 14.10.2026 HTTP 200; enthält Abschnitt zur App, Feedback, Diagnose und Drittanbietern).
+Löschkontakt: support@heizungstrainer.de. Kein eigenes Heizungstrainer-Benutzerkonto.
 
 ## 7. Release-Hinweise (Interner Test / später Produktion)
 
 ```
 <de-DE>
-Erste Play-Version – in der Startphase mit allen Funktionen kostenlos.
-• Heizkurve auslesen, simulieren und einstellen (Danfoss ECL Comfort 310)
-• Urlaubsmodus, Sicherungen, Verbrauchsanalyse (Brunata Hamburg)
-• Feedback direkt aus der App
+Verbesserungen für Stabilität und kleine Displays.
+• Bessere Darstellung von Einstellungen, Sicherungen und Diagrammen
+• Getrennte Verbrauchsdaten je Abrechnungsanbieter
+• Zuverlässigeres Trennen und Aktualisieren der Reglerverbindung
+• Heizkurven-Simulation im Demo-Modus
+• Klarere Verbindungs- und Demo-Anzeigen
 </de-DE>
 ```
 

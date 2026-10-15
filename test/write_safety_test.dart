@@ -82,6 +82,18 @@ Future<ECLProvider> providerWith(FakeController fake, {bool allowBetaWrites = tr
 }
 
 void main() {
+  test('non-finite values are rejected before reaching a driver', () async {
+    FlutterSecureStorage.setMockInitialValues({});
+    final fake = FakeController(shift: 0);
+    final provider = await providerWith(fake);
+    for (final value in [double.nan, double.infinity, double.negativeInfinity]) {
+      await expectLater(provider.writeParameter(ECLRegisters.heatingCurveShift, value),
+          throwsA(isA<ModbusCommunicationException>()));
+    }
+    expect(fake.writes, isEmpty);
+    provider.dispose();
+  });
+
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => FlutterSecureStorage.setMockInitialValues({}));
 

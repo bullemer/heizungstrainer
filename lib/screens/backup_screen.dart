@@ -606,7 +606,7 @@ class _BackupScreenState extends State<BackupScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
+                Wrap(
                   children: [
                     Text(
                       preset.name,

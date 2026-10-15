@@ -3902,7 +3902,7 @@ class _ActiveSystemSummary extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
+          Wrap(
             children: [
               const Icon(Icons.hub_rounded, color: Color(0xFFFFA726), size: 20),
               const SizedBox(width: 8),
@@ -3915,7 +3915,7 @@ class _ActiveSystemSummary extends StatelessWidget {
                   color: Color(0xFFFFA726),
                 ),
               ),
-              const Spacer(),
+              const SizedBox(width: 8),
               _ConnectionStatusBadge(provider: provider),
             ],
           ),
@@ -3964,13 +3964,6 @@ class _ActiveSystemSummary extends StatelessWidget {
                       color: Color(0xFF00BCD4),
                     ),
                     overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                Text(
-                  'Anleitung unten ↓',
-                  style: TextStyle(
-                    fontSize: 10,
-                    color: Color(0xFFB0BEC5),
                   ),
                 ),
               ],
@@ -4026,7 +4019,7 @@ class _LicenseStatusCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
+                Wrap(
                   children: [
                     Text(
                       license.isMaster
@@ -4134,7 +4127,7 @@ class _SummaryBox extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
+          Wrap(
             children: [
               Icon(icon, size: 14, color: const Color(0xFFFFA726)),
               const SizedBox(width: 5),
@@ -4388,7 +4381,7 @@ class _ControllerCard extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
+                      Wrap(
                         children: [
                           Text(
                             descriptor.brand,
@@ -4445,10 +4438,10 @@ class _ControllerCard extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 10),
-            Row(
+            Wrap(
               children: [
                 _TagChip(label: _protocolString(descriptor.protocol)),
-                const Spacer(),
+                const SizedBox(width: 8),
                 // Simulation for every controller, so it can be tried without hardware.
                 if (isSelected) ...[
                   if (isConnected) ...[
@@ -4728,7 +4721,7 @@ class _FeedbackCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Row(
+          const Wrap(
             children: [
               Icon(Icons.forum_rounded, color: accent, size: 20),
               SizedBox(width: 8),
@@ -4795,7 +4788,7 @@ class _SectionHeader extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
+        Wrap(
           children: [
             Icon(icon, color: const Color(0xFFFFA726), size: 20),
             const SizedBox(width: 8),
@@ -4878,7 +4871,7 @@ class _WireGuardRemoteAccessCardState extends State<_WireGuardRemoteAccessCard> 
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Row(
+                        Wrap(
                           children: [
                             const Text(
                               'Fernzugriff via FRITZ!Box WireGuard®',

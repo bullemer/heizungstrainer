@@ -35,6 +35,7 @@ class ModbusService {
   ModbusClientTcp? _client;
   String? _currentIp;
   bool _isConnected = false;
+  int _connectionGeneration = 0;
 
   /// Whether the service currently has an active connection.
   bool get isConnected => _isConnected;
@@ -53,33 +54,45 @@ class ModbusService {
   ///
   /// Throws [ModbusCommunicationException] on failure.
   Future<void> connect(String ip, {int port = 502}) async {
-    // Disconnect existing connection when switching targets
-    if (_currentIp != null && _currentIp != ip) {
-      await disconnect();
-    }
+    final generation = ++_connectionGeneration;
+    final previous = _client;
+    _client = null;
+    _isConnected = false;
+    _currentIp = null;
+    try {
+      await previous?.disconnect();
+    } catch (_) {}
+    if (generation != _connectionGeneration) return;
 
-    _client = ModbusClientTcp(
+    final client = ModbusClientTcp(
       ip,
       serverPort: port,
       unitId: 1,
       connectionMode: ModbusConnectionMode.autoConnectAndKeepConnected,
     );
+    _client = client;
     _currentIp = ip;
-
     try {
-      final connected = await _client!.connect();
+      final connected = await client.connect();
+      if (generation != _connectionGeneration) {
+        await client.disconnect();
+        return;
+      }
       _isConnected = connected;
-      debugPrint('[Modbus] Connected to $ip: $connected');
       if (!connected) {
         throw ModbusCommunicationException(
           message: 'Verbindung zum ECL-Regler unter $ip konnte nicht hergestellt werden.',
         );
       }
     } catch (e) {
-      if (e is ModbusCommunicationException) rethrow;
+      try {
+        await client.disconnect();
+      } catch (_) {}
+      if (generation != _connectionGeneration) return;
       _isConnected = false;
       _client = null;
       _currentIp = null;
+      if (e is ModbusCommunicationException) rethrow;
       throw ModbusCommunicationException(
         message: 'Verbindung zum ECL-Regler unter $ip fehlgeschlagen.',
         underlyingError: e,
@@ -87,14 +100,16 @@ class ModbusService {
     }
   }
 
-  /// Disconnects from the controller and releases all resources.
+  /// Detach synchronously: an old socket closing must not clear a new one.
   Future<void> disconnect() async {
-    try {
-      await _client?.disconnect();
-    } catch (_) {}
+    _connectionGeneration++;
+    final client = _client;
     _client = null;
     _isConnected = false;
     _currentIp = null;
+    try {
+      await client?.disconnect();
+    } catch (_) {}
   }
 
   /// Asserts that a connection is active. Throws if not.

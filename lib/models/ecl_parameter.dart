@@ -29,6 +29,7 @@ class ECLParameter {
 
   String? validateDisplayValue(double value) {
     if (!isWritable) return '$name is read-only.';
+    if (!value.isFinite) return 'Ungültiger Zahlenwert für $name.';
     if (minValue != null && value < minValue!) {
       return 'Wert $value unter Minimum $minValue für $name.';
     }

@@ -11,7 +11,34 @@ import 'package:heizungstrainer/screens/connection_screen.dart';
 import 'package:heizungstrainer/widgets/analysis_section.dart';
 import 'package:heizungstrainer/widgets/app_top_status_bar.dart';
 
+class _RetryingProvider extends ECLProvider {
+  _RetryingProvider() : super(autoLoadDatabase: false);
+  @override
+  bool get isConnected => true;
+  @override
+  bool get isReconnecting => true;
+}
+
 void main() {
+  test('yesterday crosses month and year boundaries', () {
+    expect(AppTopStatusBar.formatSyncTime(DateTime(2025, 12, 31, 23), now: DateTime(2026, 1, 1)),
+        'Gestern, 23:00 Uhr');
+    expect(AppTopStatusBar.formatSyncTime(DateTime(2026, 2, 28, 12), now: DateTime(2026, 3, 1)),
+        'Gestern, 12:00 Uhr');
+  });
+
+  testWidgets('retrying takes precedence over the connected state', (tester) async {
+    FlutterSecureStorage.setMockInitialValues({});
+    final p = _RetryingProvider();
+    await tester.pumpWidget(ChangeNotifierProvider<ECLProvider>.value(
+      value: p, child: const MaterialApp(home: Scaffold(body: AppTopStatusBar())),
+    ));
+    expect(find.textContaining('Verbindung gestört'), findsOneWidget);
+    expect(find.textContaining('Verbunden:'), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+    p.dispose();
+  });
+
   setUpAll(() {
     sqfliteFfiInit();
     databaseFactory = databaseFactoryFfi;

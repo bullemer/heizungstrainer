@@ -165,8 +165,8 @@ class _CurveSimulatorScreenState extends State<CurveSimulatorScreen> {
       padding: const EdgeInsets.all(16),
       children: [
         _section(
-          title: 'Deine Heizkurve',
-          subtitle: 'Gelesen aus dem Regler: Neigung ${curve.slope.fixed(1)}, '
+          title: provider.isSimulatedController ? 'Demo-Heizkurve' : 'Deine Heizkurve',
+          subtitle: '${provider.isSimulatedController ? 'Beispieldaten' : 'Gelesen aus dem Regler'}: Neigung ${curve.slope.fixed(1)}, '
               'Komfort-Raumsollwert ${room.fixed(1)} °C'
               '${curve.minFlow != null ? ', Vorlauf ${curve.minFlow!.fixed(0)}–${curve.maxFlow?.fixed(0) ?? '?'} °C' : ''}.',
           child: Column(
@@ -348,7 +348,7 @@ class _CurveSimulatorScreenState extends State<CurveSimulatorScreen> {
     );
   }
 
-  Widget _legend(Color c, String label) => Row(mainAxisSize: MainAxisSize.min, children: [
+  Widget _legend(Color c, String label) => Wrap(crossAxisAlignment: WrapCrossAlignment.center, children: [
         Container(width: 14, height: 3, color: c),
         const SizedBox(width: 6),
         Text(label, style: const TextStyle(fontSize: 12, color: Color(0xFFBDBDC7))),

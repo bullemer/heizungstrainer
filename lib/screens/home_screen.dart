@@ -1049,8 +1049,9 @@ class _HeatingComfortCardState extends State<_HeatingComfortCard> {
           // Scale labels
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            child: Wrap(
+              alignment: WrapAlignment.spaceBetween,
+              spacing: 12,
               children: [
                 Text(
                   _roomMode ? '❄️ ${_roomMin.fixed(0)} °C' : '❄️ Sparmodus',
@@ -1332,8 +1333,8 @@ class _MetricCard extends StatelessWidget {
           ),
           const SizedBox(height: 14),
           // Temperature
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
+          Wrap(
+            crossAxisAlignment: WrapCrossAlignment.end,
             children: [
               Text(
                 isDisconnected ? '—' : temp.fixed(1),
@@ -1424,8 +1425,8 @@ class _EfficiencyDeltaChip extends StatelessWidget {
           borderRadius: BorderRadius.circular(20),
           border: Border.all(color: color.withValues(alpha: 0.25)),
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
+        child: Wrap(
+          crossAxisAlignment: WrapCrossAlignment.center,
           children: [
             Icon(
               isHealthy

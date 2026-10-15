@@ -277,7 +277,7 @@ class _MainShellState extends State<MainShell> {
           NavigationDestination(
             icon: Icon(Icons.home_outlined),
             selectedIcon: Icon(Icons.home_rounded),
-            label: 'Mein Zuhause',
+            label: 'Zuhause',
           ),
           NavigationDestination(
             icon: Icon(Icons.beach_access_outlined),
