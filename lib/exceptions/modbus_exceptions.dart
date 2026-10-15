@@ -69,9 +69,13 @@ class ControllerNotFoundException implements Exception {
   /// User-facing error description.
   final String message;
 
+  /// iOS: every connection failed instantly, local-network access looks denied.
+  final bool localNetworkBlocked;
+
   const ControllerNotFoundException({
     required this.subnet,
     required this.message,
+    this.localNetworkBlocked = false,
   });
 
   @override

@@ -1,0 +1,44 @@
+# iPhone build in the cloud (no Mac needed): Codemagic builds, signs and
+# uploads to TestFlight. Started manually in the Codemagic UI.
+#
+# One-time setup (needs the Apple Developer account for Navisense GmbH):
+# 1. App Store Connect → Users and Access → Integrations → App Store Connect API
+#    → create a key with "App Manager" access.
+# 2. Codemagic → Team settings → Integrations → Developer Portal → add that key
+#    under the name used in `integrations` below.
+# 3. App Store Connect → create the app with bundle id
+#    com.heizungstrainer.heizungstrainer (and the in-app purchase
+#    `heizungstrainer_pro`, non-consumable).
+workflows:
+  ios-testflight:
+    name: iOS → TestFlight
+    max_build_duration: 60
+    instance_type: mac_mini_m2
+    integrations:
+      app_store_connect: Heizungstrainer ASC
+    environment:
+      flutter: 3.38.9
+      xcode: latest
+      cocoapods: default
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.heizungstrainer.heizungstrainer
+    scripts:
+      - name: Packages
+        script: flutter pub get
+      - name: Tests
+        script: flutter test
+      - name: Code signing
+        script: xcode-project use-profiles
+      - name: Build IPA
+        # App Store build numbers must only grow; Codemagic's counter does that.
+        script: |
+          flutter build ipa --release \
+            --build-number=$BUILD_NUMBER \
+            --export-options-plist=/Users/builder/export_options.plist
+    artifacts:
+      - build/ios/ipa/*.ipa
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true

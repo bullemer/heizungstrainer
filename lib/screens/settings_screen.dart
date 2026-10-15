@@ -4748,11 +4748,11 @@ class _FeedbackCard extends StatelessWidget {
                 label: const Text('Feedback senden'),
                 onPressed: () => FeedbackSheet.show(context),
               ),
-              if (isPlayBuild)
+              if (isPlayBuild || (isAppStoreBuild && appStoreId.isNotEmpty))
                 OutlinedButton.icon(
                   style: buttonStyle,
                   icon: const Icon(Icons.star_outline_rounded, size: 16),
-                  label: const Text('Im Play Store bewerten'),
+                  label: Text(isAppStoreBuild ? 'Im App Store bewerten' : 'Im Play Store bewerten'),
                   onPressed: () => provider.feedbackService.openStoreListing(),
                 ),
               OutlinedButton.icon(

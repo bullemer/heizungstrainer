@@ -89,7 +89,7 @@ class LicenseService extends ChangeNotifier {
   /// Whether the service has completed loading from secure storage.
   bool get isInitialized => _isInitialized;
 
-  /// Whether Pro is sold through Google Play (Play build) rather than keys.
+  /// Whether Pro is sold through a store (Google Play / App Store) rather than keys.
   bool get usesPlayBilling => _store != null;
 
   /// A Play purchase is waiting for payment (e.g. cash at a shop).
@@ -212,9 +212,18 @@ class LicenseService extends ChangeNotifier {
   /// wiederherstellen", and on every start). Grants Pro for an owned purchase
   /// and revokes a stored Play licence Play no longer reports (refund).
   /// Returns false if Play couldn't be reached – nothing changes then.
-  Future<bool> syncWithStore() async {
+  /// [userInitiated] (the restore button) first refreshes from the store's
+  /// servers; Apple only allows that on an explicit user action.
+  Future<bool> syncWithStore({bool userInitiated = false}) async {
     final store = _store;
     if (store == null) return false;
+    if (userInitiated) {
+      try {
+        await store.refreshFromServer();
+      } catch (e) {
+        debugPrint('[LicenseService] Store refresh failed: $e');
+      }
+    }
     final owned = await store.ownedPurchases();
     if (owned == null) return false;
 

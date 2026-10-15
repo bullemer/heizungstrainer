@@ -52,7 +52,7 @@ class FeedbackService {
   })  : _storage = storage ?? const FlutterSecureStorage(),
         _memory = inMemoryStorage,
         _review = review ?? (inMemoryStorage == null ? InAppReview.instance : null),
-        _reviewEnabled = reviewEnabled ?? isPlayBuild;
+        _reviewEnabled = reviewEnabled ?? isStoreBuild;
 
   /// Builds the backoffice payload (bug-report schema).
   static Map<String, dynamic> buildPayload({
@@ -71,7 +71,7 @@ class FeedbackService {
       'description': text,
       'controller_brand': controllerBrand,
       'controller_model': controllerModel,
-      'app_version': '$appVersionLabel${isPlayBuild ? ' Play' : ''}',
+      'app_version': '$appVersionLabel${isPlayBuild ? ' Play' : isAppStoreBuild ? ' iOS' : ''}',
       'os_platform': _platformLabel(),
       'user_email': (mail == null || mail.isEmpty) ? null : mail,
       'severity': 'feedback_${kind.code}',
@@ -158,8 +158,8 @@ class FeedbackService {
     }
   }
 
-  /// Opens the Play Store page (Play build only).
+  /// Opens the store page (store builds only; iOS needs [appStoreId]).
   Future<void> openStoreListing() async {
-    await (_review ?? InAppReview.instance).openStoreListing();
+    await (_review ?? InAppReview.instance).openStoreListing(appStoreId: appStoreId);
   }
 }

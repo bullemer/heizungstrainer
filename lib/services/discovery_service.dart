@@ -9,6 +9,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart' show AppLifecycleListener, AppLifecycleState, WidgetsBinding;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:modbus_client/modbus_client.dart';
 import 'package:modbus_client_tcp/modbus_client_tcp.dart';
@@ -37,14 +38,37 @@ class DiscoveryService {
   /// Maximum concurrent TCP connection attempts during subnet scanning.
   static const int _concurrentScans = 50;
 
+  /// Set once iOS's local-network prompt has been triggered on this install.
+  static const String _localNetworkPromptKey = 'ht_ios_local_network_prompted';
+
+  /// A refusal faster than this didn't reach the network (see [_scanLooksBlocked]).
+  static const Duration _instantFailure = Duration(milliseconds: 100);
+
+  /// Settings path shown when iOS blocks the local network.
+  static const String iosLocalNetworkHint =
+      'Auf dem iPhone: Einstellungen → Datenschutz & Sicherheit → Lokales Netzwerk '
+      '→ Heizungstrainer einschalten.';
+
   final NetworkInfo _networkInfo;
   final FlutterSecureStorage _secureStorage;
+  final bool _isIOS;
+  final Future<void> Function() _awaitPermissionAnswer;
 
+  /// [isIOS] and [awaitPermissionAnswer] are for tests; by default they follow
+  /// the platform and watch the app lifecycle.
   DiscoveryService({
     NetworkInfo? networkInfo,
     FlutterSecureStorage? secureStorage,
+    bool? isIOS,
+    Future<void> Function()? awaitPermissionAnswer,
   })  : _networkInfo = networkInfo ?? NetworkInfo(),
-        _secureStorage = secureStorage ?? const FlutterSecureStorage();
+        _secureStorage = secureStorage ?? const FlutterSecureStorage(),
+        _isIOS = isIOS ?? (!kIsWeb && Platform.isIOS),
+        _awaitPermissionAnswer = awaitPermissionAnswer ?? _awaitSystemAlertAnswer;
+
+  /// Android needs the location permission to read the WiFi IP; iOS doesn't
+  /// (it asks for local-network access instead, see [ensureLocalNetworkPrompt]).
+  bool get needsLocationPermission => !_isIOS;
 
   // ──────────────────────────────────────────────────────────────────
   // Secure Storage
@@ -77,11 +101,11 @@ class DiscoveryService {
     final wifiIP = await _networkInfo.getWifiIP();
     debugPrint('[Discovery] WiFi IP: $wifiIP');
     if (wifiIP == null || wifiIP.isEmpty) {
-      throw const ControllerNotFoundException(
+      throw ControllerNotFoundException(
         subnet: 'unknown',
         message: 'Lokale WiFi-IP-Adresse konnte nicht ermittelt werden. '
-            'Bitte stellen Sie sicher, dass das Gerät mit dem WLAN verbunden ist '
-            'und die Standortberechtigung erteilt wurde.',
+            'Bitte stellen Sie sicher, dass das Gerät mit dem WLAN verbunden ist'
+            '${_isIOS ? '.' : ' und die Standortberechtigung erteilt wurde.'}',
       );
     }
     return wifiIP;
@@ -105,8 +129,9 @@ class DiscoveryService {
   // Port Scanning & Verification
   // ──────────────────────────────────────────────────────────────────
 
-  /// Tests whether a specific host has TCP port 502 open.
-  Future<bool> _isPortOpen(String host) async {
+  /// Connects to [host]:502 and classifies the outcome.
+  Future<ProbeResult> _probe(String host) async {
+    final watch = Stopwatch()..start();
     try {
       final socket = await Socket.connect(
         host,
@@ -114,9 +139,73 @@ class DiscoveryService {
         timeout: _socketTimeout,
       );
       socket.destroy();
-      return true;
+      return ProbeResult.open;
+    } on SocketException catch (e) {
+      // ECONNREFUSED (61 on iOS, 111 on Android/Linux): a host answered.
+      final code = e.osError?.errorCode;
+      if (code == 61 || code == 111) return ProbeResult.refused;
+      if (e.message.contains('timed out') || watch.elapsed >= _socketTimeout) {
+        return ProbeResult.timeout;
+      }
+      return watch.elapsed < _instantFailure ? ProbeResult.instantError : ProbeResult.error;
     } catch (_) {
-      return false;
+      return ProbeResult.error;
+    }
+  }
+
+  /// A scan "looks blocked" when nothing answered at all (no open port, no
+  /// refusal) and nearly every attempt failed instantly instead of timing out.
+  /// On a reachable network, absent hosts time out and the router refuses;
+  /// iOS without local-network access fails every connect at once.
+  @visibleForTesting
+  static bool scanLooksBlocked(Iterable<ProbeResult> results) {
+    final list = results.toList();
+    if (list.isEmpty) return false;
+    if (list.any((r) => r == ProbeResult.open || r == ProbeResult.refused)) return false;
+    final instant = list.where((r) => r == ProbeResult.instantError).length;
+    return instant >= list.length * 0.9;
+  }
+
+  // ──────────────────────────────────────────────────────────────────
+  // iOS local-network permission
+  // ──────────────────────────────────────────────────────────────────
+
+  /// iOS asks "Allow … to find devices on your local network?" on the first
+  /// LAN connection, and fails every connection until the user answers. So
+  /// trigger it once with a single connect, wait for the answer, and only
+  /// then search. No-op on Android and after the first time.
+  Future<void> ensureLocalNetworkPrompt(String subnetBase) async {
+    if (!_isIOS) return;
+    try {
+      if (await _secureStorage.read(key: _localNetworkPromptKey) != null) return;
+    } catch (_) {}
+    debugPrint('[Discovery] Triggering iOS local-network prompt via $subnetBase.1');
+    final answered = _awaitPermissionAnswer();
+    await _probe('$subnetBase.1');
+    await answered;
+    try {
+      await _secureStorage.write(key: _localNetworkPromptKey, value: DateTime.now().toIso8601String());
+    } catch (_) {}
+  }
+
+  /// The system alert makes the app inactive; it is resumed once the user
+  /// tapped a button. If no alert shows up (already answered) this returns
+  /// after a short grace period.
+  static Future<void> _awaitSystemAlertAnswer() async {
+    final answered = Completer<void>();
+    var alertShown = false;
+    final listener = AppLifecycleListener(onStateChange: (state) {
+      if (state == AppLifecycleState.inactive) alertShown = true;
+      if (state == AppLifecycleState.resumed && alertShown && !answered.isCompleted) {
+        answered.complete();
+      }
+    });
+    try {
+      await Future<void>.delayed(const Duration(milliseconds: 1500));
+      if (!alertShown && WidgetsBinding.instance.lifecycleState != AppLifecycleState.inactive) return;
+      await answered.future.timeout(const Duration(minutes: 2), onTimeout: () {});
+    } finally {
+      listener.dispose();
     }
   }
 
@@ -201,6 +290,7 @@ class DiscoveryService {
     final localIp = await getLocalIpAddress();
     final subnetBase = _getSubnetBase(localIp);
     debugPrint('[Discovery] Local IP: $localIp, Subnet: $subnetBase.0/24');
+    await ensureLocalNetworkPrompt(subnetBase);
 
     // ── Fast-path: try saved IP first ────────────────────────────
     final savedIp = await getSavedControllerIp();
@@ -217,6 +307,7 @@ class DiscoveryService {
     String? foundIp;
     int scannedCount = 0;
     const totalHosts = 254;
+    final results = <ProbeResult>[];
 
     for (int batchStart = 1;
         batchStart <= totalHosts && foundIp == null;
@@ -230,7 +321,9 @@ class DiscoveryService {
           // Early exit if another future already found the controller
           if (foundIp != null) return;
 
-          if (await _isPortOpen(candidateIp)) {
+          final result = await _probe(candidateIp);
+          results.add(result);
+          if (result == ProbeResult.open) {
             debugPrint('[Discovery] Port 502 open on $candidateIp — verifying…');
             if (await _verifyECLController(candidateIp)) {
               foundIp = candidateIp;
@@ -250,11 +343,22 @@ class DiscoveryService {
       return foundIp!;
     }
 
+    if (_isIOS && scanLooksBlocked(results)) {
+      debugPrint('[Discovery] All connects failed instantly – local network access looks blocked.');
+      throw ControllerNotFoundException(
+        subnet: '$subnetBase.0/24',
+        localNetworkBlocked: true,
+        message: 'Die App darf das lokale Netzwerk offenbar nicht nutzen, '
+            'deshalb kann sie den Regler nicht finden. $iosLocalNetworkHint',
+      );
+    }
+
     throw ControllerNotFoundException(
       subnet: '$subnetBase.0/24',
       message: 'Kein ECL 310 Controller im Subnetz $subnetBase.0/24 gefunden. '
           'Bitte prüfen Sie, ob der Regler eingeschaltet und im selben '
-          'Netzwerk erreichbar ist.',
+          'Netzwerk erreichbar ist.'
+          '${_isIOS ? ' Falls der Zugriff aufs lokale Netzwerk abgelehnt wurde: $iosLocalNetworkHint' : ''}',
     );
   }
 
@@ -262,10 +366,30 @@ class DiscoveryService {
   /// Returns true if the IP hosts a valid ECL controller.
   Future<bool> verifyAndSave(String ip) async {
     debugPrint('[Discovery] Manual verification for $ip');
+    final parts = ip.split('.');
+    if (parts.length == 4) await ensureLocalNetworkPrompt(parts.take(3).join('.'));
     if (await _verifyECLController(ip)) {
       await saveControllerIp(ip);
       return true;
     }
     return false;
   }
+}
+
+/// Outcome of one connection attempt to port 502.
+enum ProbeResult {
+  /// Port open.
+  open,
+
+  /// A host answered with "connection refused".
+  refused,
+
+  /// No answer within the timeout.
+  timeout,
+
+  /// Failed before reaching the network (typical when iOS blocks the LAN).
+  instantError,
+
+  /// Any other failure.
+  error,
 }

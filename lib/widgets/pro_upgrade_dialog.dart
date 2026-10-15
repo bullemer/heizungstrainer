@@ -57,15 +57,19 @@ class _ProUpgradeDialogState extends State<ProUpgradeDialog> {
       _isRestoring = true;
       _restoreMessage = null;
     });
-    final reached = await licenseService.syncWithStore();
+    final reached = await licenseService.syncWithStore(userInitiated: true);
     if (!mounted) return;
     setState(() {
       _isRestoring = false;
       _restoreMessage = !reached
-          ? 'Google Play ist gerade nicht erreichbar. Bitte später erneut versuchen.'
+          ? (isAppStoreBuild
+              // An empty App Store history also lands here (see appStorePurchasesFrom).
+              ? 'Kein Pro-Kauf für diesen Apple-Account gefunden – oder der App Store '
+                  'ist gerade nicht erreichbar. Bitte später erneut versuchen.'
+              : 'Google Play ist gerade nicht erreichbar. Bitte später erneut versuchen.')
           : licenseService.isPro
           ? null
-          : 'Für dieses Google-Konto wurde kein Pro-Kauf gefunden.';
+          : 'Für ${isAppStoreBuild ? 'diesen' : 'dieses'} $storeAccountName wurde kein Pro-Kauf gefunden.';
     });
   }
 
@@ -305,8 +309,8 @@ class _ProUpgradeDialogState extends State<ProUpgradeDialog> {
             final loading = snapshot.connectionState != ConnectionState.done;
             final product = snapshot.data;
             if (!loading && product == null) {
-              return const Text(
-                'Google Play ist gerade nicht erreichbar. Bitte prüfe die '
+              return Text(
+                '$storeName ist gerade nicht erreichbar. Bitte prüfe die '
                 'Internetverbindung und öffne diesen Dialog erneut.',
                 style: TextStyle(fontSize: 12.5, color: Color(0xFFEF9A9A), height: 1.4),
               );
@@ -341,9 +345,9 @@ class _ProUpgradeDialogState extends State<ProUpgradeDialog> {
         ),
         if (licenseService.purchasePending) ...[
           const SizedBox(height: 10),
-          const Text(
+          Text(
             'Dein Kauf wartet noch auf die Zahlung. Pro wird freigeschaltet, '
-            'sobald Google Play die Zahlung bestätigt.',
+            'sobald $storeName die Zahlung bestätigt.',
             style: TextStyle(fontSize: 12.5, color: Color(0xFF9E9EA8), height: 1.4),
           ),
         ],
@@ -366,9 +370,9 @@ class _ProUpgradeDialogState extends State<ProUpgradeDialog> {
             style: const TextStyle(fontSize: 12.5, color: Color(0xFF9E9EA8), height: 1.4),
           ),
         const SizedBox(height: 4),
-        const Text(
-          'Einmalkauf über Google Play, kein Abo. Pro gilt für alle Geräte mit '
-          'demselben Google-Konto.',
+        Text(
+          'Einmalkauf über $storeName, kein Abo. Pro gilt für alle Geräte mit '
+          'demselben $storeAccountName.',
           textAlign: TextAlign.center,
           style: TextStyle(fontSize: 12, color: Color(0xFF9E9EA8), height: 1.4),
         ),

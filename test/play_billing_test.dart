@@ -7,6 +7,11 @@ import 'package:heizungstrainer/services/license_service.dart';
 import 'package:heizungstrainer/services/play_store.dart';
 
 class FakePlayStore implements PlayStoreGateway {
+  int refreshCalls = 0;
+
+  @override
+  Future<void> refreshFromServer() async => refreshCalls++;
+
   final controller = StreamController<List<StorePurchase>>.broadcast();
   List<StorePurchase>? owned = [];
   final completed = <StorePurchase>[];

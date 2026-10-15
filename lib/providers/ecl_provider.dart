@@ -501,7 +501,7 @@ class ECLProvider extends ChangeNotifier {
             (autoLoadDatabase
                 ? LicenseService(
                     secureStorage: secureStorage ?? const FlutterSecureStorage(),
-                    store: isPlayBuild ? InAppPurchaseGateway() : null,
+                    store: isStoreBuild ? InAppPurchaseGateway() : null,
                     freeLaunch: freeLaunchPhase,
                   )
                 : LicenseService(initialTier: LicenseTier.pro)),
@@ -1896,7 +1896,8 @@ class ECLProvider extends ChangeNotifier {
     );
 
     try {
-      final hasPermission = await _ensureLocationPermission();
+      final hasPermission =
+          !_discoveryService.needsLocationPermission || await _ensureLocationPermission();
       if (!_isCurrentConnection(epoch)) return;
       if (!hasPermission) {
         _logService.logConnection(
@@ -1962,7 +1963,7 @@ class ECLProvider extends ChangeNotifier {
         action: 'CONTROLLER_NOT_FOUND',
         message: 'Kein LAN-Zugriff oder Regler im Subnetz nicht gefunden: ${e.message}',
         success: false,
-        errorCode: 'LAN_UNREACHABLE',
+        errorCode: e.localNetworkBlocked ? 'LOCAL_NETWORK_DENIED' : 'LAN_UNREACHABLE',
         details: {'failureDomain': 'lan_access'},
       );
       _setError(e.message);
