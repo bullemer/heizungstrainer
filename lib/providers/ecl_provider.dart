@@ -393,10 +393,12 @@ class ECLProvider extends ChangeNotifier {
     );
   }
 
-  bool get isSimulatedBilling {
-    if (_selectedBillingId == 'brunata_hamburg') return false;
-    return !(_billingHasCredentials[_selectedBillingId] ?? false);
-  }
+  /// False for "Kein Messdienstleister": no portal, no consumption data.
+  bool get hasBillingProvider => _selectedBillingId != 'none';
+
+  /// Billing data shown is example data: every provider except Brunata
+  /// Hamburg has no real portal connection yet.
+  bool get isExampleBillingData => _brunataData != null && _selectedBillingId != 'brunata_hamburg';
 
   BrunataSyncState get brunataSyncState => _brunataSyncState;
   BrunataMeterData? get brunataData => _brunataData;
@@ -579,7 +581,18 @@ class ECLProvider extends ChangeNotifier {
     final desc = currentControllerDescriptor;
     String identity;
     String label;
-    final serial = _selectedControllerId == 'danfoss_ecl_310' ? await _modbusService.readControllerSerial() : null;
+    final isDanfoss = _selectedControllerId == 'danfoss_ecl_310';
+    var serial = isDanfoss ? await _modbusService.readControllerSerial() : null;
+    if (isDanfoss && serial == null) serial = await _modbusService.readControllerSerial(); // one retry
+    if (isDanfoss && serial == null) {
+      // A Danfoss ECL always has a serial number: a failed read is a
+      // communication hiccup, not another controller. Don't bind to the IP and
+      // don't call the own controller "foreign" – check again later.
+      _accessChecked = false;
+      _access = ControllerAccess.unknown;
+      debugPrint('[Provider] Controller serial not readable – access check retried later.');
+      return;
+    }
     if (serial != null) {
       identity = 'danfoss:${serial.code}:${serial.serial}';
       label = '${desc.brand} ${desc.model} · Serien-Nr. ${serial.serial}';
@@ -641,6 +654,12 @@ class ECLProvider extends ChangeNotifier {
   /// Writes are only allowed on the own controller (or with Master/demo).
   Future<void> _checkControllerAccessForWrite(String what) async {
     await _checkControllerAccess();
+    if (controllerAccess == ControllerAccess.unknown && isConnected && _selectedControllerId == 'danfoss_ecl_310') {
+      throw const ModbusCommunicationException(
+        message: 'Die Kennung des Reglers (Seriennummer) konnte gerade nicht gelesen werden. '
+            'Bitte in ein paar Sekunden noch einmal versuchen.',
+      );
+    }
     if (controllerAccess != ControllerAccess.foreign) return;
     await _logService.logSecurityGate(
       controllerId: _selectedControllerId,
@@ -687,7 +706,10 @@ class ECLProvider extends ChangeNotifier {
 
   /// A write is running: a poll in between must not report the app's own
   /// change as "changed outside the app".
-  bool _writeInProgress = false;
+  /// Number of writes running (a counter: writes can overlap, e.g. the
+  /// holiday timer while the user writes).
+  int _writesInProgress = 0;
+  bool get _writeInProgress => _writesInProgress > 0;
 
   /// Bumped at the start and end of every write: a poll that overlapped a
   /// write (its values may predate it) is discarded instead of reporting a
@@ -829,7 +851,7 @@ class ECLProvider extends ChangeNotifier {
     final wanted = (_circulationSchedule ?? WeekSchedule(List.generate(7, (_) => List.filled(3, SchedulePeriod.unused))))
         .withDay(day, periods);
     var notConfirmedLogged = false;
-    _writeInProgress = true;
+    _writesInProgress++;
     _writeGeneration++;
     try {
       final result = await _modbusService.writeScheduleDay(day, periods, basePnu: WeekSchedule.circulationBasePnu);
@@ -870,7 +892,7 @@ class ECLProvider extends ChangeNotifier {
       }
       rethrow;
     } finally {
-      _writeInProgress = false;
+      _writesInProgress--;
       _writeGeneration++;
     }
   }
@@ -941,8 +963,32 @@ class ECLProvider extends ChangeNotifier {
     final current = [for (final p in ECLRegisters.curvePoints) getReading(p)?.displayValue];
     final lowered = [for (var i = points.length - 1; i >= 0; i--) if (current[i] == null || points[i] < current[i]!) i];
     final raised = [for (var i = 0; i < points.length; i++) if (current[i] != null && points[i] > current[i]!) i];
-    for (final i in [...lowered, ...raised]) {
-      await writeParameter(ECLRegisters.curvePoints[i], points[i]);
+    // Polls during the whole sequence are discarded, so the slope the
+    // controller recalculates in between is not reported as an outside change.
+    _writesInProgress++;
+    _writeGeneration++;
+    try {
+      for (final i in [...lowered, ...raised]) {
+        await writeParameter(ECLRegisters.curvePoints[i], points[i]);
+      }
+    } finally {
+      await _adoptRecalculatedSlope();
+      _writesInProgress--;
+      _writeGeneration++;
+    }
+  }
+
+  /// The ECL updates its slope register to match written curve points. Read
+  /// it back and take it as known, without an "outside the app" alert.
+  Future<void> _adoptRecalculatedSlope() async {
+    if (_selectedControllerId != 'danfoss_ecl_310' || _isSimulationActive || !isConnected) return;
+    try {
+      final reading = await _modbusService.readParameter(ECLRegisters.curveSlope);
+      _readings[ECLRegisters.curveSlope.id] = reading;
+      await settingsWatch.adopt(_selectedControllerId, ECLRegisters.curveSlope, reading.displayValue);
+      notifyListeners();
+    } catch (e) {
+      debugPrint('[Provider] Slope read-back after curve write failed: $e');
     }
   }
 
@@ -969,7 +1015,7 @@ class ECLProvider extends ChangeNotifier {
     final wanted = (_controllerSchedule ?? WeekSchedule(List.generate(7, (_) => List.filled(3, SchedulePeriod.unused))))
         .withDay(day, periods);
     var notConfirmedLogged = false;
-    _writeInProgress = true;
+    _writesInProgress++;
     _writeGeneration++;
     try {
       final result = await _modbusService.writeScheduleDay(day, periods);
@@ -1018,7 +1064,7 @@ class ECLProvider extends ChangeNotifier {
       );
       rethrow;
     } finally {
-      _writeInProgress = false;
+      _writesInProgress--;
       _writeGeneration++;
     }
   }
@@ -1167,7 +1213,7 @@ class ECLProvider extends ChangeNotifier {
       int slot, ControllerHolidayMode mode, DateTime start, DateTime end) async {
     final wanted = ControllerHolidayEntry(slot: slot, mode: mode, start: start, end: end);
     var notConfirmedLogged = false;
-    _writeInProgress = true;
+    _writesInProgress++;
     _writeGeneration++;
     try {
       final back = await _modbusService.writeHolidaySchedule(slot, mode: mode, start: start, end: end);
@@ -1210,7 +1256,7 @@ class ECLProvider extends ChangeNotifier {
       }
       rethrow;
     } finally {
-      _writeInProgress = false;
+      _writesInProgress--;
       _writeGeneration++;
     }
   }
@@ -2562,7 +2608,7 @@ class ECLProvider extends ChangeNotifier {
     }
 
     final previous = _readings[parameter.id]?.displayValue;
-    _writeInProgress = true;
+    _writesInProgress++;
     _writeGeneration++;
     String change(double confirmed) =>
         '${previous == null ? '' : '${_fmtSetting(previous)} → '}${_fmtSetting(value)} ${parameter.unit}'
@@ -2650,7 +2696,7 @@ class ECLProvider extends ChangeNotifier {
       );
       rethrow;
     } finally {
-      _writeInProgress = false;
+      _writesInProgress--;
       _writeGeneration++;
     }
   }
@@ -2826,7 +2872,7 @@ class ECLProvider extends ChangeNotifier {
 
   /// Universal synchronization method for any configured billing provider.
   Future<void> syncBillingData() async {
-    if (isBrunataSyncing) return;
+    if (isBrunataSyncing || !hasBillingProvider) return;
 
     final billing = _activeBillingProvider;
     final billingId = _selectedBillingId;

@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:heizungstrainer/widgets/analysis_section.dart';
 import 'package:provider/provider.dart';
 
-import 'package:heizungstrainer/exceptions/modbus_exceptions.dart';
+import 'package:heizungstrainer/widgets/pro_upgrade_dialog.dart';
 import 'package:heizungstrainer/models/ecl_parameter.dart';
 import 'package:heizungstrainer/providers/ecl_provider.dart';
 import 'package:heizungstrainer/screens/dhw_settings_screen.dart';
@@ -118,7 +118,7 @@ Future<void> _setMaxFlow(BuildContext context, ECLProvider provider) async {
     await provider.writeParameter(ECLRegisters.curveMaxFlow, chosen);
     messenger.showSnackBar(SnackBar(content: Text('Max. Vorlauf auf ${chosen.fixed(0)} °C gesetzt.'), backgroundColor: const Color(0xFF66BB6A)));
   } catch (e) {
-    messenger.showSnackBar(SnackBar(content: Text(userFacingError(e)), backgroundColor: const Color(0xFFEF5350)));
+    if (context.mounted) await showWriteError(context, e);
   }
 }
 

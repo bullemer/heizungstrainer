@@ -270,7 +270,9 @@ class HomeScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 24),
 
-                // ── Abrechnung & Analyse ────────────────────
+                // ── Abrechnung & Analyse (nothing left without billing
+                //    when the real curve is shown above) ──────
+                if (provider.hasBillingProvider || _controllerCurve(provider) == null)
                 AnalysisSection(
                   currentOutdoorTemp:
                       provider.getReading(ECLRegisters.outdoorTemp)?.displayValue ?? 0,
@@ -287,6 +289,8 @@ class HomeScreen extends StatelessWidget {
                   lastBillingSyncTime: provider.lastBillingSyncTime,
                   billingProviderName:
                       provider.currentBillingDescriptor.name,
+                  showBillingCard: provider.hasBillingProvider,
+                  exampleData: provider.isExampleBillingData,
                   // The real curve is shown in the heating area above.
                   showHeatingCurve: _controllerCurve(provider) == null,
                 ),
@@ -622,12 +626,7 @@ class _HighConsumptionWarning extends StatelessWidget {
                 ));
               }
             } catch (e) {
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                  content: Text(userFacingError(e, fallback: 'Fehler beim Zurücksetzen')),
-                  backgroundColor: const Color(0xFFEF5350),
-                ));
-              }
+              if (context.mounted) await showWriteError(context, e);
             }
           }
         },

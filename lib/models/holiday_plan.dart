@@ -25,6 +25,9 @@ class HolidayPlan {
   /// controlMode 'controller': the controller's holiday schedule (P1–P12)
   /// that holds this absence; the controller runs it without the app.
   final int? controllerSlot;
+  /// Created in demo mode: only ever applied/restored in demo mode, so a
+  /// demo session never "restores" a plan that lowered the real controller.
+  final bool simulated;
   final double estimatedSavingsKwh;
   final double estimatedSavingsEuro;
   final DateTime createdAt;
@@ -46,6 +49,7 @@ class HolidayPlan {
     this.controlMode = 'shift',
     this.roomSetbackKelvin = 4.0,
     this.controllerSlot,
+    this.simulated = false,
     this.estimatedSavingsKwh = 0.0,
     this.estimatedSavingsEuro = 0.0,
     required this.createdAt,
@@ -90,6 +94,7 @@ class HolidayPlan {
     String? controlMode,
     double? roomSetbackKelvin,
     int? controllerSlot,
+    bool? simulated,
     double? estimatedSavingsKwh,
     double? estimatedSavingsEuro,
     DateTime? createdAt,
@@ -112,6 +117,7 @@ class HolidayPlan {
       controlMode: controlMode ?? this.controlMode,
       roomSetbackKelvin: roomSetbackKelvin ?? this.roomSetbackKelvin,
       controllerSlot: controllerSlot ?? this.controllerSlot,
+      simulated: simulated ?? this.simulated,
       estimatedSavingsKwh: estimatedSavingsKwh ?? this.estimatedSavingsKwh,
       estimatedSavingsEuro: estimatedSavingsEuro ?? this.estimatedSavingsEuro,
       createdAt: createdAt ?? this.createdAt,
@@ -136,6 +142,7 @@ class HolidayPlan {
       'controlMode': controlMode,
       'roomSetbackKelvin': roomSetbackKelvin,
       'controllerSlot': controllerSlot,
+      'simulated': simulated,
       'estimatedSavingsKwh': estimatedSavingsKwh,
       'estimatedSavingsEuro': estimatedSavingsEuro,
       'createdAt': createdAt.toIso8601String(),
@@ -160,6 +167,7 @@ class HolidayPlan {
       controlMode: json['controlMode'] as String? ?? 'shift',
       roomSetbackKelvin: (json['roomSetbackKelvin'] as num?)?.toDouble() ?? 4.0,
       controllerSlot: json['controllerSlot'] as int?,
+      simulated: json['simulated'] as bool? ?? false,
       // Plans saved by <= 1.1.0 lowered the heating on activation.
       setbackApplied: json['setbackApplied'] as bool? ??
           ((json['isActive'] as bool? ?? true) && !(json['isCompleted'] as bool? ?? false)),

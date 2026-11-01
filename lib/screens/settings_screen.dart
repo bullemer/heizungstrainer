@@ -59,6 +59,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final _modbusPollingIntervalController = TextEditingController(text: '10');
   String _modbusPresetId = 'standard';
   String? _savedControllerIp;
+  /// Customer number/password are only required when syncing Brunata.
+  bool _requireBillingLogin = false;
   double _modbusMultiplier = 0.1;
   bool _modbusIsHolding = true;
   ModbusWordOrder _modbusWordOrder = ModbusWordOrder.bigEndian;
@@ -675,6 +677,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _testBillingConnection() async {
+    _requireBillingLogin = true;
+    if (!_formKey.currentState!.validate()) return;
     setState(() => _testingBilling = true);
     final provider = context.read<ECLProvider>();
     await provider.saveBillingSettings(
@@ -694,7 +698,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            '${provider.currentBillingDescriptor.name} Synchronisation erfolgreich!\n'
+            '${provider.isExampleBillingData ? '${provider.currentBillingDescriptor.name}: Beispieldaten geladen (noch keine echte Portalanbindung).' : '${provider.currentBillingDescriptor.name} Synchronisation erfolgreich!'}\n'
             'Verbrauch: ${provider.brunataData!.consumedKwh.fixed(0)} kWh | '
             'Kosten: ${provider.brunataData!.currentBillingPeriodCost.fixed(2)} € | '
             'Gebäudevergleich: ${provider.brunataData!.communityComparisonPercentage > 0 ? "+" : ""}${provider.brunataData!.communityComparisonPercentage.fixed(1)}%',
@@ -719,6 +723,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _save({required bool sync}) async {
+    _requireBillingLogin = sync;
     if (!_formKey.currentState!.validate()) return;
     FocusScope.of(context).unfocus();
     setState(() => _saving = true);
@@ -1030,7 +1035,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         title: 'Messdienstleister & Abrechnung',
                         subtitle:
                             'Dienstleister für Heizkostenverteilung und Verbrauchserfassung. '
-                            'Unterstützt automatische Portalsynchronisation und Test-Simulationen.',
+                            'Brunata Hamburg wird über das Portal synchronisiert; die anderen zeigen '
+                            'bis zur Anbindung Beispieldaten.',
                       ),
                       const SizedBox(height: 12),
                       ...DeviceRegistry.knownBillingProviders.map((billingDesc) {
@@ -1052,7 +1058,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               _portalUrlController.text = url;
                             });
                           },
-                          credentialsForm: isSelected
+                          credentialsForm: isSelected && provider.hasBillingProvider
                               ? _buildBillingCredentialsFields(provider)
                               : null,
                         );
@@ -1088,7 +1094,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
                       // ── ACTIONS ───────────────────────────────────
                       FilledButton.icon(
-                        onPressed: _saving ? null : () => _save(sync: true),
+                        onPressed: _saving ? null : () => _save(sync: provider.hasBillingProvider),
                         icon: _saving
                             ? const SizedBox(
                                 width: 18,
@@ -1100,7 +1106,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         label: Text(
                           provider.selectedBillingId == 'brunata_hamburg'
                               ? 'Speichern & Synchronisieren'
-                              : 'Speichern & Simulation abgleichen',
+                              : provider.hasBillingProvider
+                                  ? 'Speichern & Beispieldaten laden'
+                                  : 'Speichern',
                         ),
                         style: FilledButton.styleFrom(
                           backgroundColor: accent,
@@ -1108,6 +1116,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           minimumSize: const Size.fromHeight(52),
                         ),
                       ),
+                      if (provider.hasBillingProvider) ...[
                       const SizedBox(height: 12),
                       OutlinedButton(
                         onPressed: _saving ? null : () => _save(sync: false),
@@ -1118,6 +1127,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         ),
                         child: const Text('Nur speichern'),
                       ),
+                      ],
                       const SizedBox(height: 28),
                       // ── APP VERSION & BUILD INFO FOOTER ────────────
                       Center(
@@ -3285,7 +3295,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 validator: (v) {
                   final p = context.read<ECLProvider>();
-                  if (p.selectedBillingId == 'brunata_hamburg') {
+                  if (_requireBillingLogin && p.selectedBillingId == 'brunata_hamburg') {
                     if (v == null || v.trim().isEmpty) {
                       return 'Bitte Kundennummer eingeben';
                     }
@@ -3315,7 +3325,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 validator: (v) {
                   final p = context.read<ECLProvider>();
-                  if (p.selectedBillingId == 'brunata_hamburg') {
+                  if (_requireBillingLogin && p.selectedBillingId == 'brunata_hamburg') {
                     if (v == null || v.isEmpty) {
                       return 'Bitte Kennwort eingeben';
                     }

@@ -139,25 +139,12 @@ void main() {
       final brunata = providers.firstWhere((p) => p.id == 'brunata_hamburg');
       expect(brunata.isSupported, isTrue);
 
-      final brunataMuenchen =
-          providers.firstWhere((p) => p.id == 'brunata_muenchen');
-      expect(brunataMuenchen.isSupported, isTrue);
-
-      final brunataHuerth =
-          providers.firstWhere((p) => p.id == 'brunata_huerth');
-      expect(brunataHuerth.isSupported, isTrue);
-
-      final kalo = providers.firstWhere((p) => p.id == 'kalo');
-      expect(kalo.isSupported, isTrue);
-
-      final techem = providers.firstWhere((p) => p.id == 'techem_smart');
-      expect(techem.isSupported, isTrue);
-
-      final ista = providers.firstWhere((p) => p.id == 'ista_ecotrend');
-      expect(ista.isSupported, isTrue);
-
-      final minol = providers.firstWhere((p) => p.id == 'minol_zenner');
-      expect(minol.isSupported, isTrue);
+      // Only Brunata Hamburg has a real portal connection; the others show
+      // example data and must be marked as such ("Simulation").
+      for (final id in ['brunata_muenchen', 'brunata_huerth', 'kalo', 'techem_smart', 'ista_ecotrend', 'minol_zenner']) {
+        expect(providers.firstWhere((p) => p.id == id).isSupported, isFalse, reason: id);
+      }
+      expect(providers.firstWhere((p) => p.id == 'none').name, 'Kein Messdienstleister');
     });
 
     test('creates default active controller and billing provider', () {
@@ -236,7 +223,8 @@ void main() {
       expect(provider.selectedControllerId, 'danfoss_ecl_310');
       expect(provider.selectedBillingId, 'brunata_hamburg');
       expect(provider.isSimulatedController, isFalse);
-      expect(provider.isSimulatedBilling, isFalse);
+      expect(provider.hasBillingProvider, isTrue);
+      expect(provider.isExampleBillingData, isFalse);
       expect(provider.currentControllerDescriptor.brand, 'Danfoss');
       expect(provider.currentBillingDescriptor.name, 'Brunata Hamburg');
     });
@@ -279,11 +267,12 @@ void main() {
 
       await provider.setSelectedBillingProvider('techem_smart');
       expect(provider.selectedBillingId, 'techem_smart');
-      expect(provider.isSimulatedBilling, isTrue);
+      expect(provider.currentBillingDescriptor.isSupported, isFalse); // stub: example data
       expect(provider.currentBillingDescriptor.name, contains('Techem'));
 
       await provider.syncBillingData();
       expect(provider.brunataData, isNotNull);
+      expect(provider.isExampleBillingData, isTrue);
       expect(provider.brunataData!.consumedKwh, greaterThan(0));
       expect(provider.brunataData!.charts, isNotEmpty);
     });

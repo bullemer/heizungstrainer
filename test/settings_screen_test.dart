@@ -214,7 +214,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(provider.selectedBillingId, 'techem_smart');
-      expect(provider.isSimulatedBilling, isTrue);
+      expect(provider.currentBillingDescriptor.isSupported, isFalse);
 
       // Brunata credentials hidden, Techem notice visible
       expect(find.text('Brunata Portal-Zugang'), findsNothing);

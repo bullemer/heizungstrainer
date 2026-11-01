@@ -5,6 +5,7 @@ import 'package:heizungstrainer/billing/brunata_hamburg_billing_provider.dart';
 import 'package:heizungstrainer/billing/brunata_muenchen_billing_provider.dart';
 import 'package:heizungstrainer/billing/brunata_huerth_billing_provider.dart';
 import 'package:heizungstrainer/billing/kalo_billing_provider.dart';
+import 'package:heizungstrainer/billing/no_billing_provider.dart';
 import 'package:heizungstrainer/billing/techem_billing_provider.dart';
 import 'package:heizungstrainer/billing/ista_billing_provider.dart';
 import 'package:heizungstrainer/billing/minol_billing_provider.dart';
@@ -148,6 +149,15 @@ class DeviceRegistry {
   /// All known billing and sub-metering providers.
   static const List<BillingProviderDescriptor> knownBillingProviders = [
     BillingProviderDescriptor(
+      id: 'none',
+      name: 'Kein Messdienstleister',
+      organization: 'Ohne Abrechnungsportal',
+      authType: BillingAuthType.fileImport,
+      description: 'Keine Verbrauchsabrechnung verbinden. Für Kostenschätzungen zählt nur der Energiepreis unten.',
+      isSupported: true,
+      icon: Icons.block_rounded,
+    ),
+    BillingProviderDescriptor(
       id: 'brunata_hamburg',
       name: 'Brunata Hamburg',
       organization: 'Brunata Wärmemessdienst Hamburg',
@@ -161,8 +171,8 @@ class DeviceRegistry {
       name: 'Brunata München',
       organization: 'BRUNATA Wärmemessdienst München',
       authType: BillingAuthType.portalScraper,
-      description: 'uVI-Verbrauchsinformation und Monatsanalyse über das BRUNATA-METRONA Portal München.',
-      isSupported: true,
+      description: 'Noch keine Portalanbindung – zeigt Beispieldaten. uVI-Verbrauchsinformation und Monatsanalyse über das BRUNATA-METRONA Portal München.',
+      isSupported: false,
       icon: Icons.location_city_rounded,
     ),
     BillingProviderDescriptor(
@@ -170,8 +180,8 @@ class DeviceRegistry {
       name: 'Brunata Hürth',
       organization: 'BRUNATA-METRONA GmbH Hürth',
       authType: BillingAuthType.portalScraper,
-      description: 'Verbrauchsauswertung und Liegenschaftsvergleich über das BRUNATA-METRONA Portal West (Hürth/Köln).',
-      isSupported: true,
+      description: 'Noch keine Portalanbindung – zeigt Beispieldaten. Verbrauchsauswertung und Liegenschaftsvergleich über das BRUNATA-METRONA Portal West (Hürth/Köln).',
+      isSupported: false,
       icon: Icons.domain_rounded,
     ),
     BillingProviderDescriptor(
@@ -179,8 +189,8 @@ class DeviceRegistry {
       name: 'KALO (Kalorimeta)',
       organization: 'Kalorimeta GmbH (noventic)',
       authType: BillingAuthType.portalScraper,
-      description: 'Verbrauchsanalyse für Heizung und Warmwasser über das KALO Mieter- & Bewohnerportal.',
-      isSupported: true,
+      description: 'Noch keine Portalanbindung – zeigt Beispieldaten. Verbrauchsanalyse für Heizung und Warmwasser über das KALO Mieter- & Bewohnerportal.',
+      isSupported: false,
       icon: Icons.speed_rounded,
     ),
     BillingProviderDescriptor(
@@ -188,8 +198,8 @@ class DeviceRegistry {
       name: 'Techem Smart System',
       organization: 'Techem Energy Services GmbH',
       authType: BillingAuthType.restApi,
-      description: 'Funk-Heizkostenverteiler & Mieterportal-Integration über Techem Smart Services.',
-      isSupported: true,
+      description: 'Noch keine Portalanbindung – zeigt Beispieldaten. Funk-Heizkostenverteiler & Mieterportal-Integration über Techem Smart Services.',
+      isSupported: false,
       icon: Icons.sensors_rounded,
     ),
     BillingProviderDescriptor(
@@ -197,8 +207,8 @@ class DeviceRegistry {
       name: 'ista EcoTrend (Essen)',
       organization: 'ista SE (Essen)',
       authType: BillingAuthType.restApi,
-      description: 'Monatliche unterjährige Verbrauchsinformation (uVI) via ista EcoTrend Webportal & API.',
-      isSupported: true,
+      description: 'Noch keine Portalanbindung – zeigt Beispieldaten. Monatliche unterjährige Verbrauchsinformation (uVI) via ista EcoTrend Webportal & API.',
+      isSupported: false,
       icon: Icons.eco_rounded,
     ),
     BillingProviderDescriptor(
@@ -206,8 +216,8 @@ class DeviceRegistry {
       name: 'Minol Messtechnik',
       organization: 'Minol Messtechnik W. Lehmann GmbH & Co. KG',
       authType: BillingAuthType.portalScraper,
-      description: 'Monatliche Verbrauchsinformation via Minol e-Service Portal & Abrechnungsimport.',
-      isSupported: true,
+      description: 'Noch keine Portalanbindung – zeigt Beispieldaten. Monatliche Verbrauchsinformation via Minol e-Service Portal & Abrechnungsimport.',
+      isSupported: false,
       icon: Icons.receipt_long_rounded,
     ),
   ];
@@ -294,6 +304,8 @@ class DeviceRegistry {
     double? pricePerKwh,
   }) {
     switch (id) {
+      case NoBillingProvider.providerId:
+        return NoBillingProvider(secureStorage: secureStorage);
       case 'brunata_hamburg':
         return BrunataHamburgBillingProvider(scraper: scraperService);
       case 'brunata_muenchen':

@@ -21,12 +21,13 @@ class AppTopStatusBar extends StatelessWidget {
 
   static String formatSyncTime(DateTime time, {DateTime? now}) {
     now ??= DateTime.now();
-    final isToday = now.year == time.year &&
-        now.month == time.month &&
-        now.day == time.day;
+    final isToday =
+        now.year == time.year && now.month == time.month && now.day == time.day;
     final yesterday = DateTime(now.year, now.month, now.day - 1);
-    final isYesterday = yesterday.year == time.year &&
-        yesterday.month == time.month && yesterday.day == time.day;
+    final isYesterday =
+        yesterday.year == time.year &&
+        yesterday.month == time.month &&
+        yesterday.day == time.day;
 
     final hh = time.hour.toString().padLeft(2, '0');
     final mm = time.minute.toString().padLeft(2, '0');
@@ -96,17 +97,20 @@ class AppTopStatusBar extends StatelessWidget {
         final Color billingColor;
 
         if (provider.isBrunataSyncing) {
-          billingText = 'Abrechnungsstelle ($billingName): Synchronisation läuft...';
+          billingText =
+              'Abrechnungsstelle ($billingName): Synchronisation läuft...';
           billingIcon = Icons.sync_rounded;
           billingColor = const Color(0xFF64B5F6); // Soft blue
         } else if (provider.lastBillingSyncTime != null) {
           final formattedTime = formatSyncTime(provider.lastBillingSyncTime!);
-          billingText = 'Abrechnungsstelle ($billingName): Letzter Sync $formattedTime';
+          billingText =
+              'Abrechnungsstelle ($billingName): Letzter Sync $formattedTime';
           billingIcon = Icons.cloud_done_outlined;
           billingColor = const Color(0xFF81C784); // Soft green
         } else {
           // Never synced with Abrechnungsstelle
-          billingText = 'Abrechnungsstelle ($billingName): Noch nie synchronisiert';
+          billingText =
+              'Abrechnungsstelle ($billingName): Noch nie synchronisiert';
           billingIcon = Icons.warning_amber_rounded;
           billingColor = const Color(0xFFFFB74D); // Amber
         }
@@ -118,10 +122,7 @@ class AppTopStatusBar extends StatelessWidget {
           decoration: const BoxDecoration(
             color: Color(0xFF141418),
             border: Border(
-              bottom: BorderSide(
-                color: Color(0xFF2E2E38),
-                width: 1.0,
-              ),
+              bottom: BorderSide(color: Color(0xFF2E2E38), width: 1.0),
             ),
           ),
           child: Row(
@@ -157,33 +158,35 @@ class AppTopStatusBar extends StatelessWidget {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 2),
-                    // Abrechnungsstelle Status Line
-                    Row(
-                      children: [
-                        Icon(
-                          billingIcon,
-                          key: const Key('billing_status_icon'),
-                          size: 13,
-                          color: billingColor,
-                        ),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: Text(
-                            billingText,
-                            key: const Key('billing_status_text'),
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w500,
-                              color: billingColor,
-                              letterSpacing: 0.1,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                    if (provider.hasBillingProvider) ...[
+                      const SizedBox(height: 2),
+                      // Abrechnungsstelle Status Line
+                      Row(
+                        children: [
+                          Icon(
+                            billingIcon,
+                            key: const Key('billing_status_icon'),
+                            size: 13,
+                            color: billingColor,
                           ),
-                        ),
-                      ],
-                    ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              billingText,
+                              key: const Key('billing_status_text'),
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w500,
+                                color: billingColor,
+                                letterSpacing: 0.1,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                   ],
                 ),
               ),

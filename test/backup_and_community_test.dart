@@ -303,7 +303,7 @@ void main() {
 
       await tester.pump();
 
-      expect(find.text('Community Vergleich'), findsOneWidget);
+      expect(find.text('Community-Vergleich'), findsOneWidget);
       expect(find.text('Noch keine Abrechnungsdaten'), findsOneWidget);
       expect(find.textContaining('Synchronisiere die Verbrauchsdaten'),
           findsOneWidget);
@@ -313,7 +313,7 @@ void main() {
     });
 
     testWidgets(
-        'CommunityScreen renders benchmark, weather note and charts when data present',
+        'CommunityScreen renders benchmark and charts when data present',
         (tester) async {
       final provider = ECLProvider();
       provider.setBrunataDataForTesting(BrunataMeterData.demo());
@@ -329,10 +329,9 @@ void main() {
 
       await tester.pump();
 
-      expect(find.text('Community Vergleich'), findsOneWidget);
+      expect(find.text('Community-Vergleich'), findsOneWidget);
       expect(find.text('Liegenschafts-Effizienz'), findsOneWidget);
-      expect(find.textContaining('Witterungsbereinigt nach VDI 3807'),
-          findsOneWidget);
+      expect(find.textContaining('VDI 3807'), findsNothing); // claim removed: no weather normalisation
       expect(find.text('Heizung'), findsOneWidget);
       // "Warmwasser" appears both in summary card and filter chip
       expect(find.text('Warmwasser'), findsNWidgets(2));

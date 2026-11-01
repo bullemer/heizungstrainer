@@ -1,10 +1,26 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:heizungstrainer/exceptions/license_exception.dart';
+import 'package:heizungstrainer/exceptions/modbus_exceptions.dart';
 import 'package:heizungstrainer/providers/ecl_provider.dart';
 import 'package:heizungstrainer/models/license_info.dart';
 import 'package:heizungstrainer/services/license_service.dart';
 import 'package:heizungstrainer/services/play_store.dart';
+
+/// Shows why a write failed: the Pro upgrade sheet when a licence is
+/// missing, otherwise a red snackbar with the plain message.
+Future<void> showWriteError(BuildContext context, Object error, {String? prefix}) async {
+  if (!context.mounted) return;
+  if (error is LicenseRequiredException) {
+    await ProUpgradeDialog.show(context, featureHint: error.featureName);
+    return;
+  }
+  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+    content: Text('${prefix ?? ''}${userFacingError(error)}'),
+    backgroundColor: const Color(0xFFEF5350),
+  ));
+}
 
 /// Modal bottom sheet that explains Pro benefits and unlocks Pro – through
 /// Google Play Billing in the Play build, with an offline licence key in the

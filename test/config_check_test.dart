@@ -8,6 +8,7 @@ import 'package:heizungstrainer/models/controller_holiday.dart';
 import 'package:heizungstrainer/models/ecl_parameter.dart';
 import 'package:heizungstrainer/models/week_schedule.dart';
 import 'package:heizungstrainer/providers/ecl_provider.dart';
+import 'package:heizungstrainer/services/controller_binding.dart';
 import 'package:heizungstrainer/screens/config_check_screen.dart';
 import 'package:heizungstrainer/services/activity_log_service.dart';
 import 'package:heizungstrainer/services/config_check.dart';
@@ -169,4 +170,6 @@ class _ConnectedEcl extends ECLProvider {
   bool get supportsControllerSchedule => true;
   @override
   bool get isConnected => true;
+  @override
+  ControllerAccess get controllerAccess => ControllerAccess.own;
 }

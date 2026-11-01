@@ -117,6 +117,15 @@ class ControllerSettingsWatch {
     await _save(controllerId);
   }
 
+  /// Takes [value] as known without reporting a difference – for values the
+  /// controller derives itself after an app write (e.g. the ECL slope after
+  /// curve points were written).
+  Future<void> adopt(String controllerId, ECLParameter parameter, double value, {DateTime? now}) async {
+    final known = await _load(controllerId);
+    known[parameter.id] = KnownSetting(value, SettingSource.controller, now ?? DateTime.now());
+    await _save(controllerId);
+  }
+
   /// Compares [live] controller values (by parameter id) with what the app
   /// knew, returns the differences and adopts the live values as the new
   /// baseline. Settings seen for the first time are only recorded.

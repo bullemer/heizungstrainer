@@ -8,6 +8,7 @@ import 'package:heizungstrainer/services/alert_center.dart';
 import 'package:heizungstrainer/models/activity_log_entry.dart';
 import 'package:heizungstrainer/models/controller_holiday.dart';
 import 'package:heizungstrainer/providers/ecl_provider.dart';
+import 'package:heizungstrainer/services/controller_binding.dart';
 
 /// Thrown when holiday mode cannot change the controller (no connection, no
 /// trustworthy baseline reading, or the write was not confirmed).
@@ -124,6 +125,7 @@ class HolidayService {
       isActive: true,
       isCompleted: false,
       setbackApplied: false,
+      simulated: provider.isSimulatedController,
     );
 
     if (at.isBefore(plan.startDateTime)) {
@@ -382,9 +384,14 @@ class HolidayService {
     DateTime? now,
   }) async {
     if (!provider.isConnected) return null;
+    // Never apply or "restore" a plan on another controller than the one it
+    // was made for (demo vs. real, or a foreign controller) – the real one
+    // would stay lowered while the plan reports normal operation.
+    if (provider.controllerAccess == ControllerAccess.foreign) return null;
     final at = now ?? DateTime.now();
     final plan = await getActivePlan();
     if (plan == null) return null;
+    if (plan.simulated != provider.isSimulatedController) return null;
     if (plan.runsInController) return _checkControllerPlan(plan, provider, at);
 
     final restoreDue = !at.isBefore(plan.preheatStartTime);

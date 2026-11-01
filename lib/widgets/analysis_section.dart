@@ -68,7 +68,15 @@ class AnalysisSection extends StatelessWidget {
     this.annualHeatingKwhSource,
     this.pricePerKwh,
     this.showHeatingCurve = true,
+    this.showBillingCard = true,
+    this.exampleData = false,
   });
+
+  /// False for "Kein Messdienstleister".
+  final bool showBillingCard;
+
+  /// The billing data are example data (provider without real portal).
+  final bool exampleData;
 
   @override
   Widget build(BuildContext context) {
@@ -113,7 +121,24 @@ class AnalysisSection extends StatelessWidget {
         const SizedBox(height: 12),
 
         // ── A. Brunata Cost Card (tap to drill down) ────────
-        GestureDetector(
+        if (showBillingCard && exampleData)
+          Container(
+            key: const Key('exampleBillingData'),
+            width: double.infinity,
+            margin: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFB74D).withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: const Color(0xFFFFB74D).withValues(alpha: 0.4)),
+            ),
+            child: Text(
+              'Beispieldaten: ${billingProviderName ?? 'dieser Messdienstleister'} ist noch nicht an das '
+              'Portal angebunden. Die Zahlen unten sind nicht deine.',
+              style: const TextStyle(color: Color(0xFFFFB74D), fontSize: 12, height: 1.35),
+            ),
+          ),
+        if (showBillingCard) GestureDetector(
           onTap: (brunata != null &&
                   brunata.hasDetail &&
                   brunataSyncState != BrunataSyncState.initializing &&
@@ -136,7 +161,7 @@ class AnalysisSection extends StatelessWidget {
             billingProviderName: billingProviderName,
           ),
         ),
-        const SizedBox(height: 12),
+        if (showBillingCard) const SizedBox(height: 12),
 
         // ── B. Heating Curve Chart ──────────────────────────
         if (!showHeatingCurve)

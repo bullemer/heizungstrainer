@@ -42,12 +42,14 @@ class _CommunityScreenState extends State<CommunityScreen> {
       backgroundColor: _background,
       appBar: AppBar(
         title: const Text(
-          'Community Vergleich',
+          'Community-Vergleich',
           style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18),
         ),
         centerTitle: true,
         actions: [
-          if (isSyncing)
+          if (!provider.hasBillingProvider)
+            const SizedBox.shrink()
+          else if (isSyncing)
             const Padding(
               padding: EdgeInsets.symmetric(horizontal: 16),
               child: SizedBox(
@@ -90,9 +92,10 @@ class _CommunityScreenState extends State<CommunityScreen> {
                 _buildBenchmarkCard(data),
                 const SizedBox(height: 14),
 
-                // ── Weather-Adjustment / HGT Note ─────────────────────────────
-                _buildWeatherNormalizationNote(),
-                const SizedBox(height: 16),
+                if (provider.isExampleBillingData) ...[
+                  _buildExampleDataNote(billingName),
+                  const SizedBox(height: 16),
+                ],
 
                 // ── Per-Medium YTD Summary ────────────────────────────────────
                 Row(
@@ -162,8 +165,8 @@ class _CommunityScreenState extends State<CommunityScreen> {
               ),
             ),
             const SizedBox(height: 20),
-            const Text(
-              'Noch keine Abrechnungsdaten',
+            Text(
+              provider.hasBillingProvider ? 'Noch keine Abrechnungsdaten' : 'Kein Messdienstleister gewählt',
               style: TextStyle(
                 color: _textPrimary,
                 fontSize: 18,
@@ -172,7 +175,9 @@ class _CommunityScreenState extends State<CommunityScreen> {
             ),
             const SizedBox(height: 10),
             Text(
-              'Synchronisiere die Verbrauchsdaten mit $billingName, um den Liegenschafts-Vergleich, Vorjahreswerte und Monatsanalysen anzuzeigen.',
+              provider.hasBillingProvider
+                  ? 'Synchronisiere die Verbrauchsdaten mit $billingName, um den Liegenschafts-Vergleich, Vorjahreswerte und Monatsanalysen anzuzeigen.'
+                  : 'Der Vergleich nutzt die Verbrauchsdaten deines Messdienstleisters. Wähle ihn in den Einstellungen aus.',
               textAlign: TextAlign.center,
               style: const TextStyle(
                 color: _textSecondary,
@@ -181,6 +186,7 @@ class _CommunityScreenState extends State<CommunityScreen> {
               ),
             ),
             const SizedBox(height: 24),
+            if (provider.hasBillingProvider)
             SizedBox(
               width: double.infinity,
               child: FilledButton.icon(
@@ -372,33 +378,33 @@ class _CommunityScreenState extends State<CommunityScreen> {
     );
   }
 
-  Widget _buildWeatherNormalizationNote() {
+  /// Shown while the provider has no real portal connection.
+  Widget _buildExampleDataNote(String billingName) {
     return Container(
+      key: const Key('exampleBillingData'),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
-        color: _accent.withValues(alpha: 0.10),
+        color: const Color(0xFFFFB74D).withValues(alpha: 0.10),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: _accent.withValues(alpha: 0.25)),
+        border: Border.all(color: const Color(0xFFFFB74D).withValues(alpha: 0.4)),
       ),
-      child: const Row(
+      child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.wb_sunny_outlined, size: 18, color: _accentLight),
-          SizedBox(width: 10),
+          const Icon(Icons.info_outline_rounded, size: 18, color: Color(0xFFFFB74D)),
+          const SizedBox(width: 10),
           Expanded(
             child: Text(
-              'Witterungsbereinigt nach VDI 3807 / HGT: Vergleiche mit Vorjahren und Nachbarn werden um die reale Kälteperiode bereinigt, um milde Winter fair gegenüberzustellen.',
-              style: TextStyle(
-                fontSize: 11.5,
-                height: 1.35,
-                color: _textSecondary,
-              ),
+              'Beispieldaten: $billingName ist noch nicht an das Portal angebunden. '
+              'Die Werte und der Vergleich unten sind nicht deine.',
+              style: const TextStyle(fontSize: 11.5, height: 1.35, color: Color(0xFFFFB74D)),
             ),
           ),
         ],
       ),
     );
   }
+
 
   Widget _buildFilterTabs() {
     final filters = ['Alle', 'Liegenschaft', 'Heizungsverlauf', 'Warmwasser'];

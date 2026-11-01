@@ -54,7 +54,7 @@ void main() {
 
     // With IndexedStack, HomeScreen is preserved in the tree with state maintained
     expect(find.byType(HomeScreen, skipOffstage: false), findsOneWidget);
-    expect(find.text('Community Vergleich'), findsOneWidget);
+    expect(find.text('Community-Vergleich'), findsOneWidget);
 
     // Switch to tab 'Backup'
     await tester.tap(find.text('Backup'));

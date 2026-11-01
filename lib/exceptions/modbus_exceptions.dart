@@ -4,6 +4,7 @@
 /// for Modbus communication failures, safety violations, and discovery issues.
 library;
 
+import 'package:heizungstrainer/exceptions/license_exception.dart';
 import 'package:heizungstrainer/utils/number_format.dart';
 import 'package:heizungstrainer/models/ecl_parameter.dart';
 
@@ -87,6 +88,9 @@ class ControllerNotFoundException implements Exception {
 String userFacingError(Object error, {String fallback = 'Unbekannter Fehler.'}) {
   if (error is ModbusCommunicationException) return error.message;
   if (error is ParameterBoundsException) return error.message;
+  if (error is LicenseRequiredException) return error.message;
   final text = error.toString();
-  return text.startsWith('Instance of') ? fallback : text;
+  if (text.startsWith('Instance of')) return fallback;
+  // Never show class names such as "StateError: …" or "FooException: …".
+  return text.replaceFirst(RegExp(r'^[A-Za-z_]+(Exception|Error): '), '');
 }
