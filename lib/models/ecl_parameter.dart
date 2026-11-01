@@ -302,8 +302,9 @@ abstract final class ECLRegisters {
   static const List<double> curvePointOutdoorTemps = [-30, -15, -5, 0, 5, 15];
 
   /// Flow temperature at the six outdoor temperatures (PNU 11400–11405, °C).
-  /// Writable one by one with function 6 (checked live 2026-11-01); writing
-  /// them leaves the slope register unchanged.
+  /// Writable one by one with function 6 (checked live 2026-11-01). The
+  /// controller then updates the slope register to match the points (10 %
+  /// flatter: 0.5 → 0.4) without touching the points.
   static const List<ECLParameter> curvePoints = [
     ECLParameter(id: 'curve_point_m30', name: 'Vorlauf bei -30 °C', unit: '°C', modbusAddress: 11399, multiplier: 1.0, isWritable: true, minValue: 10, maxValue: 90),
     ECLParameter(id: 'curve_point_m15', name: 'Vorlauf bei -15 °C', unit: '°C', modbusAddress: 11400, multiplier: 1.0, isWritable: true, minValue: 10, maxValue: 90),
