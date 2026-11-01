@@ -310,9 +310,10 @@ class _HolidayScreenState extends State<HolidayScreen> {
                           firstDate: now.subtract(const Duration(days: 1)),
                           lastDate: now.add(const Duration(days: 365)),
                         );
-                        if (picked != null) {
-                          setModalState(() => startDate = picked);
-                        }
+                        if (picked == null || !context.mounted) return;
+                        setModalState(() => startDate = picked);
+                        final time = await showTimePicker(context: context, initialTime: startTime);
+                        if (time != null) setModalState(() => startTime = time);
                       },
                     ),
                     const SizedBox(height: 10),
@@ -334,9 +335,10 @@ class _HolidayScreenState extends State<HolidayScreen> {
                           firstDate: startDate,
                           lastDate: now.add(const Duration(days: 365)),
                         );
-                        if (picked != null) {
-                          setModalState(() => endDate = picked);
-                        }
+                        if (picked == null || !context.mounted) return;
+                        setModalState(() => endDate = picked);
+                        final time = await showTimePicker(context: context, initialTime: endTime);
+                        if (time != null) setModalState(() => endTime = time);
                       },
                     ),
                     const SizedBox(height: 16),
@@ -402,6 +404,13 @@ class _HolidayScreenState extends State<HolidayScreen> {
                       ),
                     ),
                     const SizedBox(height: 20),
+                    if (!endCombined.isAfter(startCombined))
+                      const Padding(
+                        padding: EdgeInsets.only(bottom: 10),
+                        child: Text('Die Rückkehr muss nach der Abreise liegen.',
+                            key: Key('holidayEndBeforeStart'),
+                            style: TextStyle(color: Color(0xFFEF5350), fontSize: 12.5)),
+                      ),
 
                     SizedBox(
                       width: double.infinity,
@@ -410,15 +419,7 @@ class _HolidayScreenState extends State<HolidayScreen> {
                           backgroundColor: _accentOrange,
                           padding: const EdgeInsets.symmetric(vertical: 14),
                         ),
-                        onPressed: () async {
-                          if (endCombined.isBefore(startCombined)) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Rückkehr muss nach der Abreise liegen.'),
-                              ),
-                            );
-                            return;
-                          }
+                        onPressed: !endCombined.isAfter(startCombined) ? null : () async {
                           Navigator.pop(context);
 
                           final plan = HolidayPlan(
@@ -481,8 +482,11 @@ class _HolidayScreenState extends State<HolidayScreen> {
                 const SizedBox(height: 20),
                 _buildSeasonalSavings(),
                 const SizedBox(height: 20),
-                _buildLocalFirstNotice(),
-                const SizedBox(height: 20),
+                // Only true when the controller runs the holiday itself.
+                if (context.read<ECLProvider>().supportsControllerHoliday) ...[
+                  _buildLocalFirstNotice(),
+                  const SizedBox(height: 20),
+                ],
                 _buildHistorySection(),
               ],
             ),
@@ -979,7 +983,7 @@ class _HolidayScreenState extends State<HolidayScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: const [
                 Text(
-                  '100% Local-First & Hardware-Autonomie',
+                  'Läuft im Regler – ohne App und Internet',
                   style: TextStyle(
                     fontWeight: FontWeight.w700,
                     fontSize: 13,
@@ -988,7 +992,7 @@ class _HolidayScreenState extends State<HolidayScreen> {
                 ),
                 SizedBox(height: 4),
                 Text(
-                  'Die Absenkung wird vor deiner Abreise direkt an deinen Regler übermittelt. Du benötigst unterwegs kein Internet. Tipp: Über eine Fritz!Box WireGuard-Verbindung kannst du deine Rückkehr auch von unterwegs anpassen.',
+                  'Die Absenkung wird vor deiner Abreise im Urlaubsprogramm des Reglers gespeichert. Du benötigst unterwegs kein Internet. Tipp: Über eine FRITZ!Box-WireGuard-Verbindung kannst du deine Rückkehr auch von unterwegs anpassen.',
                   style: TextStyle(fontSize: 11.5, color: _textSecondary, height: 1.4),
                 ),
               ],

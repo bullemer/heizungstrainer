@@ -92,5 +92,5 @@ String userFacingError(Object error, {String fallback = 'Unbekannter Fehler.'}) 
   final text = error.toString();
   if (text.startsWith('Instance of')) return fallback;
   // Never show class names such as "StateError: …" or "FooException: …".
-  return text.replaceFirst(RegExp(r'^[A-Za-z_]+(Exception|Error): '), '');
+  return text.replaceFirst(RegExp(r'^[A-Za-z_]*(Exception|Error): '), '');
 }

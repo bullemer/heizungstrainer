@@ -814,7 +814,7 @@ class _BackofficeConsentSheetState extends State<_BackofficeConsentSheet> {
                         Icon(Icons.shield_outlined, size: 16, color: Color(0xFF4ADE80)),
                         SizedBox(width: 6),
                         Text(
-                          'Zero-Cloud & Datenschutz',
+                          'Datenschutz',
                           style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF4ADE80)),
                         ),
                       ],
@@ -908,16 +908,26 @@ class _BackofficeConsentSheetState extends State<_BackofficeConsentSheet> {
                     ? () async {
                         setState(() => _isExporting = true);
                         try {
-                          await widget.provider.logService.sendDiagnosticReport(
+                          final sent = await widget.provider.logService.sendDiagnosticReport(
                             diagnosticPayload: payload,
                             userHasAcknowledged: true,
                           );
                           if (!context.mounted) return;
+                          if (!sent) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                backgroundColor: Color(0xFF5C1D1D),
+                                content: Text('Senden fehlgeschlagen – keine Internetverbindung? '
+                                    'Du kannst den Bericht auch kopieren und per E-Mail schicken.'),
+                              ),
+                            );
+                            return;
+                          }
                           Navigator.pop(context);
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
                               backgroundColor: Color(0xFF1B3D2F),
-                              content: Text('Diagnosebericht erfolgreich bestätigt und exportiert.'),
+                              content: Text('Diagnosebericht gesendet. Danke!'),
                             ),
                           );
                         } finally {

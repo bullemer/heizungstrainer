@@ -31,6 +31,10 @@ class _FakeProvider extends ECLProvider {
   final LiveSnapshot? snap;
   int reads = 0;
   @override
+  bool get isConnected => true;
+  @override
+  bool get supportsLiveView => true;
+  @override
   Future<LiveSnapshot?> readLiveSnapshot() async {
     reads++;
     return snap;

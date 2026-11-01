@@ -59,6 +59,18 @@ class _LiveViewScreenState extends State<LiveViewScreen> {
     });
   }
 
+  /// Why there is no live view at all (not a temporary read error), or null.
+  String? _unsupportedText(BuildContext context) {
+    final provider = context.watch<ECLProvider>();
+    if (!provider.isConnected) return 'Keine Verbindung zum Regler.';
+    if (!provider.supportsLiveView) {
+      return 'Das Anlagenbild mit Pumpen, Ventilen und Sollwerten gibt es bisher nur für den '
+          'Danfoss ECL 310. Die Messwerte deines ${provider.currentControllerDescriptor.brand}-Reglers '
+          'siehst du auf der Startseite.';
+    }
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
     final snap = _snapshot;
@@ -81,7 +93,14 @@ class _LiveViewScreenState extends State<LiveViewScreen> {
       ),
       body: snap == null
           ? Center(
-              child: _failed
+              child: _unsupportedText(context) != null
+                  ? Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Text(_unsupportedText(context)!,
+                          key: const Key('liveUnsupported'),
+                          style: const TextStyle(color: _muted), textAlign: TextAlign.center),
+                    )
+                  : _failed
                   ? const Padding(
                       padding: EdgeInsets.all(24),
                       child: Text('Keine Live-Daten – ist der Regler verbunden?',

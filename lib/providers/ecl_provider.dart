@@ -553,6 +553,11 @@ class ECLProvider extends ChangeNotifier {
   String? _currentIdentity;
   String? _currentIdentityLabel;
 
+  /// Key of the "known settings" baseline: the individual controller (ECL
+  /// serial number, else brand@IP), so a second controller is never compared
+  /// against the first one's values. Before the identity is known: the type.
+  String get _watchKey => _currentIdentity ?? _selectedControllerId;
+
   /// Master licence: settings may be changed on any controller.
   bool get isMasterLicense => _licenseService.isMaster;
 
@@ -720,13 +725,15 @@ class ECLProvider extends ChangeNotifier {
   /// difference. Runs after each successful poll (no extra Modbus traffic).
   Future<void> _checkSettings() async {
     if (_isSimulationActive || _writeInProgress) return;
+    // Which ECL is this? Without its serial number there is no baseline to compare with.
+    if (_selectedControllerId == 'danfoss_ecl_310' && _currentIdentity == null) return;
     final live = <String, double>{
       for (final p in ControllerSettingsWatch.tracked)
         if (_readings[p.id] != null && !_readings[p.id]!.isSensorDisconnected)
           p.id: _readings[p.id]!.displayValue,
     };
     if (live.isEmpty) return;
-    final diffs = await settingsWatch.compare(_selectedControllerId, live);
+    final diffs = await settingsWatch.compare(_watchKey, live);
     for (final d in diffs) {
       final unit = d.parameter.unit.isEmpty ? '' : ' ${d.parameter.unit}';
       final change = '${_fmtSetting(d.known.value)} → ${_fmtSetting(d.live)}$unit';
@@ -903,7 +910,13 @@ class ECLProvider extends ChangeNotifier {
     if (!supportsControllerSchedule) return;
     final live = await _modbusService.readSchedule();
     if (live == null) return;
-    final known = await settingsWatch.knownSchedule(_selectedControllerId);
+    if (_currentIdentity == null) {
+      // Controller not identified yet: show the schedule, compare later.
+      _controllerSchedule = live;
+      notifyListeners();
+      return;
+    }
+    final known = await settingsWatch.knownSchedule(_watchKey);
     final before = known.schedule;
     var changed = before == null;
     if (before != null) {
@@ -939,7 +952,7 @@ class ECLProvider extends ChangeNotifier {
         }
       }
     }
-    if (changed) await settingsWatch.saveSchedule(_selectedControllerId, live, byApp: false);
+    if (changed) await settingsWatch.saveSchedule(_watchKey, live, byApp: false);
     _controllerSchedule = live;
     notifyListeners();
   }
@@ -985,7 +998,7 @@ class ECLProvider extends ChangeNotifier {
     try {
       final reading = await _modbusService.readParameter(ECLRegisters.curveSlope);
       _readings[ECLRegisters.curveSlope.id] = reading;
-      await settingsWatch.adopt(_selectedControllerId, ECLRegisters.curveSlope, reading.displayValue);
+      await settingsWatch.adopt(_watchKey, ECLRegisters.curveSlope, reading.displayValue);
       notifyListeners();
     } catch (e) {
       debugPrint('[Provider] Slope read-back after curve write failed: $e');
@@ -1041,7 +1054,7 @@ class ECLProvider extends ChangeNotifier {
         throw ModbusCommunicationException(message: 'Der Regler hat das Zeitprogramm nicht übernommen ($got).');
       }
       _controllerSchedule = result;
-      await settingsWatch.saveSchedule(_selectedControllerId, result, byApp: true);
+      await settingsWatch.saveSchedule(_watchKey, result, byApp: true);
       await _logService.logWrite(
         controllerId: _selectedControllerId,
         action: 'WRITE_SCHEDULE_VERIFIED',
@@ -1401,7 +1414,7 @@ class ECLProvider extends ChangeNotifier {
   Future<void> processAlarmMask(int? mask) async {
     if (mask == null) return;
     final active = ControllerSettingsWatch.alarmsIn(mask);
-    final change = await settingsWatch.updateAlarms(_selectedControllerId, active);
+    final change = await settingsWatch.updateAlarms(_watchKey, active);
     _controllerAlarms = active;
     for (var n = 1; n <= 32; n++) {
       if (active.contains(n)) {
@@ -1461,7 +1474,7 @@ class ECLProvider extends ChangeNotifier {
   /// Reads all settings from the controller now and returns them next to the
   /// values the app knew before ("Regler abgleichen"). Differences are logged.
   Future<List<SettingCheckRow>> checkControllerSettings() async {
-    final before = await settingsWatch.known(_selectedControllerId);
+    final before = await settingsWatch.known(_watchKey);
     await refreshReadings();
     await loadControllerSchedule();
     return [
@@ -2647,7 +2660,7 @@ class ECLProvider extends ChangeNotifier {
         );
         if (!_isSimulationActive) {
           unawaited(_feedbackService.recordSuccessfulWrite());
-          await settingsWatch.recordAppWrite(_selectedControllerId, parameter, reading?.displayValue ?? value);
+          await settingsWatch.recordAppWrite(_watchKey, parameter, reading?.displayValue ?? value);
         }
 
         notifyListeners();
@@ -2676,7 +2689,7 @@ class ECLProvider extends ChangeNotifier {
         success: true,
       );
       unawaited(_feedbackService.recordSuccessfulWrite());
-      await settingsWatch.recordAppWrite(_selectedControllerId, parameter, reading.displayValue);
+      await settingsWatch.recordAppWrite(_watchKey, parameter, reading.displayValue);
 
       notifyListeners();
       return reading;

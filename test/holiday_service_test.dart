@@ -384,7 +384,7 @@ void main() {
   });
 
   group('HolidayScreen Widget Tests', () {
-    testWidgets('renders header, quick presets, and zero-cloud banner', (tester) async {
+    testWidgets('renders header and quick presets', (tester) async {
       tester.view.physicalSize = const Size(1080, 2400);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.resetPhysicalSize);
@@ -423,7 +423,8 @@ void main() {
       expect(find.text('Eigene Abwesenheit planen'), findsOneWidget);
 
       // Local autonomy info
-      expect(find.text('100% Local-First & Hardware-Autonomie'), findsOneWidget);
+      // "runs in the controller" notice only where the controller runs the holiday itself
+      expect(find.text('Läuft im Regler – ohne App und Internet'), findsNothing);
     });
 
     testWidgets('displays active plan card when plan is running', (tester) async {

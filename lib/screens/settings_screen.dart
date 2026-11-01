@@ -1144,7 +1144,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             ),
                             const SizedBox(height: 4),
                             Text(
-                              '100% Local-First · Zero-Cloud · WireGuard® Ready',
+                              'Lokal-first · Daten nur mit deiner Zustimmung · WireGuard® Ready',
                               style: TextStyle(
                                 fontSize: 10.5,
                                 color: Colors.white.withValues(alpha: 0.35),
@@ -1934,7 +1934,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'Zero-Cloud: Der 128-Bit AES-Schlüssel wird lokal auf diesem Gerät generiert. Keine Daten verlassen dein Heimnetz.',
+                      'Lokal: Der 128-Bit AES-Schlüssel wird lokal auf diesem Gerät generiert. Keine Daten verlassen dein Heimnetz.',
                       style: TextStyle(
                         fontSize: 11,
                         color: Colors.white.withValues(alpha: 0.7),
@@ -4676,7 +4676,7 @@ class _WireGuardRemoteAccessCardState extends State<_WireGuardRemoteAccessCard> 
                                 borderRadius: BorderRadius.circular(4),
                               ),
                               child: const Text(
-                                'Zero-Cloud',
+                                'ohne Cloud-Dienst',
                                 style: TextStyle(
                                   fontSize: 10,
                                   fontWeight: FontWeight.bold,

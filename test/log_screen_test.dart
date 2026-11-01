@@ -184,7 +184,7 @@ void main() {
       await tester.pumpAndSettle();
 
       // Bottom sheet closed and snackbar shown
-      expect(find.text('Diagnosebericht erfolgreich bestätigt und exportiert.'), findsOneWidget);
+      expect(find.text('Diagnosebericht gesendet. Danke!'), findsOneWidget);
     });
   });
 }

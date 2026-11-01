@@ -489,17 +489,29 @@ class _SmartStatusBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     final outdoorReading = provider.getReading(ECLRegisters.outdoorTemp);
     final shiftReading = provider.getReading(ECLRegisters.heatingCurveShift);
-    final isSensorDisconnected =
-        outdoorReading == null || outdoorReading.isSensorDisconnected;
-    final outdoorTemp = isSensorDisconnected ? 0.0 : outdoorReading.displayValue;
+    // No value yet (first poll, offline without cache, controller without
+    // outdoor sensor) is not the same as a broken sensor.
+    final noValue = outdoorReading == null;
+    final isSensorDisconnected = outdoorReading != null && outdoorReading.isSensorDisconnected;
+    final hasTemp = !noValue && !isSensorDisconnected;
+    final outdoorTemp = hasTemp ? outdoorReading.displayValue : 0.0;
     final shift = shiftReading?.displayValue ?? 0;
+    final isDanfoss = provider.selectedControllerId == 'danfoss_ecl_310';
+    // ECL operating mode (PNU 4201): 0 manual, 1 schedule, 2 comfort, 3 saving, 4 frost.
+    final mode = provider.getReading(ECLRegisters.circuitMode)?.displayValue.round();
 
     // The controller's own "Sommer-Aus" if it reports one (e.g. 13 °C);
     // 17 °C is only a fallback for controllers that don't.
     final summerCutoff =
         provider.getReading(ECLRegisters.summerCutoff)?.displayValue ?? 17.0;
-    final isSummerMode = !isSensorDisconnected && outdoorTemp > summerCutoff;
+    final isSummerMode = hasTemp && outdoorTemp > summerCutoff;
     final isHighConsumption = shift > 3;
+    final specialMode = switch (mode) {
+      0 => 'Handbetrieb',
+      3 => 'Dauernd abgesenkt',
+      4 => 'Frostschutz',
+      _ => null,
+    };
 
     final bannerColor = isSensorDisconnected
         ? const Color(0xFFEF5350).withValues(alpha: 0.15)
@@ -513,19 +525,35 @@ class _SmartStatusBanner extends StatelessWidget {
             : const Color(0xFF3A3A44));
     final iconColor = isSensorDisconnected
         ? const Color(0xFFEF5350)
-        : (isSummerMode ? const Color(0xFF66BB6A) : const Color(0xFFFFA726));
+        : noValue
+            ? const Color(0xFF9E9EA8)
+            : (isSummerMode ? const Color(0xFF66BB6A) : const Color(0xFFFFA726));
 
-    final title = isSensorDisconnected
-        ? 'Außentemperaturfühler nicht verbunden'
-        : (isSummerMode
-            ? '${outdoorTemp.fixed(1)}°C draußen — über der Heizgrenze (${summerCutoff.fixed(0)} °C)'
-            : '${outdoorTemp.fixed(1)}°C draußen — Heizbetrieb aktiv');
+    final title = noValue
+        ? 'Außentemperatur: noch kein Wert'
+        : isSensorDisconnected
+            ? 'Außentemperaturfühler nicht verbunden'
+            : specialMode != null
+                ? '${outdoorTemp.fixed(1)} °C draußen — $specialMode'
+                : isSummerMode
+                    ? '${outdoorTemp.fixed(1)} °C draußen — über der Heizgrenze (${summerCutoff.fixed(0)} °C)'
+                    : '${outdoorTemp.fixed(1)} °C draußen — Heizbetrieb';
 
-    final subtitle = isSensorDisconnected
-        ? 'Der ECL-Regler meldet einen Fühlerabriss (S1). Bitte Fühlerverkabelung prüfen.'
-        : (isSummerMode
-            ? 'Der Regler heizt oberhalb seiner Heizgrenze nicht (Sommer-Aus).'
-            : 'Die Heizung reguliert aktiv deine Raumtemperatur.');
+    final subtitle = noValue
+        ? (provider.isConnected ? 'Der Wert wird gleich gelesen.' : 'Keine Verbindung zum Regler.')
+        : isSensorDisconnected
+            ? (isDanfoss
+                ? 'Der ECL-Regler meldet einen Fühlerabriss (S1). Bitte Fühlerverkabelung prüfen.'
+                : 'Der Regler liefert keinen gültigen Außenfühler-Wert. Bitte Fühler prüfen.')
+            : switch (mode) {
+                0 => 'Der Regler ist im Handbetrieb und regelt nicht automatisch.',
+                3 => 'Der Regler hält dauerhaft die abgesenkte Temperatur – das Zeitprogramm ist aus.',
+                4 => 'Der Regler heizt nur, damit nichts einfriert.',
+                _ => isSummerMode
+                    ? 'Oberhalb der Heizgrenze heizt der Regler nicht (Sommer-Aus). Er nutzt eine '
+                        'gedämpfte Außentemperatur und schaltet deshalb etwas zeitversetzt um.'
+                    : 'Unter der Heizgrenze (${summerCutoff.fixed(0)} °C) heizt der Regler nach Heizkurve.',
+              };
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -540,7 +568,7 @@ class _SmartStatusBanner extends StatelessWidget {
           Row(
             children: [
               Icon(
-                isSensorDisconnected
+                isSensorDisconnected || noValue
                     ? Icons.sensors_off_rounded
                     : (isSummerMode ? Icons.wb_sunny_rounded : Icons.thermostat),
                 color: iconColor,

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
@@ -76,6 +77,10 @@ class HeizungstrainerApp extends StatelessWidget {
       navigatorKey: _navigatorKey,
       title: 'Heizungstrainer',
       debugShowCheckedModeBanner: false,
+      // German date/time pickers, 24-hour times, "Abbrechen" instead of "Cancel".
+      locale: const Locale('de', 'DE'),
+      supportedLocales: const [Locale('de', 'DE')],
+      localizationsDelegates: GlobalMaterialLocalizations.delegates,
       theme: _buildDarkTheme(),
       home: Consumer<ECLProvider>(
         builder: (context, provider, _) {

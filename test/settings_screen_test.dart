@@ -304,7 +304,7 @@ void main() {
 
       // Card is present
       expect(find.text('Fernzugriff via FRITZ!Box WireGuard®'), findsOneWidget);
-      expect(find.text('Zero-Cloud'), findsWidgets);
+      expect(find.text('ohne Cloud-Dienst'), findsWidgets);
 
       // Steps are not visible initially
       expect(find.text('FRITZ!Box WireGuard® aktivieren'), findsNothing);

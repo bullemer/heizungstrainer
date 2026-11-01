@@ -335,7 +335,8 @@ class ActivityLogService extends ChangeNotifier {
       'https://bo.heizungstrainer.de/api/v1/telemetry/diagnostics';
 
   /// Prepares and sends the diagnostic bundle to the backoffice endpoint.
-  /// User acknowledgment is verified before dispatching.
+  /// User acknowledgment is verified before dispatching. Returns whether the
+  /// report reached the backoffice (true as well when dispatch is disabled).
   Future<bool> sendDiagnosticReport({
     required Map<String, dynamic> diagnosticPayload,
     required bool userHasAcknowledged,
@@ -396,6 +397,6 @@ class ActivityLogService extends ChangeNotifier {
       userAcknowledged: true,
     ));
 
-    return true;
+    return dispatchSuccess;
   }
 }
