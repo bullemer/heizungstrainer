@@ -34,6 +34,7 @@ class DiscoveryService {
   static const String _storageKey = 'ecl_controller_ip';
   static const int _modbusPort = 502;
   static const Duration _socketTimeout = Duration(milliseconds: 500);
+  static const Duration _iosSocketTimeout = Duration(milliseconds: 1500);
 
   /// Maximum concurrent TCP connection attempts during subnet scanning.
   static const int _concurrentScans = 50;
@@ -132,11 +133,12 @@ class DiscoveryService {
   /// Connects to [host]:502 and classifies the outcome.
   Future<ProbeResult> _probe(String host) async {
     final watch = Stopwatch()..start();
+    final timeout = _isIOS ? _iosSocketTimeout : _socketTimeout;
     try {
       final socket = await Socket.connect(
         host,
         _modbusPort,
-        timeout: _socketTimeout,
+        timeout: timeout,
       );
       socket.destroy();
       return ProbeResult.open;
@@ -144,7 +146,7 @@ class DiscoveryService {
       // ECONNREFUSED (61 on iOS, 111 on Android/Linux): a host answered.
       final code = e.osError?.errorCode;
       if (code == 61 || code == 111) return ProbeResult.refused;
-      if (e.message.contains('timed out') || watch.elapsed >= _socketTimeout) {
+      if (e.message.contains('timed out') || watch.elapsed >= timeout) {
         return ProbeResult.timeout;
       }
       return watch.elapsed < _instantFailure ? ProbeResult.instantError : ProbeResult.error;
@@ -273,11 +275,11 @@ class DiscoveryService {
 
   /// Discovers an ECL 310 controller on the local /24 WiFi subnet.
   ///
-  /// **Fast-path**: If a previously saved IP exists and is on the current
-  /// subnet, it is tested first for instant reconnection.
+  /// **Fast-path**: A previously connected IP is checked first for a TCP
+  /// connection, avoiding a new identification read of a known controller.
   ///
   /// **Full scan**: If fast-path fails, all 254 hosts are scanned in
-  /// batches of [_concurrentScans] to find a host with port 502 open,
+  /// bounded batches to find a host with port 502 open,
   /// then verified via a Modbus test read.
   ///
   /// [onProgress] reports `(scannedCount, totalCount)` during the scan.
@@ -296,8 +298,11 @@ class DiscoveryService {
     final savedIp = await getSavedControllerIp();
     if (savedIp != null) {
       debugPrint('[Discovery] Trying saved controller IP: $savedIp');
-      if (await _verifyECLController(savedIp)) {
-        debugPrint('[Discovery] Saved IP $savedIp verified successfully!');
+      final reachable = _isIOS
+          ? await _probe(savedIp) == ProbeResult.open
+          : await _verifyECLController(savedIp);
+      if (reachable) {
+        debugPrint('[Discovery] Previously connected controller at $savedIp is reachable.');
         return savedIp;
       }
       debugPrint('[Discovery] Saved IP $savedIp failed verification, starting full scan.');
@@ -309,10 +314,11 @@ class DiscoveryService {
     const totalHosts = 254;
     final results = <ProbeResult>[];
 
+    final concurrentScans = _isIOS ? 16 : _concurrentScans;
     for (int batchStart = 1;
         batchStart <= totalHosts && foundIp == null;
-        batchStart += _concurrentScans) {
-      final batchEnd = (batchStart + _concurrentScans - 1).clamp(1, totalHosts);
+        batchStart += concurrentScans) {
+      final batchEnd = (batchStart + concurrentScans - 1).clamp(1, totalHosts);
       final futures = <Future<void>>[];
 
       for (int i = batchStart; i <= batchEnd; i++) {
