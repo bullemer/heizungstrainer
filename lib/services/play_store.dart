@@ -30,8 +30,8 @@ String get storeName => isAppStoreBuild ? 'App Store' : 'Google Play';
 String get storeAccountName => isAppStoreBuild ? 'Apple-Account' : 'Google-Konto';
 
 /// Apple's numeric app id (App Store Connect → App Information), needed to
-/// open the listing on iOS. Empty until the app exists in App Store Connect.
-const String appStoreId = '';
+/// open the listing on iOS.
+const String appStoreId = '6829485327';
 
 /// Product id of the one-time "Heizungstrainer Pro" purchase in Play Console.
 const String proProductId = 'heizungstrainer_pro';

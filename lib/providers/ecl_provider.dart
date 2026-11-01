@@ -675,7 +675,7 @@ class ECLProvider extends ChangeNotifier {
     );
     throw ModbusCommunicationException(
       message: 'Dieser Regler ist nicht dein Regler – nur Anzeige. Ändern geht nur an '
-          '${_binding?.label ?? 'deinem Regler'}. Für mehrere Anlagen gibt es die Master-Lizenz.',
+          '${_binding?.label ?? 'deinem Regler'}.${isAppStoreBuild ? '' : ' Für mehrere Anlagen gibt es die Master-Lizenz.'}',
     );
   }
 

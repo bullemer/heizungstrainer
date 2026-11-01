@@ -14,6 +14,7 @@ import 'package:heizungstrainer/screens/settings_screen.dart';
 import 'package:heizungstrainer/services/controller_binding.dart';
 import 'package:heizungstrainer/services/heating_analytics_service.dart';
 import 'package:heizungstrainer/services/heating_curve_model.dart';
+import 'package:heizungstrainer/services/play_store.dart';
 import 'package:heizungstrainer/widgets/analysis_section.dart';
 import 'package:heizungstrainer/widgets/building_profile_picker.dart';
 import 'package:heizungstrainer/widgets/curve_editor_dialog.dart';
@@ -1513,8 +1514,9 @@ class _ForeignControllerCard extends StatelessWidget {
         Text(
           'Verbunden: ${provider.connectedControllerLabel ?? '?'}\n'
           'Dein Regler: ${provider.controllerBinding?.label ?? '?'}\n\n'
-          'Diese App ändert Einstellungen nur an deinem Regler. Für Heizungsbauer und Wohnungs'
-          'gesellschaften mit mehreren Anlagen gibt es die Master-Lizenz.',
+          'Diese App ändert Einstellungen nur an deinem Regler.'
+          // The Master licence is sold outside the App Store – not mentioned on iOS (3.1.1).
+          '${isAppStoreBuild ? '' : ' Für Heizungsbauer und Wohnungsgesellschaften mit mehreren Anlagen gibt es die Master-Lizenz.'}',
           style: const TextStyle(fontSize: 12.5, color: Color(0xFFD0D0D8), height: 1.35),
         ),
         Align(
