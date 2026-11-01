@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'package:heizungstrainer/controllers/heating_controller.dart';
 import 'package:heizungstrainer/models/controller_holiday.dart';
@@ -15,6 +16,7 @@ import 'package:heizungstrainer/providers/ecl_provider.dart';
 import 'package:heizungstrainer/screens/dhw_settings_screen.dart';
 import 'package:heizungstrainer/services/activity_log_service.dart';
 import 'package:heizungstrainer/services/config_check.dart';
+import 'package:heizungstrainer/services/database_service.dart';
 import 'package:heizungstrainer/services/heating_curve_model.dart';
 import 'package:heizungstrainer/services/holiday_service.dart';
 import 'package:heizungstrainer/services/license_service.dart';
@@ -25,6 +27,7 @@ ActivityLogService quietLog() => ActivityLogService(enablePersistence: false, en
 class _SlowDriver implements HeatingController {
   double room = 21;
   Completer<void>? gate;
+  Completer<void>? pollStarted;
   @override
   String get id => 'nibe_modbus';
   @override
@@ -46,7 +49,11 @@ class _SlowDriver implements HeatingController {
   @override
   Future<ControllerTelemetry> readTelemetry() async {
     final snapshot = room; // value at the start of the poll
-    if (gate != null) await gate!.future;
+    final pendingGate = gate;
+    if (pendingGate != null) {
+      pollStarted?.complete();
+      await pendingGate.future;
+    }
     return ControllerTelemetry(timestamp: DateTime.now(), flowTemp: 30, roomTarget: snapshot);
   }
 
@@ -93,8 +100,11 @@ void main() {
   test('#3 a poll overlapping a write is discarded – no false "app change missing"', () async {
     final log = quietLog();
     final driver = _SlowDriver();
+    sqfliteFfiInit();
+    final db = DatabaseService(preOpenedDb: await databaseFactoryFfi.openDatabase(inMemoryDatabasePath));
     final p = ECLProvider(
-        logService: log, licenseService: LicenseService(inMemoryStorage: {}, initialTier: LicenseTier.pro), autoLoadDatabase: false);
+        databaseService: db, logService: log, licenseService: LicenseService(inMemoryStorage: {}, initialTier: LicenseTier.pro), autoLoadDatabase: false);
+    addTearDown(() async { p.dispose(); await db.close(); });
     await p.setSelectedController('nibe_modbus');
     p.useControllerForTesting(driver);
     p.setConnectedForTesting(ip: '192.168.0.9');
@@ -102,8 +112,9 @@ void main() {
     await p.refreshReadings(); // baseline 21
 
     driver.gate = Completer<void>();
+    driver.pollStarted = Completer<void>();
     final poll = p.refreshReadings(); // reads 21, held open
-    await Future<void>.delayed(Duration.zero);
+    await driver.pollStarted!.future;
     final gate = driver.gate!;
     driver.gate = null; // the write's own read-back is not held
     await p.writeParameter(ECLRegisters.roomTargetTemp, 22);
@@ -112,7 +123,6 @@ void main() {
 
     expect(log.recentEntries.where((e) => e.action == 'APP_CHANGE_NOT_ON_DEVICE'), isEmpty);
     expect(p.getReading(ECLRegisters.roomTargetTemp)!.displayValue, 22);
-    p.dispose();
   });
 
   test('#6 switching controller clears the previous controller\'s schedule', () async {
