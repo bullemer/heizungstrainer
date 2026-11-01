@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import 'package:heizungstrainer/providers/ecl_provider.dart';
@@ -19,7 +20,8 @@ class ConnectionScreen extends StatefulWidget {
 
 class _ConnectionScreenState extends State<ConnectionScreen>
     with SingleTickerProviderStateMixin {
-  final _ipController = TextEditingController();
+  final _ipParts = List.generate(4, (_) => TextEditingController());
+  final _ipFocus = List.generate(4, (_) => FocusNode());
   bool _showManualEntry = false;
   late AnimationController _pulseController;
   late Animation<double> _pulseAnimation;
@@ -39,7 +41,8 @@ class _ConnectionScreenState extends State<ConnectionScreen>
   @override
   void dispose() {
     _pulseController.dispose();
-    _ipController.dispose();
+    for (final controller in _ipParts) { controller.dispose(); }
+    for (final focus in _ipFocus) { focus.dispose(); }
     super.dispose();
   }
 
@@ -49,11 +52,8 @@ class _ConnectionScreenState extends State<ConnectionScreen>
   }
 
   void _connectManual() {
-    final ip = _ipController.text.trim();
-    if (ip.isEmpty) return;
-    // Basic IP validation
-    final parts = ip.split('.');
-    if (parts.length != 4 || parts.any((p) => int.tryParse(p) == null)) {
+    final parts = _ipParts.map((controller) => controller.text.trim()).toList();
+    if (parts.any((p) => p.isEmpty || p.length > 3 || int.tryParse(p) == null || int.parse(p) > 255)) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Bitte gültige IP-Adresse eingeben (z.B. 192.168.1.100)'),
@@ -62,7 +62,22 @@ class _ConnectionScreenState extends State<ConnectionScreen>
       );
       return;
     }
+    final ip = parts.map((part) => int.parse(part).toString()).join('.');
     context.read<ECLProvider>().connectToIp(ip);
+  }
+
+  void _onIpPartChanged(int index, String value) {
+    if (value.contains('.')) {
+      final parts = value.split('.');
+      if (index + parts.length <= 4) {
+        for (var i = 0; i < parts.length; i++) {
+          _ipParts[index + i].text = parts[i];
+        }
+        _ipFocus[(index + parts.length - 1).clamp(0, 3)].requestFocus();
+      }
+    } else if (value.length >= 3 && index < 3) {
+      _ipFocus[index + 1].requestFocus();
+    }
   }
 
   @override
@@ -416,21 +431,34 @@ class _ConnectionScreenState extends State<ConnectionScreen>
               ),
             ),
             const SizedBox(height: 12),
-            TextField(
-              controller: _ipController,
-              keyboardType: TextInputType.number,
-              decoration: InputDecoration(
-                hintText: '192.168.1.100',
-                labelText: 'IP-Adresse des ECL 310',
-                prefixIcon: const Icon(Icons.lan),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                filled: true,
-                fillColor: colorScheme.surfaceContainerHighest,
-              ),
-              onSubmitted: (_) => _connectManual(),
+            Text('IP-Adresse des ECL 310', style: theme.textTheme.bodyMedium),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                for (var i = 0; i < 4; i++) ...[
+                  if (i > 0) const Padding(padding: EdgeInsets.symmetric(horizontal: 3), child: Text('.')),
+                  Expanded(child: TextField(
+                    controller: _ipParts[i],
+                    focusNode: _ipFocus[i],
+                    keyboardType: TextInputType.number,
+                    textInputAction: i == 3 ? TextInputAction.done : TextInputAction.next,
+                    textAlign: TextAlign.center,
+                    inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))],
+                    decoration: InputDecoration(
+                      hintText: ['192', '168', '1', '100'][i],
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 14),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      filled: true,
+                      fillColor: colorScheme.surfaceContainerHighest,
+                    ),
+                    onChanged: (value) => _onIpPartChanged(i, value),
+                    onSubmitted: (_) => i == 3 ? _connectManual() : _ipFocus[i + 1].requestFocus(),
+                  )),
+                ],
+              ],
             ),
+            const SizedBox(height: 8),
+            Text('Tippe nach kürzeren Zahlen auf das nächste Feld.', style: theme.textTheme.bodySmall),
             const SizedBox(height: 12),
             FilledButton.icon(
               onPressed: _connectManual,
