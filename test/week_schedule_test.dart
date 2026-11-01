@@ -52,6 +52,9 @@ void main() {
   });
 
   testWidgets('card shows Monday and the saving setpoint as problems with fixes', (tester) async {
+    tester.view.physicalSize = const Size(1080, 3600);
+    tester.view.devicePixelRatio = 2.6;
+    addTearDown(tester.view.resetPhysicalSize);
     FlutterSecureStorage.setMockInitialValues({});
     final provider = ECLProvider(
       logService: ActivityLogService(enablePersistence: false, enableRemoteDispatch: false),
@@ -65,12 +68,12 @@ void main() {
     await tester.pumpWidget(MaterialApp(
       home: Scaffold(body: SingleChildScrollView(child: ControllerScheduleCard(provider: provider))),
     ));
-    expect(find.text('Zeitprogramm'), findsOneWidget);
-    expect(find.text('keine Komfortzeit → ganztags Spar 25 °C'), findsOneWidget);
-    expect(find.text('Komfort 00:00–24:00'), findsNWidgets(6));
+    expect(find.text('Wann soll es warm sein?'), findsOneWidget);
+    expect(find.text('nie warm'), findsOneWidget); // Monday
+    expect(find.text('ganztags'), findsNWidgets(6));
     expect(find.byKey(const Key('fixSaving')), findsOneWidget);
     expect(find.byKey(const Key('fixEmptyDays')), findsOneWidget);
-    expect(find.textContaining('Montag hat keine Komfortzeit'), findsOneWidget);
+    expect(find.textContaining('Montag hat keine warme Zeit'), findsOneWidget);
 
     await tester.tap(find.byKey(const Key('fixEmptyDays')));
     await tester.pumpAndSettle();

@@ -7,10 +7,10 @@ import 'package:heizungstrainer/providers/ecl_provider.dart';
 import 'package:heizungstrainer/exceptions/modbus_exceptions.dart';
 import 'package:heizungstrainer/widgets/schedule_day_editor.dart';
 
-/// Start page card: the controller's weekly comfort schedule, comfort and
-/// saving setpoint – every day and the saving setpoint editable, plus
-/// warnings and one-tap fixes for typical mistakes (a day without comfort
-/// period, saving setpoint above comfort).
+/// Start page card "Wann soll es warm sein?": the controller's weekly comfort
+/// schedule as a 0–24 h timeline per day (warm = comfort setpoint, rest =
+/// saving setpoint), what it saves, presets, every day and the saving
+/// setpoint editable, and one-tap fixes for typical mistakes.
 class ControllerScheduleCard extends StatelessWidget {
   const ControllerScheduleCard({super.key, required this.provider});
 
@@ -23,6 +23,9 @@ class ControllerScheduleCard extends StatelessWidget {
 
   static String _t(double? v) => v == null ? '–' : '${v.fixed(v == v.roundToDouble() ? 0 : 1)} °C';
 
+  static const _warmColor = Color(0xFFFF8A50);
+  static const _lowColor = Color(0xFF42A5F5);
+
   @override
   Widget build(BuildContext context) {
     final schedule = provider.controllerSchedule;
@@ -33,6 +36,9 @@ class ControllerScheduleCard extends StatelessWidget {
     final template = schedule.mostCommonDay;
     final emptyDays = [for (var d = 0; d < 7; d++) if (!schedule.hasComfort(d)) d];
     final savingTooHigh = comfort != null && saving != null && saving > comfort;
+    final kelvin = comfort != null && saving != null ? comfort - saving : null;
+    final lowered = schedule.loweredHoursPerWeek;
+    final scheduleIgnored = mode != null && mode.round() != 1;
 
     return Container(
       key: const Key('controllerScheduleCard'),
@@ -40,71 +46,98 @@ class ControllerScheduleCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: const Color(0xFF2A2A32),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: (savingTooHigh && emptyDays.isNotEmpty) ? _warn.withValues(alpha: 0.6) : const Color(0xFF3A3A44)),
+        border: Border.all(color: (savingTooHigh || emptyDays.isNotEmpty) ? _warn.withValues(alpha: 0.6) : const Color(0xFF3A3A44)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(children: [
-            const Icon(Icons.calendar_month_rounded, color: _accent, size: 18),
-            const SizedBox(width: 8),
-            const Expanded(
-              child: Text('Zeitprogramm im Regler',
-                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5, color: _text)),
+          const Row(children: [
+            Icon(Icons.schedule_rounded, color: _accent, size: 18),
+            SizedBox(width: 8),
+            Expanded(
+              child: Text('Wann soll es warm sein?',
+                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: _text)),
             ),
-            Text(eclModeLabel(mode), style: const TextStyle(color: _muted, fontSize: 11)),
           ]),
-          const SizedBox(height: 10),
-          Row(children: [
-            _chip('Komfort', _t(comfort), const Color(0xFF66BB6A)),
-            const SizedBox(width: 8),
+          const SizedBox(height: 4),
+          const Text(
+            'Zu den warmen Zeiten heizt der Regler auf die Basis-Wärme, sonst senkt er ab. '
+            'Absenken, wenn alle schlafen oder niemand zu Hause ist, spart Energie.',
+            style: TextStyle(color: _muted, fontSize: 11.5, height: 1.35),
+          ),
+          const SizedBox(height: 12),
+          Wrap(spacing: 8, runSpacing: 8, children: [
+            _chip('Warm', _t(comfort), _warmColor),
             InkWell(
               key: const Key('editSaving'),
               borderRadius: BorderRadius.circular(8),
               onTap: comfort != null && saving != null ? () => _fixSaving(context, comfort, saving) : null,
-              child: _chip('Spar', '${_t(saving)} ✎', savingTooHigh ? const Color(0xFFEF5350) : const Color(0xFF42A5F5)),
+              child: _chip('Abgesenkt', '${_t(saving)}  ✎', savingTooHigh ? const Color(0xFFEF5350) : _lowColor),
             ),
           ]),
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
           for (var d = 0; d < 7; d++)
             InkWell(
               key: Key('scheduleDay_$d'),
               borderRadius: BorderRadius.circular(6),
               onTap: () => _editDay(context, d, schedule),
               child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 6),
+                padding: const EdgeInsets.symmetric(vertical: 5),
                 child: Row(children: [
-                  SizedBox(width: 28, child: Text(WeekSchedule.dayShort[d], style: const TextStyle(color: _muted, fontSize: 12))),
-                  Expanded(
+                  SizedBox(width: 26, child: Text(WeekSchedule.dayShort[d], style: const TextStyle(color: _muted, fontSize: 12))),
+                  Expanded(child: _timeline(schedule.activePeriods(d))),
+                  SizedBox(
+                    width: 92,
                     child: Text(
-                      schedule.hasComfort(d)
-                          ? 'Komfort ${schedule.describeDay(d)}'
-                          : 'keine Komfortzeit → ganztags Spar ${_t(saving)}',
-                      style: TextStyle(
-                        fontSize: 12.5,
-                        color: schedule.hasComfort(d) ? _text : _warn,
-                        fontWeight: schedule.hasComfort(d) ? FontWeight.normal : FontWeight.w600,
-                      ),
+                      _dayText(schedule.activePeriods(d)),
+                      key: Key('scheduleDayText_$d'),
+                      textAlign: TextAlign.right,
+                      style: TextStyle(fontSize: 11.5, color: schedule.hasComfort(d) ? _text : _warn),
                     ),
                   ),
-                  const Icon(Icons.edit_outlined, size: 15, color: _muted),
                 ]),
               ),
             ),
           const Padding(
-            padding: EdgeInsets.only(top: 4),
-            child: Text('Tag antippen zum Ändern. Außerhalb der Komfortzeiten gilt der Spar-Sollwert.',
-                style: TextStyle(color: _muted, fontSize: 11)),
+            padding: EdgeInsets.only(left: 26, right: 92, top: 2),
+            child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+              Text('0', style: TextStyle(color: _muted, fontSize: 10)),
+              Text('6', style: TextStyle(color: _muted, fontSize: 10)),
+              Text('12', style: TextStyle(color: _muted, fontSize: 10)),
+              Text('18', style: TextStyle(color: _muted, fontSize: 10)),
+              Text('24', style: TextStyle(color: _muted, fontSize: 10)),
+            ]),
           ),
+          const SizedBox(height: 6),
+          const Text('Tag antippen, um die Zeiten zu ändern.', style: TextStyle(color: _muted, fontSize: 11)),
+          const SizedBox(height: 12),
+          if (scheduleIgnored)
+            _info('Der Regler steht auf „${eclModeLabel(mode)}“ – diese Zeiten werden gerade nicht genutzt.')
+          else if (lowered < 0.5)
+            _info(
+              'Es wird nie abgesenkt, die Heizung hält rund um die Uhr ${_t(comfort)}. '
+              '${kelvin != null && kelvin >= 1 ? 'Nachts absenken (22–6 Uhr) spart grob bis zu '
+                  '${WeekSchedule.savingPercent(loweredHoursPerWeek: 56, kelvin: kelvin).fixed(0)} %.' : ''}',
+            )
+          else if (kelvin != null && kelvin >= 0 && kelvin < 1)
+            _info(
+              'Abgesenkt ist nur ${kelvin.fixed(1)} °C kühler als warm – das spart kaum etwas. '
+              'Üblich sind 2–4 °C weniger (Wert „Abgesenkt“ antippen).',
+            )
+          else if (kelvin != null && kelvin > 0)
+            _info(
+              '${lowered.fixed(0)} Stunden pro Woche abgesenkt um ${kelvin.fixed(1)} °C: '
+              'spart grob bis zu ${WeekSchedule.savingPercent(loweredHoursPerWeek: lowered, kelvin: kelvin).fixed(0)} % Heizenergie.',
+            ),
           if (savingTooHigh) ...[
-            const SizedBox(height: 10),
+            const SizedBox(height: 8),
             _warning(
-              'Der Spar-Sollwert (${_t(saving)}) ist höher als Komfort (${_t(comfort)}): '
-              'außerhalb der Komfortzeiten heizt der Regler wärmer statt sparsamer.',
+              '„Abgesenkt“ (${_t(saving)}) ist wärmer als „Warm“ (${_t(comfort)}): '
+              'außerhalb der warmen Zeiten heizt der Regler mehr statt weniger.',
               button: TextButton(
                 key: const Key('fixSaving'),
                 onPressed: () => _fixSaving(context, comfort, saving),
-                child: const Text('Spar-Sollwert ändern'),
+                child: const Text('Absenkung ändern'),
               ),
             ),
           ],
@@ -112,8 +145,8 @@ class ControllerScheduleCard extends StatelessWidget {
             const SizedBox(height: 8),
             _warning(
               '${emptyDays.map((d) => WeekSchedule.dayNames[d]).join(', ')} '
-              '${emptyDays.length == 1 ? 'hat' : 'haben'} keine Komfortzeit – '
-              'der Regler nutzt dort ganztags den Spar-Sollwert.',
+              '${emptyDays.length == 1 ? 'hat' : 'haben'} keine warme Zeit – '
+              'dort bleibt es den ganzen Tag abgesenkt.',
               button: TextButton(
                 key: const Key('fixEmptyDays'),
                 onPressed: () => _fixDays(context, emptyDays, template),
@@ -121,9 +154,82 @@ class ControllerScheduleCard extends StatelessWidget {
               ),
             ),
           ],
+          const SizedBox(height: 12),
+          const Text('Vorlagen', style: TextStyle(color: _text, fontSize: 12.5, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 6),
+          Wrap(spacing: 8, runSpacing: 8, children: [
+            for (final preset in SchedulePreset.all)
+              ChoiceChip(
+                key: Key('schedulePreset_${preset.id}'),
+                label: Text(preset.title),
+                selected: schedule.sameAs(preset.schedule),
+                onSelected: (_) => _applyPreset(context, preset, schedule),
+              ),
+          ]),
         ],
       ),
     );
+  }
+
+  static String _dayText(List<SchedulePeriod> active) {
+    if (active.isEmpty) return 'nie warm';
+    if (active.length == 1 && active.first == SchedulePeriod.allDay) return 'ganztags';
+    String h(int hhmm) => hhmm % 100 == 0 ? '${hhmm ~/ 100}' : SchedulePeriod.formatTime(hhmm);
+    return active.map((p) => '${h(p.start)}–${h(p.stop)}').join(', ');
+  }
+
+  /// 0–24 h bar: warm periods coloured, the rest (lowered) grey-blue.
+  Widget _timeline(List<SchedulePeriod> active) => LayoutBuilder(
+        builder: (context, box) {
+          double x(int hhmm) => box.maxWidth * ((hhmm ~/ 100) * 60 + hhmm % 100) / (24 * 60);
+          return Container(
+            height: 14,
+            decoration: BoxDecoration(
+              color: _lowColor.withValues(alpha: 0.18),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Stack(children: [
+              for (final p in active)
+                Positioned(
+                  left: x(p.start),
+                  width: (x(p.stop) - x(p.start)).clamp(1.0, box.maxWidth),
+                  top: 0,
+                  bottom: 0,
+                  child: Container(
+                    decoration: BoxDecoration(color: _warmColor, borderRadius: BorderRadius.circular(4)),
+                  ),
+                ),
+            ]),
+          );
+        },
+      );
+
+  Widget _info(String text) => Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: _lowColor.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: _lowColor.withValues(alpha: 0.3)),
+        ),
+        child: Text(text, key: const Key('scheduleInfo'), style: const TextStyle(color: _text, fontSize: 12, height: 1.35)),
+      );
+
+  Future<void> _applyPreset(BuildContext context, SchedulePreset preset, WeekSchedule current) async {
+    if (current.sameAs(preset.schedule)) return;
+    if (!await _confirm(context, 'Vorlage „${preset.title}“',
+        '${preset.description}.\n\nDie geänderten Tage werden an den Regler gesendet, '
+        'zurückgelesen und protokolliert.')) {
+      return;
+    }
+    if (!context.mounted) return;
+    await _run(context, () async {
+      for (var d = 0; d < 7; d++) {
+        final now = provider.controllerSchedule ?? current;
+        if (now.sameDay(preset.schedule, d)) continue;
+        await provider.writeScheduleDay(d, preset.periodsFor(d));
+      }
+    }, 'Vorlage „${preset.title}“ übernommen.');
   }
 
   Widget _chip(String label, String value, Color color) => Container(
@@ -133,7 +239,11 @@ class ControllerScheduleCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(8),
           border: Border.all(color: color.withValues(alpha: 0.35)),
         ),
-        child: Text('$label $value', style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w600)),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Container(width: 10, height: 10, decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(2))),
+          const SizedBox(width: 6),
+          Text('$label $value', style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w600)),
+        ]),
       );
 
   Widget _warning(String text, {required Widget button}) => Container(
@@ -199,7 +309,7 @@ class ControllerScheduleCard extends StatelessWidget {
   Future<void> _editDay(BuildContext context, int day, WeekSchedule schedule) async {
     final result = await showScheduleDayEditor(
       context,
-      title: 'Komfortzeiten ${WeekSchedule.dayNames[day]}',
+      title: 'Warm am ${WeekSchedule.dayNames[day]}',
       initial: schedule.days[day],
     );
     if (result == null || !context.mounted) return;
@@ -213,15 +323,14 @@ class ControllerScheduleCard extends StatelessWidget {
         await provider.writeScheduleDay(d, periods);
       }
     }, 'Zeitprogramm übernommen: ${applyToAll ? 'alle Tage' : WeekSchedule.dayNames[day]} '
-        '${active.isEmpty ? 'ohne Komfortzeit' : active}');
+        '${active.isEmpty ? 'ohne warme Zeit' : active}');
   }
 
   Future<void> _fixDays(BuildContext context, List<int> days, List<SchedulePeriod> template) async {
     final names = days.map((d) => WeekSchedule.dayNames[d]).join(', ');
     final plan = template.where((p) => p.isActive).join(', ');
     if (!await _confirm(context, 'Zeitprogramm ergänzen',
-        '$names bekommt die Komfortzeit $plan – wie die anderen Tage. '
-        'Danach gilt dort der Komfort-Sollwert statt des Spar-Sollwerts.\n\n'
+        '$names wird $plan warm – wie die anderen Tage – statt den ganzen Tag abgesenkt.\n\n'
         'Die Änderung wird an den Regler gesendet, zurückgelesen und protokolliert.')) {
       return;
     }
@@ -241,10 +350,10 @@ class ControllerScheduleCard extends StatelessWidget {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setState) => AlertDialog(
           backgroundColor: const Color(0xFF2A2A32),
-          title: const Text('Spar-Sollwert', style: TextStyle(color: _text, fontSize: 18)),
+          title: const Text('Abgesenkte Temperatur', style: TextStyle(color: _text, fontSize: 18)),
           content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(
-              'Gilt außerhalb der Komfortzeiten. Üblich sind 2–4 °C unter Komfort (${_t(comfort)}). '
+              'Gilt außerhalb der warmen Zeiten. Üblich sind 2–4 °C unter „Warm“ (${_t(comfort)}). '
               'Aktuell: ${_t(saving)}.',
               style: const TextStyle(color: Color(0xFFB0B0BA), fontSize: 13.5, height: 1.4),
             ),
@@ -271,6 +380,6 @@ class ControllerScheduleCard extends StatelessWidget {
     );
     if (chosen == null || !context.mounted) return;
     await _run(context, () => provider.writeParameter(ECLRegisters.savingRoomTemp, chosen),
-        'Spar-Sollwert auf ${_t(chosen)} gesetzt.');
+        'Abgesenkt auf ${_t(chosen)} gesetzt.');
   }
 }

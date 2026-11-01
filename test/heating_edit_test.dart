@@ -112,6 +112,9 @@ void main() {
   });
 
   testWidgets('schedule card: tap a day, apply to all → only differing days are written', (tester) async {
+    tester.view.physicalSize = const Size(1080, 3600);
+    tester.view.devicePixelRatio = 2.6;
+    addTearDown(tester.view.resetPhysicalSize);
     final provider = _RecordingProvider()
       ..setReadingForTesting(ECLRegisters.roomTargetTemp, 21)
       ..setReadingForTesting(ECLRegisters.savingRoomTemp, 18)
@@ -129,7 +132,7 @@ void main() {
 
     await tester.tap(find.byKey(const Key('scheduleDay_1')));
     await tester.pumpAndSettle();
-    expect(find.text('Komfortzeiten Dienstag'), findsOneWidget);
+    expect(find.text('Warm am Dienstag'), findsOneWidget);
     await tester.tap(find.byKey(const Key('applyToAllDays')));
     await tester.pump();
     await tester.tap(find.byKey(const Key('saveScheduleDay')));
@@ -137,14 +140,56 @@ void main() {
 
     expect(provider.scheduleWrites.map((w) => w.$1), [0]); // Monday only
     expect(provider.scheduleWrites.single.$2.first, SchedulePeriod.allDay);
-    expect(find.text('Komfort 00:00–24:00'), findsNWidgets(7));
+    expect(find.text('ganztags'), findsNWidgets(7));
+    expect(find.textContaining('Es wird nie abgesenkt'), findsOneWidget);
+    expect(tester.widget<ChoiceChip>(find.byKey(const Key('schedulePreset_always'))).selected, isTrue);
 
     // the saving setpoint chip opens its editor
     await tester.tap(find.byKey(const Key('editSaving')));
     await tester.pumpAndSettle();
-    expect(find.text('Spar-Sollwert'), findsOneWidget);
+    expect(find.text('Abgesenkte Temperatur'), findsOneWidget);
     await tester.tap(find.text('Abbrechen'));
     await tester.pumpAndSettle();
+    await tester.pumpWidget(const SizedBox.shrink());
+    provider.dispose();
+  });
+
+  test('lowered hours and the rough saving bound', () {
+    final night = SchedulePreset.all.firstWhere((p) => p.id == 'night').schedule;
+    expect(night.loweredHoursPerWeek, 56);
+    expect(WeekSchedule.savingPercent(loweredHoursPerWeek: 56, kelvin: 3), closeTo(6, 0.01));
+    expect(WeekSchedule.savingPercent(loweredHoursPerWeek: 56, kelvin: -1), 0);
+    final working = SchedulePreset.all.firstWhere((p) => p.id == 'working');
+    expect(working.periodsFor(0).where((p) => p.isActive).length, 2);
+    expect(working.periodsFor(6).first, const SchedulePeriod(700, 2300));
+  });
+
+  testWidgets('presets: "Nachts absenken" writes every differing day after confirmation', (tester) async {
+    tester.view.physicalSize = const Size(1080, 3600);
+    tester.view.devicePixelRatio = 2.6;
+    addTearDown(tester.view.resetPhysicalSize);
+    final provider = _RecordingProvider()
+      ..setReadingForTesting(ECLRegisters.roomTargetTemp, 21)
+      ..setReadingForTesting(ECLRegisters.savingRoomTemp, 20.5)
+      ..setControllerScheduleForTesting(SchedulePreset.all.first.schedule); // always warm
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: SingleChildScrollView(
+          child: ListenableBuilder(listenable: provider, builder: (_, _) => ControllerScheduleCard(provider: provider)),
+        ),
+      ),
+    ));
+    await tester.tap(find.byKey(const Key('schedulePreset_night')));
+    await tester.pumpAndSettle();
+    expect(find.text('Vorlage „Nachts absenken“'), findsOneWidget);
+    await tester.tap(find.text('An Regler senden'));
+    await tester.pumpAndSettle();
+
+    expect(provider.scheduleWrites.map((w) => w.$1), [0, 1, 2, 3, 4, 5, 6]);
+    expect(find.text('6–22'), findsNWidgets(7));
+    expect(tester.widget<ChoiceChip>(find.byKey(const Key('schedulePreset_night'))).selected, isTrue);
+    // only 0.5 °C lower → the card says it hardly saves anything
+    expect(find.textContaining('nur 0.5 °C kühler'), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
     provider.dispose();
   });

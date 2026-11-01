@@ -83,6 +83,19 @@ class WeekSchedule {
     return counts.values.reduce((a, b) => b.$1 > a.$1 ? b : a).$2;
   }
 
+  /// Hours per week outside comfort periods (= at the saving setpoint).
+  double get loweredHoursPerWeek =>
+      7 * 24 - days.expand((d) => d).fold<int>(0, (sum, p) => sum + p.minutes) / 60;
+
+  /// Rough upper bound of the heating energy saved by lowering for
+  /// [loweredHoursPerWeek] by [kelvin]: ~6 % per °C (as for the room
+  /// setpoint), weighted by the share of the week. Upper bound because the
+  /// house does not cool down to the saving setpoint at once.
+  static double savingPercent({required double loweredHoursPerWeek, required double kelvin}) =>
+      kelvin <= 0 ? 0 : 6.0 * kelvin * loweredHoursPerWeek / (7 * 24);
+
+  bool sameAs(WeekSchedule other) => [for (var d = 0; d < 7; d++) sameDay(other, d)].every((same) => same);
+
   WeekSchedule withDay(int day, List<SchedulePeriod> periods) =>
       WeekSchedule([for (var d = 0; d < 7; d++) d == day ? periods : days[d]]);
 
@@ -108,6 +121,32 @@ class WeekSchedule {
     }
     return true;
   }
+}
+
+/// Ready-made weekly plans for the heating schedule card.
+class SchedulePreset {
+  const SchedulePreset(this.id, this.title, this.description, this.weekday, this.weekend);
+
+  final String id;
+  final String title;
+  final String description;
+  final List<SchedulePeriod> weekday;
+  final List<SchedulePeriod> weekend;
+
+  static const _u = SchedulePeriod.unused;
+
+  static const all = [
+    SchedulePreset('always', 'Immer warm', 'rund um die Uhr warm, keine Absenkung',
+        [SchedulePeriod.allDay, _u, _u], [SchedulePeriod.allDay, _u, _u]),
+    SchedulePreset('night', 'Nachts absenken', 'warm 6–22 Uhr, nachts abgesenkt',
+        [SchedulePeriod(600, 2200), _u, _u], [SchedulePeriod(600, 2200), _u, _u]),
+    SchedulePreset('working', 'Berufstätig', 'Mo–Fr warm 6–8 und 16–22 Uhr, Wochenende 7–23 Uhr',
+        [SchedulePeriod(600, 800), SchedulePeriod(1600, 2200), _u], [SchedulePeriod(700, 2300), _u, _u]),
+  ];
+
+  List<SchedulePeriod> periodsFor(int day) => day < 5 ? weekday : weekend;
+
+  WeekSchedule get schedule => WeekSchedule([for (var d = 0; d < 7; d++) periodsFor(d)]);
 }
 
 /// Text for the ECL circuit mode (PNU 4201).
