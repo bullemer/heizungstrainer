@@ -444,14 +444,8 @@ class _BackupScreenState extends State<BackupScreen> {
                 _buildActiveStatusCard(provider, isConnected, mode),
                 const SizedBox(height: 20),
 
-                // ── Factory Presets ───────────────────────────────────────
-                _buildSectionHeader('Vordefinierte Profile'),
-                const SizedBox(height: 10),
-                for (final preset in ConfigurationBackup.presetsFor(mode))
-                  _buildPresetTile(preset, provider, isConnected, mode),
-
-                const SizedBox(height: 24),
-
+                // (No fixed "profiles": they were just three positions of the
+                // Basis-Wärme slider on the start page.)
                 // ── User Backups List ─────────────────────────────────────
                 _buildSectionHeader('Eigene Sicherungen (${_backups.length})'),
                 const SizedBox(height: 10),
@@ -549,118 +543,6 @@ class _BackupScreenState extends State<BackupScreen> {
                 ),
               ),
             ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPresetTile(
-    ConfigurationBackup preset,
-    ECLProvider provider,
-    bool isConnected,
-    String mode,
-  ) {
-    final current = _currentValue(provider, mode);
-    final target = _backupValue(preset);
-    final isCurrent = isConnected &&
-        current != null &&
-        target != null &&
-        (current - target).abs() < 0.05;
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: BoxDecoration(
-        color: _card,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: isCurrent ? _accent.withValues(alpha: 0.5) : _border,
-          width: isCurrent ? 1.5 : 1,
-        ),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            decoration: BoxDecoration(
-              color: _accent.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Text(
-              _formatValue(target, preset.controlMode),
-              style: const TextStyle(
-                color: _accent,
-                fontWeight: FontWeight.bold,
-                fontSize: 13,
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Wrap(
-                  children: [
-                    Text(
-                      preset.name,
-                      style: const TextStyle(
-                        color: _textPrimary,
-                        fontSize: 13.5,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    if (isCurrent) ...[
-                      const SizedBox(width: 6),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF66BB6A).withValues(alpha: 0.15),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: const Text(
-                          'Aktiv',
-                          style: TextStyle(
-                            color: Color(0xFF66BB6A),
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-                if (preset.note != null) ...[
-                  const SizedBox(height: 2),
-                  Text(
-                    preset.note!,
-                    style: const TextStyle(
-                      color: _textSecondary,
-                      fontSize: 11.5,
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          OutlinedButton(
-            onPressed: isConnected && !isCurrent && !_isRestoring
-                ? () => _restoreBackup(preset, provider)
-                : null,
-            style: OutlinedButton.styleFrom(
-              foregroundColor: _accent,
-              side: BorderSide(
-                color: isConnected && !isCurrent
-                    ? _accent.withValues(alpha: 0.4)
-                    : Colors.transparent,
-              ),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              minimumSize: const Size(64, 34),
-            ),
-            child: const Text('Laden', style: TextStyle(fontSize: 12)),
           ),
         ],
       ),

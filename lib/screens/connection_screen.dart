@@ -103,28 +103,7 @@ class _ConnectionScreenState extends State<ConnectionScreen>
               child: Column(
                 children: [
                   const AppTopStatusBar(),
-                  // ── Top Navigation Bar ──────────────────────────
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: [
-                        TextButton.icon(
-                          key: const Key('startpage_settings_button'),
-                          onPressed: () {
-                            Navigator.of(context).push(
-                              MaterialPageRoute(builder: (_) => const SettingsScreen()),
-                            );
-                          },
-                          icon: const Icon(Icons.settings_outlined, size: 18),
-                          label: const Text('Einstellungen', style: TextStyle(fontSize: 13)),
-                          style: TextButton.styleFrom(
-                            foregroundColor: colorScheme.onSurfaceVariant,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
+                  // Settings: gear in the status bar and the button below.
                   Expanded(
                     child: Center(
                       child: SingleChildScrollView(

@@ -609,11 +609,6 @@ class _HolidayScreenState extends State<HolidayScreen> {
                   ],
                 ),
               ),
-              IconButton(
-                icon: const Icon(Icons.cancel_outlined, color: Colors.redAccent),
-                onPressed: _cancelActivePlan,
-                tooltip: 'Plan beenden',
-              ),
             ],
           ),
           const SizedBox(height: 12),

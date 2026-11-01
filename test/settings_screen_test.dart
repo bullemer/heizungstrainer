@@ -110,9 +110,10 @@ void main() {
       expect(find.text('ista EcoTrend (Essen)'), findsOneWidget);
       expect(find.text('Minol Messtechnik'), findsOneWidget);
 
-      // Action buttons
-      expect(find.text('Speichern & Synchronisieren'), findsOneWidget);
-      expect(find.text('Nur speichern'), findsOneWidget);
+      // One save button (fetching billing data is in the billing card)
+      expect(find.byKey(const Key('saveSettings')), findsOneWidget);
+      expect(find.text('Nur speichern'), findsNothing);
+      expect(find.text('Protokoll & Diagnose öffnen'), findsNothing); // Logs is a tab
     });
 
     testWidgets('selecting Viessmann controller updates state and shows hardware config card',

@@ -10,7 +10,6 @@ import 'package:heizungstrainer/services/feedback_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'package:heizungstrainer/models/brunata_meter_data.dart';
-import 'package:heizungstrainer/screens/brunata_detail_screen.dart';
 import 'package:heizungstrainer/services/brunata_local_scraper_service.dart';
 import 'package:heizungstrainer/services/heating_analytics_service.dart';
 import 'package:heizungstrainer/widgets/app_top_status_bar.dart';
@@ -138,29 +137,16 @@ class AnalysisSection extends StatelessWidget {
               style: const TextStyle(color: Color(0xFFFFB74D), fontSize: 12, height: 1.35),
             ),
           ),
-        if (showBillingCard) GestureDetector(
-          onTap: (brunata != null &&
-                  brunata.hasDetail &&
-                  brunataSyncState != BrunataSyncState.initializing &&
-                  brunataSyncState != BrunataSyncState.loggingIn &&
-                  brunataSyncState != BrunataSyncState.navigating &&
-                  brunataSyncState != BrunataSyncState.scraping)
-              ? () => Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => BrunataDetailScreen(data: brunata),
-                    ),
-                  )
-              : null,
-          child: _BrunataCostCard(
+        // Monthly details are in the Vergleich tab (no second detail screen).
+        if (showBillingCard)
+          _BrunataCostCard(
             brunata: brunata,
             syncState: brunataSyncState,
             syncError: brunataSyncError,
             onSync: onSyncBrunata,
-            showDetailHint: brunata?.hasDetail ?? false,
             lastBillingSyncTime: lastBillingSyncTime,
             billingProviderName: billingProviderName,
           ),
-        ),
         if (showBillingCard) const SizedBox(height: 12),
 
         // ── B. Heating Curve Chart ──────────────────────────
@@ -202,7 +188,6 @@ class _BrunataCostCard extends StatelessWidget {
   final BrunataSyncState syncState;
   final String? syncError;
   final VoidCallback? onSync;
-  final bool showDetailHint;
   final DateTime? lastBillingSyncTime;
   final String? billingProviderName;
 
@@ -211,7 +196,6 @@ class _BrunataCostCard extends StatelessWidget {
     this.syncState = BrunataSyncState.idle,
     this.syncError,
     this.onSync,
-    this.showDetailHint = false,
     this.lastBillingSyncTime,
     this.billingProviderName,
   });
@@ -288,19 +272,6 @@ class _BrunataCostCard extends StatelessWidget {
                   ],
                 ),
               ),
-              if (showDetailHint) ...[
-                Text(
-                  'Details',
-                  style: TextStyle(
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w600,
-                    color: const Color(0xFFFFA726).withValues(alpha: 0.9),
-                  ),
-                ),
-                const Icon(Icons.chevron_right_rounded,
-                    color: Color(0xFFFFA726), size: 18),
-                const SizedBox(width: 4),
-              ],
             ],
           ),
           if (meterData != null &&
@@ -439,46 +410,7 @@ class _BrunataCostCard extends StatelessWidget {
               ]),
             ),
           ],
-          // Sync timestamp info box
-          const SizedBox(height: 12),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.04),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(
-                color: const Color(0xFF3A3A44).withValues(alpha: 0.6),
-              ),
-            ),
-            child: Row(
-              children: [
-                Icon(
-                  lastBillingSyncTime != null
-                      ? Icons.cloud_done_outlined
-                      : Icons.warning_amber_rounded,
-                  size: 15,
-                  color: lastBillingSyncTime != null
-                      ? const Color(0xFF81C784)
-                      : const Color(0xFFFFB74D),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    lastBillingSyncTime != null
-                        ? '$_effectiveBillingName: Letzter Sync ${AppTopStatusBar.formatSyncTime(lastBillingSyncTime!)}'
-                        : '$_effectiveBillingName: Noch nie synchronisiert',
-                    style: TextStyle(
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w500,
-                      color: lastBillingSyncTime != null
-                          ? const Color(0xFFB0B0BC)
-                          : const Color(0xFFFFB74D),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
+          // Last sync time is in the status bar at the top.
           const SizedBox(height: 10),
           // Sync button
           SizedBox(
@@ -776,8 +708,10 @@ class HeatingSimulationCard extends StatelessWidget {
             const Icon(Icons.show_chart_rounded, color: Color(0xFFFFA726), size: 18),
             Text(embedded ? 'Heizkurve' : 'Heizkurve & Sparpotenzial',
                 style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5, color: Color(0xFFECECF0))),
-            Text('Raum-Soll ${roomSetpoint.fixed(1)} °C',
-                style: const TextStyle(color: Color(0xFFFFA726), fontSize: 11, fontWeight: FontWeight.w600)),
+            // Embedded: the Basis-Wärme above already shows the setpoint.
+            if (!embedded)
+              Text('Raum-Soll ${roomSetpoint.fixed(1)} °C',
+                  style: const TextStyle(color: Color(0xFFFFA726), fontSize: 11, fontWeight: FontWeight.w600)),
           ]),
           const SizedBox(height: 12),
           ControllerCurveChart(

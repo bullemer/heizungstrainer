@@ -231,8 +231,8 @@ void main() {
         ),
       );
 
-      // Verify top navigation button
-      expect(find.byKey(const Key('startpage_settings_button')), findsOneWidget);
+      // No extra top navigation button (the status bar has the gear)
+      expect(find.byKey(const Key('startpage_settings_button')), findsNothing);
 
       // Verify main action list button
       expect(find.byKey(const Key('startpage_settings_action_button')), findsOneWidget);

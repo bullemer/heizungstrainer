@@ -70,30 +70,17 @@ class _LogScreenState extends State<LogScreen> {
                 onPressed: () => SettingsCheckDialog.show(context, provider),
               ),
               IconButton(
-                tooltip: 'Bericht an Backoffice senden',
+                // Send or copy the diagnostic report (both in this sheet).
+                tooltip: 'Diagnosebericht senden oder kopieren',
                 icon: const Icon(Icons.cloud_upload_outlined, color: Color(0xFFFFA726)),
                 onPressed: () => _showBackofficeConsentDialog(context, provider),
               ),
               PopupMenuButton<String>(
                 icon: const Icon(Icons.more_vert_rounded),
                 onSelected: (value) {
-                  if (value == 'clear') {
-                    _confirmClearLogs(context, logService);
-                  } else if (value == 'copy_all') {
-                    _copyAllLogsToClipboard(context, provider);
-                  }
+                  if (value == 'clear') _confirmClearLogs(context, logService);
                 },
                 itemBuilder: (context) => [
-                  const PopupMenuItem(
-                    value: 'copy_all',
-                    child: Row(
-                      children: [
-                        Icon(Icons.copy_rounded, size: 18),
-                        SizedBox(width: 8),
-                        Text('Diagnosebericht kopieren'),
-                      ],
-                    ),
-                  ),
                   const PopupMenuItem(
                     value: 'clear',
                     child: Row(
@@ -439,20 +426,6 @@ class _LogScreenState extends State<LogScreen> {
         const SnackBar(content: Text('Protokolldaten wurden bereinigt.')),
       );
     }
-  }
-
-  Future<void> _copyAllLogsToClipboard(BuildContext context, ECLProvider provider) async {
-    final payload = provider.logService.generateDiagnosticReport(
-      currentControllerId: provider.selectedControllerId,
-      currentBillingId: provider.selectedBillingId,
-    );
-    final jsonStr = const JsonEncoder.withIndent('  ').convert(payload);
-    await Clipboard.setData(ClipboardData(text: jsonStr));
-
-    if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Diagnosebericht in Zwischenablage kopiert.')),
-    );
   }
 
   void _showBackofficeConsentDialog(BuildContext context, ECLProvider provider) {

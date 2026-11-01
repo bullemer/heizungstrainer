@@ -25,7 +25,6 @@ import 'package:heizungstrainer/models/vaillant_ebusd_config.dart';
 import 'package:heizungstrainer/models/weishaupt_wem_config.dart';
 import 'package:heizungstrainer/models/nibe_modbus_config.dart';
 import 'package:heizungstrainer/providers/ecl_provider.dart';
-import 'package:heizungstrainer/screens/log_screen.dart';
 import 'package:heizungstrainer/services/device_registry.dart';
 import 'package:heizungstrainer/services/energy_price_service.dart';
 import 'package:heizungstrainer/widgets/building_profile_picker.dart';
@@ -1088,13 +1087,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                       const SizedBox(height: 12),
                       _buildDatabaseTile(provider),
-                      const SizedBox(height: 12),
-                      _buildDiagnosticLogsTile(provider),
                       const SizedBox(height: 32),
 
                       // ── ACTIONS ───────────────────────────────────
+                      // One save button; fetching billing data is the
+                      // "Daten abrufen" button in the billing card.
                       FilledButton.icon(
-                        onPressed: _saving ? null : () => _save(sync: provider.hasBillingProvider),
+                        key: const Key('saveSettings'),
+                        onPressed: _saving ? null : () => _save(sync: false),
                         icon: _saving
                             ? const SizedBox(
                                 width: 18,
@@ -1102,32 +1102,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 child: CircularProgressIndicator(
                                     strokeWidth: 2, color: Colors.black),
                               )
-                            : const Icon(Icons.sync_rounded),
-                        label: Text(
-                          provider.selectedBillingId == 'brunata_hamburg'
-                              ? 'Speichern & Synchronisieren'
-                              : provider.hasBillingProvider
-                                  ? 'Speichern & Beispieldaten laden'
-                                  : 'Speichern',
-                        ),
+                            : const Icon(Icons.save_outlined),
+                        label: const Text('Speichern'),
                         style: FilledButton.styleFrom(
                           backgroundColor: accent,
                           foregroundColor: Colors.black,
                           minimumSize: const Size.fromHeight(52),
                         ),
                       ),
-                      if (provider.hasBillingProvider) ...[
-                      const SizedBox(height: 12),
-                      OutlinedButton(
-                        onPressed: _saving ? null : () => _save(sync: false),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: const Color(0xFFECECF0),
-                          minimumSize: const Size.fromHeight(50),
-                          side: const BorderSide(color: Color(0xFF3A3A44)),
-                        ),
-                        child: const Text('Nur speichern'),
-                      ),
-                      ],
                       const SizedBox(height: 28),
                       // ── APP VERSION & BUILD INFO FOOTER ────────────
                       Center(
@@ -3500,78 +3482,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
               } else {
                 provider.exitOfflineMode();
               }
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildDiagnosticLogsTile(ECLProvider provider) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFF24242C),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFF3A3A44)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF382A18),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Icon(Icons.receipt_long_rounded,
-                    color: Color(0xFFFFA726), size: 20),
-              ),
-              const SizedBox(width: 12),
-              const Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Aktivitäts- & Diagnoseprotokoll',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFFECECF0),
-                      ),
-                    ),
-                    SizedBox(height: 2),
-                    Text(
-                      'Überwacht Messwertabrufe, Schreibbefehle & Fehlercodes live.',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Color(0xFF9E9EA8),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const Divider(color: Color(0xFF3A3A44), height: 24),
-          OutlinedButton.icon(
-            style: OutlinedButton.styleFrom(
-              foregroundColor: const Color(0xFFFFA726),
-              side: const BorderSide(color: Color(0xFFFFA726)),
-              minimumSize: const Size.fromHeight(44),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-            icon: const Icon(Icons.visibility_outlined, size: 18),
-            label: const Text('Protokoll & Diagnose öffnen'),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const LogScreen()),
-              );
             },
           ),
         ],

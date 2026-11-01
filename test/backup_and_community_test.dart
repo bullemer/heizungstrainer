@@ -83,20 +83,6 @@ void main() {
       final legacy = room.toJson()..remove('controlMode');
       expect(ConfigurationBackup.fromJson(legacy).controlMode, 'shift');
     });
-
-    test('room-mode presets carry room setpoints', () {
-      final presets = ConfigurationBackup.presetsFor('room');
-      expect(presets.map((p) => p.roomTarget), [20.0, 19.0, 21.0]);
-      expect(presets.every((p) => p.isRoomMode && p.isPreset), isTrue);
-    });
-
-    test('provides factory presets with valid values', () {
-      final presets = ConfigurationBackup.presets;
-      expect(presets, isNotEmpty);
-      expect(presets.any((p) => p.heatingCurveShift == 0.0), isTrue);
-      expect(presets.any((p) => p.heatingCurveShift == -2.0), isTrue);
-      expect(presets.every((p) => p.isPreset), isTrue);
-    });
   });
 
   group('BackupService Tests', () {
@@ -236,7 +222,7 @@ void main() {
   });
 
   group('Widget Tests for P2 Screens', () {
-    testWidgets('BackupScreen displays presets and active status card',
+    testWidgets('BackupScreen displays the active status card',
         (tester) async {
       final provider = ECLProvider();
       final backupService = BackupService(inMemoryStorage: {});
@@ -254,9 +240,8 @@ void main() {
 
       expect(find.text('Sicherungen'), findsOneWidget);
       expect(find.text('Aktiver Regler-Status'), findsOneWidget);
-      expect(find.text('Vordefinierte Profile'), findsOneWidget);
-      expect(find.textContaining('Werkseinstellung'), findsOneWidget);
-      expect(find.textContaining('Eco-Sparbetrieb'), findsOneWidget);
+      // fixed profiles removed: they duplicated the Basis-Wärme slider
+      expect(find.text('Vordefinierte Profile'), findsNothing);
 
       await tester.pumpWidget(const SizedBox.shrink());
       provider.dispose();
@@ -281,8 +266,6 @@ void main() {
 
       expect(find.text('Verbunden · Komfort-Raumsoll 21 °C'), findsOneWidget);
       expect(find.textContaining('Parallelverschiebung'), findsNothing);
-      expect(find.text('Komfortbetrieb (21 °C)'), findsOneWidget);
-      expect(find.text('Aktiv'), findsOneWidget);
 
       await tester.pumpWidget(const SizedBox.shrink());
       provider.dispose();

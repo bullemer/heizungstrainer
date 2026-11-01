@@ -91,15 +91,6 @@ class HomeScreen extends StatelessWidget {
               );
             },
           ),
-          IconButton(
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const SettingsScreen()),
-              );
-            },
-            icon: const Icon(Icons.settings_outlined, size: 22),
-            tooltip: 'Einstellungen',
-          ),
           Consumer<ECLProvider>(
             builder: (_, p, child) => IconButton(
               onPressed: p.refreshReadings,
@@ -114,19 +105,8 @@ class HomeScreen extends StatelessWidget {
                   p.disconnect();
                 }
               },
+              // Connection and IP are in the status bar above.
               itemBuilder: (_) => [
-                PopupMenuItem(
-                  value: 'ip',
-                  enabled: false,
-                  child: Row(
-                    children: [
-                      const Icon(Icons.router_outlined, size: 18),
-                      const SizedBox(width: 8),
-                      Text(p.controllerIp ?? '—'),
-                    ],
-                  ),
-                ),
-                const PopupMenuDivider(),
                 const PopupMenuItem(
                   value: 'disconnect',
                   child: Row(
@@ -211,10 +191,8 @@ class HomeScreen extends StatelessWidget {
                           pricePerKwh: provider.pricePerKwhCached,
                           onEditAnnualKwh: () => _editAnnualKwh(context, provider),
                           buildingReference: provider.buildingReference,
-                          // Heating type is changed in Einstellungen; here only the first-time prompt.
-                          onPickBuildingReference: provider.buildingProfile == null
-                              ? () => showBuildingProfilePicker(context, provider)
-                              : null,
+                          // Asked by the building card at the top; changed in Einstellungen.
+                          onPickBuildingReference: null,
                           onEditCurve: provider.supportsControllerSchedule
                               ? () => showCurveEditor(context, provider)
                               : null,
@@ -811,6 +789,9 @@ class _HeatingComfortCardState extends State<_HeatingComfortCard> {
   }
 
   Widget _buildRoomModePreview(Color accent) {
+    // In the combined card the curve part below shows the preview and
+    // explains the slider – don't say it twice.
+    if (widget.embedded) return const SizedBox.shrink();
     final current = _roomReading?.displayValue;
     final curve = ControllerHeatingCurve.fromReadings(widget.provider.getReading);
     final outdoor = widget.provider.getReading(ECLRegisters.outdoorTemp);
