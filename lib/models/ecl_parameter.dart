@@ -150,11 +150,16 @@ abstract final class ECLRegisters {
     maxValue: 30.0,
   );
 
-  // ── Heating curve, circuit 1 (read-only here) ─────────────────
+  // ── Heating curve, circuit 1 (points and max. flow writable) ──
   // PNU 11175 slope (×0.1), 11177/11178 min/max flow, 11400–11405 the six
   // flow-temperature points at -30/-15/-5/0/5/15 °C outdoor, all for a room
   // setpoint of 20 °C (Danfoss Kommunikationsbeschreibung, Tabelle 6-3).
 
+  /// "Heizkurve" (slope, PNU 11175, ×0.1). Read only on purpose: writing it
+  /// makes the controller recalculate all six points from its own table and
+  /// overwrites individually set points (checked live 2026-11-01: 0.5 → 0.4
+  /// turned 40/36/32/29/26/22 into 45/39/35/33/31/27, i.e. warmer). The app
+  /// changes the curve by writing the points instead.
   static const curveSlope = ECLParameter(
     id: 'curve_slope', name: 'Heizkurve (Neigung)', unit: '',
     modbusAddress: 11174, multiplier: 0.1,
@@ -296,13 +301,16 @@ abstract final class ECLRegisters {
   /// Outdoor temperatures of the six curve points, in register order.
   static const List<double> curvePointOutdoorTemps = [-30, -15, -5, 0, 5, 15];
 
+  /// Flow temperature at the six outdoor temperatures (PNU 11400–11405, °C).
+  /// Writable one by one with function 6 (checked live 2026-11-01); writing
+  /// them leaves the slope register unchanged.
   static const List<ECLParameter> curvePoints = [
-    ECLParameter(id: 'curve_point_m30', name: 'Vorlauf bei -30 °C', unit: '°C', modbusAddress: 11399, multiplier: 1.0),
-    ECLParameter(id: 'curve_point_m15', name: 'Vorlauf bei -15 °C', unit: '°C', modbusAddress: 11400, multiplier: 1.0),
-    ECLParameter(id: 'curve_point_m5', name: 'Vorlauf bei -5 °C', unit: '°C', modbusAddress: 11401, multiplier: 1.0),
-    ECLParameter(id: 'curve_point_0', name: 'Vorlauf bei 0 °C', unit: '°C', modbusAddress: 11402, multiplier: 1.0),
-    ECLParameter(id: 'curve_point_p5', name: 'Vorlauf bei 5 °C', unit: '°C', modbusAddress: 11403, multiplier: 1.0),
-    ECLParameter(id: 'curve_point_p15', name: 'Vorlauf bei 15 °C', unit: '°C', modbusAddress: 11404, multiplier: 1.0),
+    ECLParameter(id: 'curve_point_m30', name: 'Vorlauf bei -30 °C', unit: '°C', modbusAddress: 11399, multiplier: 1.0, isWritable: true, minValue: 10, maxValue: 90),
+    ECLParameter(id: 'curve_point_m15', name: 'Vorlauf bei -15 °C', unit: '°C', modbusAddress: 11400, multiplier: 1.0, isWritable: true, minValue: 10, maxValue: 90),
+    ECLParameter(id: 'curve_point_m5', name: 'Vorlauf bei -5 °C', unit: '°C', modbusAddress: 11401, multiplier: 1.0, isWritable: true, minValue: 10, maxValue: 90),
+    ECLParameter(id: 'curve_point_0', name: 'Vorlauf bei 0 °C', unit: '°C', modbusAddress: 11402, multiplier: 1.0, isWritable: true, minValue: 10, maxValue: 90),
+    ECLParameter(id: 'curve_point_p5', name: 'Vorlauf bei 5 °C', unit: '°C', modbusAddress: 11403, multiplier: 1.0, isWritable: true, minValue: 10, maxValue: 90),
+    ECLParameter(id: 'curve_point_p15', name: 'Vorlauf bei 15 °C', unit: '°C', modbusAddress: 11404, multiplier: 1.0, isWritable: true, minValue: 10, maxValue: 90),
   ];
 
   /// Optional curve parameters; not every application provides them.

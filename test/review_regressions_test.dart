@@ -94,7 +94,7 @@ void main() {
       maxFlow: 50,
     )).firstWhere((x) => x.id == 'max_flow_floor');
     expect(f.severity, FindingSeverity.warning);
-    expect(f.action, FindingAction.openCurveAssistant);
+    expect(f.action, FindingAction.openCurveEditor);
   });
 
   test('#3 a poll overlapping a write is discarded – no false "app change missing"', () async {

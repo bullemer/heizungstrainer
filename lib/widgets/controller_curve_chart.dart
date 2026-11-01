@@ -17,8 +17,6 @@ class ControllerCurveChart extends StatelessWidget {
   final double? outdoorTemp;
   final double height;
 
-  /// Grey dashed reference: Danfoss factory curve at the same room setpoint.
-  final bool showFactoryCurve;
 
   /// Green band: EnergieSchweiz guide values for this building type
   /// (defined for 20 °C room temperature).
@@ -26,7 +24,6 @@ class ControllerCurveChart extends StatelessWidget {
 
   static const currentColor = Color(0xFFFFA726);
   static const simulatedColor = Color(0xFF42A5F5);
-  static const factoryColor = Color(0xFF9E9EA8);
   static const referenceColor = Color(0xFF66BB6A);
   static const _grid = Color(0xFF3A3A44);
 
@@ -37,7 +34,6 @@ class ControllerCurveChart extends StatelessWidget {
     this.simulatedSetpoint,
     this.outdoorTemp,
     this.height = 230,
-    this.showFactoryCurve = true,
     this.reference,
   });
 
@@ -67,7 +63,6 @@ class ControllerCurveChart extends StatelessWidget {
     final stored = line(curve, base);
     final effective = line(curve, room);
     final simulated = line(curve, sim);
-    final factory = line(danfossFactoryCurve, base);
     final ref = reference;
     final refLow = ref == null ? <FlSpot>[] : [for (var x = _minX; x <= _maxX; x += 1) FlSpot(x, ref.lowAt(x))];
     final refHigh = ref == null ? <FlSpot>[] : [for (var x = _minX; x <= _maxX; x += 1) FlSpot(x, ref.highAt(x))];
@@ -79,17 +74,6 @@ class ControllerCurveChart extends StatelessWidget {
         (LineChartBarData(spots: refLow, color: referenceColor.withValues(alpha: 0.5), barWidth: 1, dotData: const FlDotData(show: false)), null),
         (LineChartBarData(spots: refHigh, color: referenceColor.withValues(alpha: 0.5), barWidth: 1, dotData: const FlDotData(show: false)), 'Richtwert'),
       ],
-      if (showFactoryCurve)
-        (
-          LineChartBarData(
-            spots: factory,
-            color: factoryColor.withValues(alpha: 0.8),
-            barWidth: 1.5,
-            dashArray: [3, 4],
-            dotData: const FlDotData(show: false),
-          ),
-          'Werkseinstellung'
-        ),
       (
         LineChartBarData(
           spots: stored,
@@ -132,8 +116,7 @@ class ControllerCurveChart extends StatelessWidget {
         ),
     ];
 
-    // Scale to the user's curves (like the controller's own view); the much
-    // higher factory curve is clipped instead of squashing everything.
+    // Scale to the user's curves (like the controller's own view).
     final all = [...stored, ...effective, if (showsSimulation) ...simulated, ...refLow, ...refHigh].map((s) => s.y);
     final minY = (all.reduce((a, b) => a < b ? a : b) / 5).floor() * 5 - 5.0;
     final maxY = (all.reduce((a, b) => a > b ? a : b) / 5).ceil() * 5 + 5.0;

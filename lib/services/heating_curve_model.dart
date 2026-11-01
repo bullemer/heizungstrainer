@@ -47,6 +47,20 @@ class ControllerHeatingCurve {
     );
   }
 
+  /// The curve made flatter (factor < 1) or steeper (> 1) around the 20 °C
+  /// reference, keeping its shape: each point moves by [factor] × its
+  /// distance to 20 °C, rounded to whole degrees as the controller stores
+  /// them. These are exactly the values the app writes.
+  ControllerHeatingCurve scaled(double factor) => ControllerHeatingCurve(
+        outdoorTemps: outdoorTemps,
+        flowTemps: [
+          for (final f in flowTemps) (referenceRoomTemp + (f - referenceRoomTemp) * factor).roundToDouble(),
+        ],
+        slope: slope,
+        minFlow: minFlow,
+        maxFlow: maxFlow,
+      );
+
   /// Flow-temperature change the controller applies for [roomSetpoint].
   double roomCorrection(double roomSetpoint) =>
       (roomSetpoint - referenceRoomTemp) * slope * danfossRoomConstant;

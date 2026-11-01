@@ -620,9 +620,12 @@ class HeatingSimulationCard extends StatelessWidget {
   final String? annualHeatingKwhSource;
   final double? pricePerKwh;
   final VoidCallback? onEditAnnualKwh;
-  final VoidCallback? onOpenAssistant;
   final BuildingReference? buildingReference;
   final VoidCallback? onPickBuildingReference;
+  /// Opens the curve editor ("Heizkurve anpassen"); hidden when null.
+  final VoidCallback? onEditCurve;
+  /// Drawn inside another card (no own frame).
+  final bool embedded;
 
   const HeatingSimulationCard({
     super.key,
@@ -634,9 +637,10 @@ class HeatingSimulationCard extends StatelessWidget {
     required this.annualHeatingKwhSource,
     required this.pricePerKwh,
     this.onEditAnnualKwh,
-    this.onOpenAssistant,
     this.buildingReference,
     this.onPickBuildingReference,
+    this.onEditCurve,
+    this.embedded = false,
   });
 
   Widget _legendItem(Color color, String label, {bool dashed = false, bool band = false}) => Wrap(
@@ -732,19 +736,21 @@ class HeatingSimulationCard extends StatelessWidget {
 
     return Container(
       key: const Key('controllerCurveSection'),
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: const Color(0xFF2A2A32),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFF3A3A44)),
-      ),
+      padding: embedded ? EdgeInsets.zero : const EdgeInsets.all(18),
+      decoration: embedded
+          ? null
+          : BoxDecoration(
+              color: const Color(0xFF2A2A32),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: const Color(0xFF3A3A44)),
+            ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Wrap(spacing: 8, runSpacing: 4, children: [
             const Icon(Icons.show_chart_rounded, color: Color(0xFFFFA726), size: 18),
-            const Text('Heizkurve & Sparpotenzial',
-                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5, color: Color(0xFFECECF0))),
+            Text(embedded ? 'Heizkurve' : 'Heizkurve & Sparpotenzial',
+                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5, color: Color(0xFFECECF0))),
             Text('Raum-Soll ${roomSetpoint.fixed(1)} °C',
                 style: const TextStyle(color: Color(0xFFFFA726), fontSize: 11, fontWeight: FontWeight.w600)),
           ]),
@@ -764,13 +770,6 @@ class HeatingSimulationCard extends StatelessWidget {
               _legendItem(ControllerCurveChart.currentColor,
                   'Wirksam bei Raum-Soll ${roomSetpoint.fixed(1)} °C', dashed: true),
             if (previewing) _legendItem(ControllerCurveChart.simulatedColor, 'Vorschau', dashed: true),
-            _legendItem(
-              ControllerCurveChart.factoryColor,
-              (buildingReference?.isFloorHeating ?? false)
-                  ? 'Danfoss-Werkseinstellung (für Heizkörper)'
-                  : 'Danfoss-Werkseinstellung',
-              dashed: true,
-            ),
             if (buildingReference != null)
               _legendItem(ControllerCurveChart.referenceColor, 'Richtwert EnergieSchweiz', band: true),
           ]),
@@ -791,6 +790,22 @@ class HeatingSimulationCard extends StatelessWidget {
                 child: Text(buildingReference == null ? 'Gebäudetyp' : 'Ändern'),
               ),
           ]),
+          if (onEditCurve != null) ...[
+            const SizedBox(height: 6),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                key: const Key('editCurve'),
+                icon: const Icon(Icons.tune_rounded, size: 18),
+                label: const Text('Heizkurve anpassen'),
+                onPressed: onEditCurve,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFFFFA726),
+                  side: const BorderSide(color: Color(0xFF5A4630)),
+                ),
+              ),
+            ),
+          ],
           const SizedBox(height: 10),
           Text(
             previewing
@@ -798,7 +813,7 @@ class HeatingSimulationCard extends StatelessWidget {
                     '${outdoorTemp.fixed(1)} °C außen ${flowNow.fixed(1)} → '
                     '${flowPreview.fixed(1)} °C. Noch nicht übernommen.'
                 : 'Vorlauf jetzt bei ${outdoorTemp.fixed(1)} °C außen: '
-                    '${flowNow.fixed(1)} °C. Bewege oben „Haus Basis-Wärme“, um eine '
+                    '${flowNow.fixed(1)} °C. Bewege oben die Basis-Wärme, um eine '
                     'andere Einstellung zu simulieren.',
             style: muted,
           ),
@@ -833,16 +848,6 @@ class HeatingSimulationCard extends StatelessWidget {
                 ),
             ],
           ),
-          if (onOpenAssistant != null)
-            Align(
-              alignment: Alignment.centerLeft,
-              child: TextButton.icon(
-                key: const Key('openCurveSimulator'),
-                icon: const Icon(Icons.auto_graph_rounded, size: 18),
-                label: const Text('Optimierungs-Assistent: niedrigste angenehme Einstellung finden'),
-                onPressed: onOpenAssistant,
-              ),
-            ),
           const SavingsGuideLink(),
         ],
       ),

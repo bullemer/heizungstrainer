@@ -5,10 +5,12 @@ import 'package:heizungstrainer/models/ecl_parameter.dart';
 import 'package:heizungstrainer/models/week_schedule.dart';
 import 'package:heizungstrainer/providers/ecl_provider.dart';
 import 'package:heizungstrainer/exceptions/modbus_exceptions.dart';
+import 'package:heizungstrainer/widgets/schedule_day_editor.dart';
 
 /// Start page card: the controller's weekly comfort schedule, comfort and
-/// saving setpoint – with warnings and one-tap fixes for typical mistakes
-/// (a day without comfort period, saving setpoint above comfort).
+/// saving setpoint – every day and the saving setpoint editable, plus
+/// warnings and one-tap fixes for typical mistakes (a day without comfort
+/// period, saving setpoint above comfort).
 class ControllerScheduleCard extends StatelessWidget {
   const ControllerScheduleCard({super.key, required this.provider});
 
@@ -56,28 +58,44 @@ class ControllerScheduleCard extends StatelessWidget {
           Row(children: [
             _chip('Komfort', _t(comfort), const Color(0xFF66BB6A)),
             const SizedBox(width: 8),
-            _chip('Spar', _t(saving), savingTooHigh ? const Color(0xFFEF5350) : const Color(0xFF42A5F5)),
+            InkWell(
+              key: const Key('editSaving'),
+              borderRadius: BorderRadius.circular(8),
+              onTap: comfort != null && saving != null ? () => _fixSaving(context, comfort, saving) : null,
+              child: _chip('Spar', '${_t(saving)} ✎', savingTooHigh ? const Color(0xFFEF5350) : const Color(0xFF42A5F5)),
+            ),
           ]),
           const SizedBox(height: 10),
           for (var d = 0; d < 7; d++)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 2),
-              child: Row(children: [
-                SizedBox(width: 28, child: Text(WeekSchedule.dayShort[d], style: const TextStyle(color: _muted, fontSize: 12))),
-                Expanded(
-                  child: Text(
-                    schedule.hasComfort(d)
-                        ? 'Komfort ${schedule.describeDay(d)}'
-                        : 'keine Komfortzeit → ganztags Spar ${_t(saving)}',
-                    style: TextStyle(
-                      fontSize: 12.5,
-                      color: schedule.hasComfort(d) ? _text : _warn,
-                      fontWeight: schedule.hasComfort(d) ? FontWeight.normal : FontWeight.w600,
+            InkWell(
+              key: Key('scheduleDay_$d'),
+              borderRadius: BorderRadius.circular(6),
+              onTap: () => _editDay(context, d, schedule),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                child: Row(children: [
+                  SizedBox(width: 28, child: Text(WeekSchedule.dayShort[d], style: const TextStyle(color: _muted, fontSize: 12))),
+                  Expanded(
+                    child: Text(
+                      schedule.hasComfort(d)
+                          ? 'Komfort ${schedule.describeDay(d)}'
+                          : 'keine Komfortzeit → ganztags Spar ${_t(saving)}',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        color: schedule.hasComfort(d) ? _text : _warn,
+                        fontWeight: schedule.hasComfort(d) ? FontWeight.normal : FontWeight.w600,
+                      ),
                     ),
                   ),
-                ),
-              ]),
+                  const Icon(Icons.edit_outlined, size: 15, color: _muted),
+                ]),
+              ),
             ),
+          const Padding(
+            padding: EdgeInsets.only(top: 4),
+            child: Text('Tag antippen zum Ändern. Außerhalb der Komfortzeiten gilt der Spar-Sollwert.',
+                style: TextStyle(color: _muted, fontSize: 11)),
+          ),
           if (savingTooHigh) ...[
             const SizedBox(height: 10),
             _warning(
@@ -178,6 +196,26 @@ class ControllerScheduleCard extends StatelessWidget {
     await ControllerScheduleCard(provider: provider)._fixDays(context, empty, template);
   }
 
+  Future<void> _editDay(BuildContext context, int day, WeekSchedule schedule) async {
+    final result = await showScheduleDayEditor(
+      context,
+      title: 'Komfortzeiten ${WeekSchedule.dayNames[day]}',
+      initial: schedule.days[day],
+    );
+    if (result == null || !context.mounted) return;
+    final (periods, applyToAll) = result;
+    final days = applyToAll ? [for (var d = 0; d < 7; d++) d] : [day];
+    final active = periods.where((p) => p.isActive).join(', ');
+    await _run(context, () async {
+      for (final d in days) {
+        final current = provider.controllerSchedule ?? schedule;
+        if (current.withDay(d, periods).sameDay(current, d)) continue;
+        await provider.writeScheduleDay(d, periods);
+      }
+    }, 'Zeitprogramm übernommen: ${applyToAll ? 'alle Tage' : WeekSchedule.dayNames[day]} '
+        '${active.isEmpty ? 'ohne Komfortzeit' : active}');
+  }
+
   Future<void> _fixDays(BuildContext context, List<int> days, List<SchedulePeriod> template) async {
     final names = days.map((d) => WeekSchedule.dayNames[d]).join(', ');
     final plan = template.where((p) => p.isActive).join(', ');
@@ -196,7 +234,8 @@ class ControllerScheduleCard extends StatelessWidget {
   }
 
   Future<void> _fixSaving(BuildContext context, double comfort, double saving) async {
-    var value = (comfort - 3).clamp(10.0, comfort).roundToDouble();
+    // Start at the current value when it is sensible, else 3 °C below comfort.
+    var value = ((saving <= comfort ? saving : comfort - 3).clamp(10.0, comfort) * 2).round() / 2;
     final chosen = await showDialog<double>(
       context: context,
       builder: (ctx) => StatefulBuilder(

@@ -248,7 +248,7 @@ void main() {
     // real curve at −8 °C, 20 °C room: 36 + 0.7 × (32 − 36) = 33.2 °C
     expect(find.textContaining('liefert deine Kurve 33 °C'), findsOneWidget);
     expect(find.textContaining('unter dem Richtwert (40–50 °C)'), findsOneWidget);
-    expect(find.text('Danfoss-Werkseinstellung'), findsOneWidget);
+    expect(find.textContaining('Werkseinstellung'), findsNothing); // factory curve removed (misleading)
     expect(find.text('Richtwert EnergieSchweiz'), findsOneWidget);
   });
 

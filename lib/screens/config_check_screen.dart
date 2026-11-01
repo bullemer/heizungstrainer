@@ -7,8 +7,8 @@ import 'package:provider/provider.dart';
 import 'package:heizungstrainer/exceptions/modbus_exceptions.dart';
 import 'package:heizungstrainer/models/ecl_parameter.dart';
 import 'package:heizungstrainer/providers/ecl_provider.dart';
-import 'package:heizungstrainer/screens/curve_simulator_screen.dart';
 import 'package:heizungstrainer/screens/dhw_settings_screen.dart';
+import 'package:heizungstrainer/widgets/curve_editor_dialog.dart';
 import 'package:heizungstrainer/screens/live_view_screen.dart';
 import 'package:heizungstrainer/services/config_check.dart';
 import 'package:heizungstrainer/services/heating_curve_model.dart';
@@ -37,7 +37,7 @@ abstract final class FindingStyle {
         FindingAction.fixSavingSetpoint => 'Spar-Sollwert ändern',
         FindingAction.fixScheduleDays => 'Wie die anderen Tage',
         FindingAction.setMaxFlow => 'Max. Vorlauf ändern',
-        FindingAction.openCurveAssistant => 'Heizkurve optimieren',
+        FindingAction.openCurveEditor => 'Heizkurve anpassen',
         FindingAction.pickBuildingProfile => 'Gebäudetyp wählen',
         FindingAction.openHotWater => 'Warmwasser einstellen',
         FindingAction.openLiveView => 'Anlage live',
@@ -52,8 +52,8 @@ abstract final class FindingStyle {
         await ControllerScheduleCard.fixEmptyDaysFor(context, provider);
       case FindingAction.setMaxFlow:
         await _setMaxFlow(context, provider);
-      case FindingAction.openCurveAssistant:
-        await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const CurveSimulatorScreen()));
+      case FindingAction.openCurveEditor:
+        await showCurveEditor(context, provider);
       case FindingAction.pickBuildingProfile:
         await showBuildingProfilePicker(context, provider);
       case FindingAction.openHotWater:

@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:heizungstrainer/main.dart';
 import 'package:heizungstrainer/providers/ecl_provider.dart';
 import 'package:heizungstrainer/screens/home_screen.dart';
+import 'package:heizungstrainer/screens/live_view_screen.dart';
 
 void main() {
   testWidgets('App renders title text', (WidgetTester tester) async {
@@ -33,12 +34,19 @@ void main() {
     expect(find.byType(HomeScreen), findsOneWidget);
     expect(find.byType(IndexedStack), findsOneWidget);
 
-    // Switch to tab 1 ('Urlaub')
+    // Tab 'Live': the live view exists only while its tab is open (it polls)
+    expect(find.byType(LiveViewScreen, skipOffstage: false), findsNothing);
+    await tester.tap(find.text('Live'));
+    await tester.pump();
+    expect(find.byType(LiveViewScreen), findsOneWidget);
+
+    // Switch to 'Urlaub'
     await tester.tap(find.text('Urlaub'));
     await tester.pumpAndSettle();
 
     expect(find.byType(HomeScreen, skipOffstage: false), findsOneWidget);
     expect(find.textContaining('Urlaub & Abwesenheit'), findsOneWidget);
+    expect(find.byType(LiveViewScreen, skipOffstage: false), findsNothing);
 
     // Switch to tab 2 ('Vergleich')
     await tester.tap(find.text('Vergleich'));
@@ -48,8 +56,8 @@ void main() {
     expect(find.byType(HomeScreen, skipOffstage: false), findsOneWidget);
     expect(find.text('Community Vergleich'), findsOneWidget);
 
-    // Switch to tab 3 ('Sicherungen')
-    await tester.tap(find.text('Sicherungen'));
+    // Switch to tab 'Backup'
+    await tester.tap(find.text('Backup'));
     await tester.pumpAndSettle();
 
     expect(find.byType(HomeScreen, skipOffstage: false), findsOneWidget);

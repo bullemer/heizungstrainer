@@ -9,6 +9,7 @@ import 'package:heizungstrainer/models/week_schedule.dart';
 import 'package:heizungstrainer/providers/ecl_provider.dart';
 import 'package:heizungstrainer/services/circulation_profiles.dart';
 import 'package:heizungstrainer/utils/number_format.dart';
+import 'package:heizungstrainer/widgets/schedule_day_editor.dart';
 
 /// Hot-water settings of the controller: mode, comfort/saving temperature,
 /// legionella protection and circulation pump times. Every change asks
@@ -370,68 +371,13 @@ class DhwSettingsScreen extends StatelessWidget {
 
   static Future<void> _editCirculationDay(
       BuildContext context, ECLProvider provider, int day, WeekSchedule schedule) async {
-    var periods = [for (final p in schedule.days[day]) p];
-    var applyToAll = false;
-    final times = [for (var h = 0; h <= 24; h++) ...[h * 100, if (h < 24) h * 100 + 30]];
-    final result = await showDialog<(List<SchedulePeriod>, bool)>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setState) {
-          Widget timeBox(int value, ValueChanged<int> onChanged) => DropdownButton<int>(
-                value: times.contains(value) ? value : 2400,
-                isExpanded: true,
-                dropdownColor: _card,
-                items: [for (final t in times) DropdownMenuItem(value: t, child: Text(SchedulePeriod.formatTime(t)))],
-                onChanged: (v) => onChanged(v!),
-              );
-          return AlertDialog(
-            backgroundColor: _card,
-            title: Text('Zirkulation ${WeekSchedule.dayNames[day]}', style: const TextStyle(color: _text, fontSize: 18)),
-            content: SizedBox(width: 300, child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-              for (var i = 0; i < 3; i++)
-                Row(children: [
-                  SizedBox(width: 22, child: Text('${i + 1}.', style: const TextStyle(color: _muted))),
-                  Expanded(child: timeBox(periods[i].start, (v) => setState(() => periods[i] = SchedulePeriod(v, periods[i].stop)))),
-                  const Text(' – ', style: TextStyle(color: _muted)),
-                  Expanded(child: timeBox(periods[i].stop, (v) => setState(() => periods[i] = SchedulePeriod(periods[i].start, v)))),
-                ]),
-              const Text('Gleiche Start- und Endzeit = Zeitraum aus.', style: TextStyle(color: _muted, fontSize: 11.5)),
-              CheckboxListTile(
-                contentPadding: EdgeInsets.zero,
-                value: applyToAll,
-                onChanged: (v) => setState(() => applyToAll = v ?? false),
-                title: const Text('Für alle Tage übernehmen', style: TextStyle(color: _text, fontSize: 13)),
-              ),
-            ])),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Abbrechen')),
-              FilledButton(onPressed: () => Navigator.pop(ctx, (periods, applyToAll)), child: const Text('An Regler senden')),
-            ],
-          );
-        },
-      ),
+    final result = await showScheduleDayEditor(
+      context,
+      title: 'Zirkulation ${WeekSchedule.dayNames[day]}',
+      initial: schedule.days[day],
     );
     if (result == null || !context.mounted) return;
-    // Danfoss rules: chronological, inactive periods as 2400/2400 at the end
-    if (result.$1.any((p) => p.start > p.stop)) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Zeiträume über Mitternacht gehen nicht – bitte aufteilen, z. B. 22:00–24:00 '
-            'und am nächsten Tag 00:00–06:00.'),
-        backgroundColor: Color(0xFFEF5350),
-      ));
-      return;
-    }
-    final active = [for (final p in result.$1) if (p.isActive) p]..sort((a, b) => a.start.compareTo(b.start));
-    for (var i = 1; i < active.length; i++) {
-      if (active[i].start < active[i - 1].stop) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Die Zeiträume überschneiden sich.'),
-          backgroundColor: Color(0xFFEF5350),
-        ));
-        return;
-      }
-    }
-    final normalized = [...active, for (var i = active.length; i < 3; i++) SchedulePeriod.unused];
+    final normalized = result.$1;
     final days = result.$2 ? [for (var d = 0; d < 7; d++) d] : [day];
     await _run(context, () async {
       for (final d in days) {

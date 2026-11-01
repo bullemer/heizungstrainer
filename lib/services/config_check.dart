@@ -16,7 +16,7 @@ enum FindingAction {
   fixSavingSetpoint,
   fixScheduleDays,
   setMaxFlow,
-  openCurveAssistant,
+  openCurveEditor,
   pickBuildingProfile,
   openHotWater,
   openLiveView,
@@ -184,7 +184,7 @@ List<ConfigFinding> runConfigCheck(ConfigCheckInput i) {
       severity: FindingSeverity.hint,
       title: 'Komfort-Sollwert ${t(comfort)} ist hoch',
       detail: 'Jedes Grad weniger spart etwa $_percentPerKelvin % Heizenergie. 20–21 °C reichen in Wohnräumen meist.',
-      action: FindingAction.openCurveAssistant,
+      action: FindingAction.openCurveEditor,
     ));
   }
   final curve = i.curve, ref = i.reference;
@@ -212,7 +212,7 @@ List<ConfigFinding> runConfigCheck(ConfigCheckInput i) {
         detail: 'Bei −8 °C liefert deine Kurve ${t(own)}, für ${ref.label} reichen ${t(low)}–${t(high)}. '
             'Das entspricht grob ${roomK.fixed(1)} °C mehr Raumtemperatur ≈ '
             '${(roomK * _percentPerKelvin).fixed(0)} % Heizenergie. Schrittweise absenken und beobachten.',
-        action: FindingAction.openCurveAssistant,
+        action: FindingAction.openCurveEditor,
       ));
     } else if (own < low - 2) {
       out.add(ConfigFinding(
@@ -222,7 +222,7 @@ List<ConfigFinding> runConfigCheck(ConfigCheckInput i) {
         title: 'Heizkurve eher niedrig',
         detail: 'Bei −8 °C liefert deine Kurve ${t(own)}, Richtwert ${t(low)}–${t(high)}. Wenn es an kalten '
             'Tagen zu kühl wird, liegt es daran – sonst ist das sparsam und in Ordnung.',
-        action: FindingAction.openCurveAssistant,
+        action: FindingAction.openCurveEditor,
       ));
     }
     final maxFlow = i.maxFlow;
@@ -244,7 +244,7 @@ List<ConfigFinding> runConfigCheck(ConfigCheckInput i) {
                 'Sie schützt nur bei Sonderfällen (höherer Sollwert, Boost, Störung). Für Fußbodenheizung reicht '
                 'eine Grenze knapp darüber, z. B. 45 °C.',
         // limiting: the limit can't go lower than the curve needs → curve first
-        action: limiting ? FindingAction.openCurveAssistant : FindingAction.setMaxFlow,
+        action: limiting ? FindingAction.openCurveEditor : FindingAction.setMaxFlow,
       ));
     }
   }

@@ -922,6 +922,32 @@ class ECLProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Writes the six heating-curve points (°C at −30/−15/−5/0/5/15 °C outdoor,
+  /// whole degrees). Each point is written, read back and logged; points
+  /// that already have the value are skipped. The slope is never written
+  /// (see [ECLRegisters.curveSlope]).
+  Future<void> writeHeatingCurve(List<double> points) async {
+    if (points.length != ECLRegisters.curvePoints.length) {
+      throw ArgumentError('Heizkurve braucht ${ECLRegisters.curvePoints.length} Punkte.');
+    }
+    for (var i = 1; i < points.length; i++) {
+      if (points[i] > points[i - 1]) {
+        throw const ModbusCommunicationException(
+            message: 'Die Heizkurve muss bei wärmerem Wetter gleich bleiben oder fallen.');
+      }
+    }
+    // Order keeps the curve falling after every single write: lowering
+    // starts at the warm end, raising at the cold end.
+    final lowering = getReading(ECLRegisters.curvePoints.first) != null &&
+        points.first < getReading(ECLRegisters.curvePoints.first)!.displayValue;
+    final order = [for (var i = 0; i < points.length; i++) i];
+    for (final i in lowering ? order.reversed : order) {
+      final param = ECLRegisters.curvePoints[i];
+      if (getReading(param)?.displayValue == points[i]) continue;
+      await writeParameter(param, points[i]);
+    }
+  }
+
   /// Writes the comfort periods of [day] (0 = Monday) to the controller,
   /// reads them back and logs before → after.
   Future<void> writeScheduleDay(int day, List<SchedulePeriod> periods) async {
@@ -2656,6 +2682,10 @@ class ECLProvider extends ChangeNotifier {
       }
       if (value < caps.minShift || value > caps.maxShift) {
         return '$brand erlaubt eine Parallelverschiebung von ${caps.minShift} bis ${caps.maxShift}, nicht $value.';
+      }
+    } else if (ECLRegisters.curvePoints.any((p) => p.id == parameter.id)) {
+      if (!supportsControllerSchedule) {
+        return 'Die Heizkurve ist nur beim verbundenen Danfoss ECL 310 änderbar.';
       }
     } else if (parameter.id == ECLRegisters.curveMaxFlow.id) {
       if (!supportsControllerSchedule) {

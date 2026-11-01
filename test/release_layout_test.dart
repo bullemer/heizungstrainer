@@ -12,7 +12,6 @@ import 'package:heizungstrainer/screens/holiday_screen.dart';
 import 'package:heizungstrainer/screens/community_screen.dart';
 import 'package:heizungstrainer/screens/backup_screen.dart';
 import 'package:heizungstrainer/screens/settings_screen.dart';
-import 'package:heizungstrainer/screens/curve_simulator_screen.dart';
 import 'package:heizungstrainer/screens/config_check_screen.dart';
 
 void main() {
@@ -21,7 +20,7 @@ void main() {
     for (final scale in [1.0, 1.3]) {
       for (final screen in const <Widget>[
         ConnectionScreen(), HomeScreen(), HolidayScreen(), CommunityScreen(),
-        BackupScreen(), SettingsScreen(), CurveSimulatorScreen(), ConfigCheckScreen(), LiveViewScreen(),
+        BackupScreen(), SettingsScreen(), ConfigCheckScreen(), LiveViewScreen(),
       ]) {
         testWidgets('${screen.runtimeType} at $width / text $scale', (tester) async {
           tester.view.physicalSize = Size(width, 800);

@@ -12,7 +12,6 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:heizungstrainer/main.dart';
 import 'package:heizungstrainer/providers/ecl_provider.dart';
 import 'package:heizungstrainer/screens/home_screen.dart';
-import 'package:heizungstrainer/screens/curve_simulator_screen.dart';
 import 'package:heizungstrainer/screens/live_view_screen.dart';
 import 'package:heizungstrainer/screens/holiday_screen.dart';
 import 'package:heizungstrainer/screens/backup_screen.dart';
@@ -81,7 +80,6 @@ void main() {
     await capture('01_zuhause_demo');
     final navigator = Navigator.of(tester.element(find.byType(HomeScreen)));
     for (final entry in <String, Widget>{
-      '02_heizkurve_demo': const CurveSimulatorScreen(),
       '03_anlage_live_demo': const LiveViewScreen(),
       '04_urlaub_demo': const HolidayScreen(),
       '05_sicherungen_demo': const BackupScreen(),

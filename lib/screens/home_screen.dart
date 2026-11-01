@@ -9,15 +9,14 @@ import 'package:heizungstrainer/models/ecl_parameter.dart';
 import 'package:heizungstrainer/models/ecl_reading.dart';
 import 'package:heizungstrainer/providers/ecl_provider.dart';
 import 'package:heizungstrainer/screens/config_check_screen.dart';
-import 'package:heizungstrainer/screens/curve_simulator_screen.dart';
 import 'package:heizungstrainer/screens/dhw_settings_screen.dart';
-import 'package:heizungstrainer/screens/live_view_screen.dart';
 import 'package:heizungstrainer/screens/settings_screen.dart';
 import 'package:heizungstrainer/services/controller_binding.dart';
 import 'package:heizungstrainer/services/heating_analytics_service.dart';
 import 'package:heizungstrainer/services/heating_curve_model.dart';
 import 'package:heizungstrainer/widgets/analysis_section.dart';
 import 'package:heizungstrainer/widgets/building_profile_picker.dart';
+import 'package:heizungstrainer/widgets/curve_editor_dialog.dart';
 import 'package:heizungstrainer/widgets/controller_schedule_card.dart';
 import 'package:heizungstrainer/widgets/holiday_end_flow.dart';
 import 'package:heizungstrainer/widgets/pro_upgrade_dialog.dart';
@@ -185,36 +184,49 @@ class HomeScreen extends StatelessWidget {
                   ConfigCheckCard(provider: provider),
                   const SizedBox(height: 12),
                 ],
-                if (provider.supportsLiveView) ...[
-                  _LiveViewTile(),
-                  const SizedBox(height: 12),
-                ],
-                _HeatingComfortCard(provider: provider),
+                if (_controllerCurve(provider) != null &&
+                    provider.getReading(ECLRegisters.roomTargetTemp) != null)
+                  // Basis-Wärme and heating curve belong together: one card.
+                  Container(
+                    key: const Key('heatingCurveCard'),
+                    padding: const EdgeInsets.all(18),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF2A2A32),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: const Color(0xFF3A3A44)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _HeatingComfortCard(provider: provider, embedded: true),
+                        const Divider(height: 32, color: Color(0xFF3A3A44)),
+                        HeatingSimulationCard(
+                          embedded: true,
+                          curve: _controllerCurve(provider)!,
+                          roomSetpoint: provider.getReading(ECLRegisters.roomTargetTemp)!.displayValue,
+                          previewSetpoint: provider.comfortPreview,
+                          outdoorTemp: provider.getReading(ECLRegisters.outdoorTemp)?.displayValue ?? 0,
+                          annualHeatingKwh: provider.annualHeatingKwh,
+                          annualHeatingKwhSource: provider.annualHeatingKwhSource,
+                          pricePerKwh: provider.pricePerKwhCached,
+                          onEditAnnualKwh: () => _editAnnualKwh(context, provider),
+                          buildingReference: provider.buildingReference,
+                          // Heating type is changed in Einstellungen; here only the first-time prompt.
+                          onPickBuildingReference: provider.buildingProfile == null
+                              ? () => showBuildingProfilePicker(context, provider)
+                              : null,
+                          onEditCurve: provider.supportsControllerSchedule
+                              ? () => showCurveEditor(context, provider)
+                              : null,
+                        ),
+                      ],
+                    ),
+                  )
+                else
+                  _HeatingComfortCard(provider: provider),
                 if (provider.supportsControllerSchedule && provider.controllerSchedule != null) ...[
                   const SizedBox(height: 12),
                   ControllerScheduleCard(provider: provider),
-                ],
-                if (_controllerCurve(provider) != null &&
-                    provider.getReading(ECLRegisters.roomTargetTemp) != null) ...[
-                  const SizedBox(height: 12),
-                  HeatingSimulationCard(
-                    curve: _controllerCurve(provider)!,
-                    roomSetpoint: provider.getReading(ECLRegisters.roomTargetTemp)!.displayValue,
-                    previewSetpoint: provider.comfortPreview,
-                    outdoorTemp: provider.getReading(ECLRegisters.outdoorTemp)?.displayValue ?? 0,
-                    annualHeatingKwh: provider.annualHeatingKwh,
-                    annualHeatingKwhSource: provider.annualHeatingKwhSource,
-                    pricePerKwh: provider.pricePerKwhCached,
-                    onEditAnnualKwh: () => _editAnnualKwh(context, provider),
-                    buildingReference: provider.buildingReference,
-                    // Heating type is changed in Einstellungen; here only the first-time prompt.
-                    onPickBuildingReference: provider.buildingProfile == null
-                        ? () => showBuildingProfilePicker(context, provider)
-                        : null,
-                    onOpenAssistant: () => Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => const CurveSimulatorScreen()),
-                    ),
-                  ),
                 ],
                 const SizedBox(height: 12),
                 Row(
@@ -659,7 +671,9 @@ class _HighConsumptionWarning extends StatelessWidget {
 
 class _HeatingComfortCard extends StatefulWidget {
   final ECLProvider provider;
-  const _HeatingComfortCard({required this.provider});
+  /// Drawn inside the combined heating-curve card (no own frame).
+  final bool embedded;
+  const _HeatingComfortCard({required this.provider, this.embedded = false});
 
   @override
   State<_HeatingComfortCard> createState() => _HeatingComfortCardState();
@@ -802,7 +816,7 @@ class _HeatingComfortCardState extends State<_HeatingComfortCard> {
               ),
             ),
           Text(
-            'Ersparnis in Energie und € siehe „Heizkurve & Sparpotenzial“ direkt darunter.',
+            'Ersparnis in Energie und € siehe unten bei „Was kann ich sparen?“.',
             style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 11),
           ),
         ],
@@ -923,8 +937,8 @@ class _HeatingComfortCardState extends State<_HeatingComfortCard> {
     final accent = _comfortColor(_comfortOffset);
 
     return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
+      padding: widget.embedded ? EdgeInsets.zero : const EdgeInsets.all(20),
+      decoration: widget.embedded ? null : BoxDecoration(
         color: const Color(0xFF2A2A32),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
@@ -1536,41 +1550,6 @@ class _ForeignControllerCard extends StatelessWidget {
       messenger.showSnackBar(SnackBar(content: Text(userFacingError(e)), backgroundColor: const Color(0xFFEF5350)));
     }
   }
-}
-
-/// Opens the live plant diagram.
-class _LiveViewTile extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) => Material(
-        color: const Color(0xFF2A2A32),
-        borderRadius: BorderRadius.circular(16),
-        child: InkWell(
-          key: const Key('openLiveView'),
-          borderRadius: BorderRadius.circular(16),
-          onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const LiveViewScreen())),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: const Color(0xFF3A3A44)),
-            ),
-            child: const Row(children: [
-              Icon(Icons.account_tree_outlined, color: Color(0xFFFFA726), size: 22),
-              SizedBox(width: 12),
-              Expanded(
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text('Anlage live',
-                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: Color(0xFFECECF0))),
-                  SizedBox(height: 2),
-                  Text('Anlagenbild mit Ist- und Sollwerten, Pumpen und Ventilen',
-                      style: TextStyle(fontSize: 11.5, color: Color(0xFF9E9EA8))),
-                ]),
-              ),
-              Icon(Icons.chevron_right_rounded, color: Color(0xFF9E9EA8)),
-            ]),
-          ),
-        ),
-      );
 }
 
 class _SectionLabel extends StatelessWidget {

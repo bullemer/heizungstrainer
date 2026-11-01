@@ -59,8 +59,7 @@ class _BuildingProfileSheetState extends State<_BuildingProfileSheet> {
               const Text('Dein Gebäude', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
               const SizedBox(height: 4),
               const Text(
-                'Bestimmt den Richtwert-Bereich für die Heizkurve (EnergieSchweiz) und wie lange '
-                'der Optimierungs-Assistent pro Schritt wartet.',
+                'Bestimmt den Richtwert-Bereich für die Heizkurve (EnergieSchweiz).',
                 style: muted,
               ),
               const SizedBox(height: 16),

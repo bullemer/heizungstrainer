@@ -10,6 +10,7 @@ import 'package:heizungstrainer/screens/home_screen.dart';
 import 'package:heizungstrainer/screens/holiday_screen.dart';
 import 'package:heizungstrainer/screens/community_screen.dart';
 import 'package:heizungstrainer/screens/backup_screen.dart';
+import 'package:heizungstrainer/screens/live_view_screen.dart';
 import 'package:heizungstrainer/screens/log_screen.dart';
 import 'package:heizungstrainer/services/holiday_service.dart';
 import 'package:heizungstrainer/widgets/app_top_status_bar.dart';
@@ -238,13 +239,18 @@ class _MainShellState extends State<MainShell> {
     }
   }
 
-  static const _screens = <Widget>[
-    HomeScreen(),
-    HolidayScreen(),
-    CommunityScreen(),
-    BackupScreen(),
-    LogScreen(),
-  ];
+  static const _liveIndex = 1;
+
+  /// The live view polls the controller every few seconds, so it only
+  /// exists while its tab is open.
+  List<Widget> get _screens => [
+        const HomeScreen(),
+        _selectedIndex == _liveIndex ? const LiveViewScreen() : const SizedBox.shrink(),
+        const HolidayScreen(),
+        const CommunityScreen(),
+        const BackupScreen(),
+        const LogScreen(),
+      ];
 
   @override
   Widget build(BuildContext context) {
@@ -280,6 +286,11 @@ class _MainShellState extends State<MainShell> {
             label: 'Zuhause',
           ),
           NavigationDestination(
+            icon: Icon(Icons.account_tree_outlined),
+            selectedIcon: Icon(Icons.account_tree_rounded),
+            label: 'Live',
+          ),
+          NavigationDestination(
             icon: Icon(Icons.beach_access_outlined),
             selectedIcon: Icon(Icons.beach_access_rounded),
             label: 'Urlaub',
@@ -292,7 +303,7 @@ class _MainShellState extends State<MainShell> {
           NavigationDestination(
             icon: Icon(Icons.cloud_outlined),
             selectedIcon: Icon(Icons.cloud_done_rounded),
-            label: 'Sicherungen',
+            label: 'Backup',
           ),
           NavigationDestination(
             icon: _LogsIcon(selected: false),
