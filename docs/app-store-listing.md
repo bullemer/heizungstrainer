@@ -74,7 +74,7 @@ Ein Angebot der Navisense GmbH. Keine Verbindung zu den genannten Geräteherstel
 **Keywords** (max. 100, Komma ohne Leerzeichen, Name/Untertitel nicht wiederholen):
 
 ```
-Heizung,Danfoss,ECL,Fernwärme,Vorlauf,Thermostat,Modbus,Heizkosten,Energie,Urlaub,Brunata,Zeitprogramm
+Heizung,Danfoss,ECL,Fernwärme,Vorlauf,Thermostat,Modbus,Heizkosten,Energie,Brunata,Zeitprogramm
 ```
 
 | Feld | Wert |
