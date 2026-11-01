@@ -8,9 +8,10 @@ import 'package:heizungstrainer/utils/number_format.dart';
 import 'package:heizungstrainer/widgets/pro_upgrade_dialog.dart';
 
 /// "Heizkurve anpassen": makes the controller's curve flatter or steeper in
-/// 5 % steps around 20 °C, keeping its shape, and writes the six points.
-/// The table shows exactly the values that are written. (Writing the slope
-/// instead would make the controller overwrite individually set points.)
+/// 5 % steps around 20 °C (keeping its shape) and/or changes single points
+/// by 1 °C, then writes the six points. The list shows exactly the values
+/// that are written. (Writing the slope instead would make the controller
+/// overwrite individually set points.)
 Future<void> showCurveEditor(BuildContext context, ECLProvider provider) async {
   const card = Color(0xFF2A2A32);
   const text = Color(0xFFECECF0);
@@ -21,34 +22,80 @@ Future<void> showCurveEditor(BuildContext context, ECLProvider provider) async {
   final curve = ControllerHeatingCurve.fromReadings(provider.getReading);
   if (curve == null) return;
   final reference = provider.buildingReference;
+  const minFlow = 10.0, maxFlow = 90.0;
   var percent = 0;
+  var singleEdits = false;
+  var points = [...curve.flowTemps];
 
   final chosen = await showDialog<ControllerHeatingCurve>(
     context: context,
     builder: (ctx) => StatefulBuilder(
       builder: (ctx, setState) {
-        final preview = curve.scaled(1 + percent / 100);
-        final changed = [
-          for (var i = 0; i < curve.flowTemps.length; i++) preview.flowTemps[i] != curve.flowTemps[i],
-        ].any((c) => c);
-        final cappedAt = curve.maxFlow != null && preview.flowTemps.first > curve.maxFlow! ? curve.maxFlow : null;
-        TableRow row(int i) => TableRow(children: [
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 3),
+        final preview = ControllerHeatingCurve(
+          outdoorTemps: curve.outdoorTemps,
+          flowTemps: points,
+          slope: curve.slope,
+          minFlow: curve.minFlow,
+          maxFlow: curve.maxFlow,
+        );
+        final changed = [for (var i = 0; i < points.length; i++) points[i] != curve.flowTemps[i]].any((c) => c);
+        final cappedAt = curve.maxFlow != null && points.first > curve.maxFlow! ? curve.maxFlow : null;
+        // The curve must not rise towards warmer weather: a point stays
+        // between its colder (i − 1) and warmer (i + 1) neighbour.
+        bool canRaise(int i) => points[i] + 1 <= maxFlow && (i == 0 || points[i] + 1 <= points[i - 1]);
+        bool canLower(int i) => points[i] - 1 >= minFlow && (i == points.length - 1 || points[i] - 1 >= points[i + 1]);
+        void scale(int newPercent) => setState(() {
+              percent = newPercent;
+              singleEdits = false;
+              points = [...curve.scaled(1 + percent / 100).flowTemps];
+            });
+        void nudge(int i, double delta) => setState(() {
+              points = [...points]..[i] = points[i] + delta;
+              singleEdits = true;
+            });
+        Widget step(Key key, IconData icon, VoidCallback? onPressed) => IconButton(
+              key: key,
+              onPressed: onPressed,
+              icon: Icon(icon, size: 18),
+              visualDensity: VisualDensity.compact,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+              color: accent,
+              disabledColor: const Color(0xFF55555F),
+            );
+        Widget row(int i) => Row(children: [
+              SizedBox(
+                width: 52,
                 child: Text('${curve.outdoorTemps[i].fixed(0)} °C', style: const TextStyle(color: muted, fontSize: 12.5)),
               ),
-              Text('${curve.flowTemps[i].fixed(0)} °C', style: const TextStyle(color: text, fontSize: 12.5)),
-              Text(
-                '${preview.flowTemps[i].fixed(0)} °C',
-                key: Key('curvePoint_$i'),
-                style: TextStyle(
-                  color: preview.flowTemps[i] == curve.flowTemps[i] ? muted : accent,
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w600,
+              SizedBox(
+                width: 44,
+                child: Text('${curve.flowTemps[i].fixed(0)} °C', style: const TextStyle(color: text, fontSize: 12.5)),
+              ),
+              const Spacer(),
+              step(Key('pointDown_$i'), Icons.remove_rounded, canLower(i) ? () => nudge(i, -1) : null),
+              SizedBox(
+                width: 46,
+                child: Text(
+                  '${points[i].fixed(0)} °C',
+                  key: Key('curvePoint_$i'),
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: points[i] == curve.flowTemps[i] ? muted : accent,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
+              step(Key('pointUp_$i'), Icons.add_rounded, canRaise(i) ? () => nudge(i, 1) : null),
             ]);
-        String label(int p) => p == 0 ? 'wie jetzt' : p < 0 ? '${-p} % flacher' : '$p % steiler';
+        String label(int p) => singleEdits
+            ? 'einzeln angepasst'
+            : p == 0
+                ? 'wie jetzt'
+                : p < 0
+                    ? '${-p} % flacher'
+                    : '$p % steiler';
         return AlertDialog(
           backgroundColor: card,
           title: const Text('Heizkurve anpassen', style: TextStyle(color: text, fontSize: 18)),
@@ -56,7 +103,7 @@ Future<void> showCurveEditor(BuildContext context, ECLProvider provider) async {
             child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
               const Text(
                 'Flacher = weniger Vorlauf bei Kälte (sparsamer), steiler = wärmer bei Frost. '
-                'Die Form deiner Kurve bleibt erhalten. Die Basis-Wärme verschiebt sie zusätzlich.',
+                'Darunter kannst du jeden Punkt einzeln um 1 °C ändern. Die Basis-Wärme verschiebt die Kurve zusätzlich.',
                 style: TextStyle(color: Color(0xFFB0B0BA), fontSize: 13, height: 1.4),
               ),
               const SizedBox(height: 14),
@@ -64,11 +111,11 @@ Future<void> showCurveEditor(BuildContext context, ECLProvider provider) async {
                 IconButton.filledTonal(
                   key: const Key('curveFlatter'),
                   tooltip: 'flacher',
-                  onPressed: percent > minPercent ? () => setState(() => percent -= 5) : null,
+                  onPressed: percent > minPercent ? () => scale(percent - 5) : null,
                   icon: const Icon(Icons.remove_rounded),
                 ),
                 SizedBox(
-                  width: 130,
+                  width: 150,
                   child: Text(label(percent),
                       key: const Key('curveChange'),
                       textAlign: TextAlign.center,
@@ -77,24 +124,24 @@ Future<void> showCurveEditor(BuildContext context, ECLProvider provider) async {
                 IconButton.filledTonal(
                   key: const Key('curveSteeper'),
                   tooltip: 'steiler',
-                  onPressed: percent < maxPercent ? () => setState(() => percent += 5) : null,
+                  onPressed: percent < maxPercent ? () => scale(percent + 5) : null,
                   icon: const Icon(Icons.add_rounded),
                 ),
               ]),
               const SizedBox(height: 12),
-              Table(
-                columnWidths: const {0: FlexColumnWidth(1), 1: FlexColumnWidth(1), 2: FlexColumnWidth(1)},
-                children: [
-                  const TableRow(children: [
-                    Text('Außen', style: TextStyle(color: muted, fontSize: 11.5, fontWeight: FontWeight.w600)),
-                    Text('Vorlauf jetzt', style: TextStyle(color: muted, fontSize: 11.5, fontWeight: FontWeight.w600)),
-                    Text('neu', style: TextStyle(color: muted, fontSize: 11.5, fontWeight: FontWeight.w600)),
-                  ]),
-                  for (var i = 0; i < curve.flowTemps.length; i++) row(i),
-                ],
-              ),
+              const Row(children: [
+                SizedBox(width: 52, child: Text('Außen', style: TextStyle(color: muted, fontSize: 11.5, fontWeight: FontWeight.w600))),
+                SizedBox(width: 44, child: Text('jetzt', style: TextStyle(color: muted, fontSize: 11.5, fontWeight: FontWeight.w600))),
+                Spacer(),
+                SizedBox(
+                  width: 110,
+                  child: Text('neu', textAlign: TextAlign.center, style: TextStyle(color: muted, fontSize: 11.5, fontWeight: FontWeight.w600)),
+                ),
+              ]),
+              for (var i = 0; i < points.length; i++) row(i),
               const SizedBox(height: 6),
-              const Text('Werte bei 20 °C Raum-Soll, wie im Regler gespeichert.',
+              const Text('Vorlauf bei 20 °C Raum-Soll, wie im Regler gespeichert. Ein Punkt kann nicht höher '
+                  'als der kältere darüber und nicht tiefer als der wärmere darunter sein.',
                   style: TextStyle(color: muted, fontSize: 11)),
               if (cappedAt != null) ...[
                 const SizedBox(height: 6),

@@ -107,6 +107,12 @@ void main() {
     await provider.writeHeatingCurve([40, 36, 32, 29, 26, 22]);
     expect(provider.parameterWrites.first.$1, ECLRegisters.curvePoints.first.id); // raising: cold end first
 
+    // mixed: lowered points (warm end first) before raised ones (cold end first)
+    provider.parameterWrites.clear();
+    await provider.writeHeatingCurve([42, 36, 31, 30, 24, 22]);
+    expect(provider.parameterWrites.map((w) => w.$1).toList(),
+        [for (final i in [4, 2, 0, 3]) ECLRegisters.curvePoints[i].id]);
+
     await expectLater(provider.writeHeatingCurve([30, 36, 32, 29, 26, 22]), throwsA(isA<ModbusCommunicationException>()));
     provider.dispose();
   });
@@ -220,6 +226,39 @@ void main() {
     expect(provider.parameterWrites.map((w) => w.$2), [25, 28, 31, 34, 38]);
     expect(provider.parameterWrites.any((w) => w.$1 == ECLRegisters.curveSlope.id), isFalse);
     expect(find.textContaining('40/36/32/29/26/22 → 38/34/31/28/25/22'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+    provider.dispose();
+  });
+
+  testWidgets('curve dialog: single points ±1 °C, never rising towards warmer weather', (tester) async {
+    final provider = _RecordingProvider()..setReadingForTesting(ECLRegisters.roomTargetTemp, 20);
+    setUserCurve(provider); // 40/36/32/29/26/22
+    await tester.pumpWidget(MaterialApp(
+      home: Builder(
+        builder: (context) => Scaffold(
+          body: TextButton(onPressed: () => showCurveEditor(context, provider), child: const Text('open')),
+        ),
+      ),
+    ));
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('pointDown_3'))); // 0 °C: 29 → 28
+    await tester.tap(find.byKey(const Key('pointDown_3'))); // → 27
+    await tester.pump();
+    expect(tester.widget<Text>(find.byKey(const Key('curvePoint_3'))).data, '27 °C');
+    expect(find.text('einzeln angepasst'), findsOneWidget);
+    // +15 °C (22) can't go above +5 °C (26) … but +5 °C can't go below +15 °C either
+    for (var k = 0; k < 4; k++) {
+      await tester.tap(find.byKey(const Key('pointDown_4')));
+    }
+    await tester.pump();
+    expect(tester.widget<Text>(find.byKey(const Key('curvePoint_4'))).data, '22 °C');
+    expect(tester.widget<IconButton>(find.byKey(const Key('pointDown_4'))).onPressed, isNull);
+
+    await tester.tap(find.byKey(const Key('saveCurve')));
+    await tester.pumpAndSettle();
+    expect(provider.parameterWrites.map((w) => w.$2), [22, 27]); // +5 °C first, then 0 °C
     await tester.pumpWidget(const SizedBox.shrink());
     provider.dispose();
   });

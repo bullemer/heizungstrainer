@@ -936,15 +936,13 @@ class ECLProvider extends ChangeNotifier {
             message: 'Die Heizkurve muss bei wärmerem Wetter gleich bleiben oder fallen.');
       }
     }
-    // Order keeps the curve falling after every single write: lowering
-    // starts at the warm end, raising at the cold end.
-    final lowering = getReading(ECLRegisters.curvePoints.first) != null &&
-        points.first < getReading(ECLRegisters.curvePoints.first)!.displayValue;
-    final order = [for (var i = 0; i < points.length; i++) i];
-    for (final i in lowering ? order.reversed : order) {
-      final param = ECLRegisters.curvePoints[i];
-      if (getReading(param)?.displayValue == points[i]) continue;
-      await writeParameter(param, points[i]);
+    // Order keeps the curve falling after every single write: first all
+    // lowered points from the warm end, then all raised ones from the cold end.
+    final current = [for (final p in ECLRegisters.curvePoints) getReading(p)?.displayValue];
+    final lowered = [for (var i = points.length - 1; i >= 0; i--) if (current[i] == null || points[i] < current[i]!) i];
+    final raised = [for (var i = 0; i < points.length; i++) if (current[i] != null && points[i] > current[i]!) i];
+    for (final i in [...lowered, ...raised]) {
+      await writeParameter(ECLRegisters.curvePoints[i], points[i]);
     }
   }
 
