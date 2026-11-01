@@ -277,8 +277,8 @@ class _CommunityScreenState extends State<CommunityScreen> {
     final diffText = isNeutral
         ? '0.0%'
         : (isBetter
-            ? '${diff.abs().fixed(1)}%'
-            : '+${diff.fixed(1)}%');
+            ? '${diff.abs().de(1)}%'
+            : '+${diff.de(1)}%');
 
     final comparisonText = isNeutral
         ? 'im Liegenschafts-Durchschnitt'
@@ -289,8 +289,8 @@ class _CommunityScreenState extends State<CommunityScreen> {
     final explanationText = isNeutral
         ? 'Deine Wohnung liegt genau im Durchschnitt der Liegenschaft.'
         : (isBetter
-            ? 'Deine Wohnung verbraucht je m² ${diff.abs().fixed(1)} % weniger Wärmeenergie als der Liegenschafts-Durchschnitt (gemessene Monate des laufenden Zeitraums).'
-            : 'Deine Wohnung liegt je m² ${diff.fixed(1)} % über dem Schnitt der Liegenschaft (gemessene Monate des laufenden Zeitraums).');
+            ? 'Deine Wohnung verbraucht je m² ${diff.abs().de(1)} % weniger Wärmeenergie als der Liegenschafts-Durchschnitt (gemessene Monate des laufenden Zeitraums).'
+            : 'Deine Wohnung liegt je m² ${diff.de(1)} % über dem Schnitt der Liegenschaft (gemessene Monate des laufenden Zeitraums).');
 
     return Container(
       padding: const EdgeInsets.all(18),
@@ -486,7 +486,7 @@ class _CommunityScreenState extends State<CommunityScreen> {
                 ),
                 const SizedBox(height: 8),
                 const Text(
-                  'Im Brunata-Portal sind für diese Wohneinheit keine separaten Warmwasserzähler registriert. '
+                  'Im Portal deines Messdienstleisters sind für diese Wohneinheit keine separaten Warmwasserzähler registriert. '
                   'Die Warmwasseraufbereitung erfolgt in dieser Liegenschaft in der Regel dezentral (z. B. elektrischer Durchlauferhitzer) '
                   'oder wird ohne getrennte Zähler abgerechnet.',
                   textAlign: TextAlign.center,
@@ -643,7 +643,7 @@ class _MediumSummaryCard extends StatelessWidget {
             ),
             const SizedBox(height: 6),
             const Text(
-              'Nur Heizung wird über Brunata abgerechnet.',
+              'Nur die Heizung wird über den Messdienstleister abgerechnet.',
               style: TextStyle(
                 fontSize: 10.5,
                 color: Color(0xFF70707D),
@@ -661,7 +661,7 @@ class _MediumSummaryCard extends StatelessWidget {
 
 String _fmtKwh(double v) {
   if (v >= 100) return '${v.round()}';
-  return v.fixed(v == v.roundToDouble() ? 0 : 1);
+  return v.de(v == v.roundToDouble() ? 0 : 1);
 }
 
-String _fmtEur(double v) => '${v.fixed(2)} €';
+String _fmtEur(double v) => '${v.de(2)} €';

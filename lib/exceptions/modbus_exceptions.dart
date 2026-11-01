@@ -29,10 +29,10 @@ class ParameterBoundsException implements Exception {
     final min = parameter.minValue;
     final max = parameter.maxValue;
     final unit = parameter.unit.isNotEmpty ? ' ${parameter.unit}' : '';
-    return 'Wert ${attemptedValue.fixed(parameter.displayPrecision)}$unit '
+    return 'Wert ${attemptedValue.de(parameter.displayPrecision)}$unit '
         'liegt außerhalb des erlaubten Bereichs '
-        '[${min?.fixed(parameter.displayPrecision) ?? '−∞'}, '
-        '${max?.fixed(parameter.displayPrecision) ?? '+∞'}] '
+        '[${min?.de(parameter.displayPrecision) ?? '−∞'}, '
+        '${max?.de(parameter.displayPrecision) ?? '+∞'}] '
         'für ${parameter.name}.';
   }
 

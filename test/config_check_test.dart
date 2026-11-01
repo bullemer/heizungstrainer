@@ -68,7 +68,7 @@ void main() {
     expect(f.action, FindingAction.setMaxFlow);
     // user's curve needs 41.25 °C → the 50 °C limit never applies: only a hint
     expect(f.severity, FindingSeverity.hint);
-    expect(f.detail, contains('41.3 °C'));
+    expect(f.detail, contains('41,3 °C'));
     final steep = runConfigCheck(ConfigCheckInput(
       comfort: 21,
       curve: const ControllerHeatingCurve(outdoorTemps: [-30, -15, -5, 0, 5, 15], flowTemps: [49, 44, 40, 36, 32, 24], slope: 0.5),
@@ -92,7 +92,7 @@ void main() {
     }
     // curve needs 40 + (21−20)·0.5·2.5 = 41.25 °C at −30 °C
     await expectLater(provider.writeParameter(ECLRegisters.curveMaxFlow, 38),
-        throwsA(isA<ModbusCommunicationException>().having((e) => e.message, 'message', contains('41.3'))));
+        throwsA(isA<ModbusCommunicationException>().having((e) => e.message, 'message', contains('41,3'))));
     provider.dispose();
   });
 

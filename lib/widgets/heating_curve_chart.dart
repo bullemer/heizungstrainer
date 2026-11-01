@@ -192,7 +192,7 @@ class HeatingCurveChart extends StatelessWidget {
               getTooltipColor: (_) => const Color(0xFF35353F),
               getTooltipItems: (spots) => spots.map((spot) {
                 return LineTooltipItem(
-                  '${spot.x.fixed(0)}°C → ${spot.y.fixed(1)}°C',
+                  '${spot.x.de(0)}°C → ${spot.y.de(1)}°C',
                   const TextStyle(
                     color: Color(0xFFECECF0),
                     fontSize: 12,
@@ -231,7 +231,7 @@ class HeatingCurveLegend extends StatelessWidget {
       children: [
         _LegendItem(
           color: const Color(0xFFFFA726),
-          label: 'Deine Kurve (${parallelShift > 0 ? '+' : ''}${parallelShift.fixed(0)})',
+          label: 'Deine Kurve (${parallelShift > 0 ? '+' : ''}${parallelShift.de(0)})',
           dashed: false,
         ),
         const _LegendItem(
@@ -242,8 +242,8 @@ class HeatingCurveLegend extends StatelessWidget {
         _LegendItem(
           color: const Color(0xFF7C4DFF),
           label: 'Betriebspunkt '
-              '(${currentOutdoorTemp.fixed(0)}° / '
-              '${currentFlowTemp.fixed(0)}°)',
+              '(${currentOutdoorTemp.de(0)}° / '
+              '${currentFlowTemp.de(0)}°)',
           dashed: true,
         ),
       ],

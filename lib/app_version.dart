@@ -1,5 +1,5 @@
 /// Single source for the version shown in the app and sent in diagnostics.
 /// Keep in sync with `version:` in pubspec.yaml.
-const String appVersion = '1.2.8';
-const int appBuild = 39;
+const String appVersion = '1.2.9';
+const int appBuild = 40;
 const String appVersionLabel = '$appVersion (Build $appBuild)';

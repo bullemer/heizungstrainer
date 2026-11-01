@@ -469,7 +469,7 @@ void main() {
       expect(find.text('Wochenende im Harz'), findsOneWidget);
       expect(find.text('Sparbetrieb aktiv'), findsOneWidget);
       expect(find.text('Vorzeitig beenden & Heizung hochfahren'), findsOneWidget);
-      expect(find.textContaining('4.68 €'), findsWidgets);
+      expect(find.textContaining('4,68 €'), findsWidgets);
     });
 
     testWidgets('activating a preset via button updates UI', (tester) async {
@@ -605,11 +605,11 @@ void main() {
       await tester.pump();
     }
     expect(find.text('Urlaubsmodus aktiv: 1 Woche Urlaub'), findsOneWidget);
-    expect(find.textContaining('Raum-Sollwert auf 18.0 °C (normal 22.0 °C)'), findsOneWidget);
+    expect(find.textContaining('Raum-Sollwert auf 18,0 °C (normal 22,0 °C)'), findsOneWidget);
 
     await tester.tap(find.byKey(const Key('endHolidayFromHome')));
     await tester.pumpAndSettle();
-    expect(find.textContaining('zurück auf 22.0 °C'), findsOneWidget);
+    expect(find.textContaining('zurück auf 22,0 °C'), findsOneWidget);
     await tester.tap(find.byKey(const Key('confirmEndHoliday')));
     for (var i = 0; i < 10 && find.byKey(const Key('activeHolidayCard')).evaluate().isNotEmpty; i++) {
       await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));

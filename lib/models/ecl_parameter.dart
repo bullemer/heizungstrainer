@@ -141,7 +141,7 @@ abstract final class ECLRegisters {
   /// 11179. Raw×0.1 = °C. (Up to 1.1.3: register 11003 = PNU 11004 "Gew. Temp.".)
   static const roomTargetTemp = ECLParameter(
     id: 'room_target_temp',
-    name: 'Raum-Solltemperatur',
+    name: 'Basis-Wärme (Komfort-Raumsollwert)',
     unit: '°C',
     modbusAddress: 11179,
     multiplier: 0.1,
@@ -202,7 +202,7 @@ abstract final class ECLRegisters {
 
   /// Room setpoint outside comfort periods ("Spar"/setback, PNU 11181).
   static const savingRoomTemp = ECLParameter(
-    id: 'saving_room_temp', name: 'Spar-Raumsollwert', unit: '°C', modbusAddress: 11180, multiplier: 0.1,
+    id: 'saving_room_temp', name: 'Abgesenkte Raumtemperatur', unit: '°C', modbusAddress: 11180, multiplier: 0.1,
     isWritable: true, minValue: 10.0, maxValue: 30.0,
   );
 

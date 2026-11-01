@@ -86,7 +86,7 @@ void main() {
 
     provider.setReadingForTesting(ECLRegisters.circuitMode, 1);
     await pump();
-    expect(find.text('5.0 °C draußen — Heizbetrieb'), findsOneWidget);
+    expect(find.text('5,0 °C draußen — Heizbetrieb'), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
     provider.dispose();
   });

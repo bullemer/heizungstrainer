@@ -34,10 +34,10 @@ class ECLReading {
 
   /// Human-readable formatted string including value and unit.
   ///
-  /// Example: '21.5 °C' or '-3' (for dimensionless parameters).
+  /// Example: '21,5 °C' or '-3' (for dimensionless parameters).
   String get formattedValue {
     if (isSensorDisconnected) return 'Fühler getrennt';
-    final valueStr = displayValue.fixed(parameter.displayPrecision);
+    final valueStr = displayValue.de(parameter.displayPrecision);
     return parameter.unit.isNotEmpty ? '$valueStr ${parameter.unit}' : valueStr;
   }
 

@@ -116,7 +116,7 @@ void main() {
 
       expect(reading.isSensorDisconnected, isFalse);
       expect(reading.displayValue, closeTo(45.2, 0.01));
-      expect(reading.formattedValue, equals('45.2 °C'));
+      expect(reading.formattedValue, equals('45,2 °C'));
     });
   });
 

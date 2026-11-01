@@ -238,7 +238,7 @@ void main() {
 
       await tester.pump();
 
-      expect(find.text('Sicherungen'), findsOneWidget);
+      expect(find.text('Backup'), findsOneWidget);
       expect(find.text('Aktiver Regler-Status'), findsOneWidget);
       // fixed profiles removed: they duplicated the Basis-Wärme slider
       expect(find.text('Vordefinierte Profile'), findsNothing);

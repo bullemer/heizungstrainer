@@ -573,7 +573,7 @@ class BoschBuderusEmsController implements HeatingController {
       );
       if (!success) {
         throw ModbusCommunicationException(
-          message: 'KM200 Raum-Solltemperatur (${temperature.fixed(1)} °C) '
+          message: 'KM200 Raum-Solltemperatur (${temperature.de(1)} °C) '
               'konnte nicht gesetzt werden.',
         );
       }
@@ -598,7 +598,7 @@ class BoschBuderusEmsController implements HeatingController {
 
     if (!success) {
       throw ModbusCommunicationException(
-        message: 'EMS-ESP Raum-Solltemperatur (${temperature.fixed(1)} °C) '
+        message: 'EMS-ESP Raum-Solltemperatur (${temperature.de(1)} °C) '
             'konnte nicht gesetzt werden.',
       );
     }

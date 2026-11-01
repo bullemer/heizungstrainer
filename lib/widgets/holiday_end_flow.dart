@@ -26,7 +26,7 @@ Future<bool> endHolidayPlanWithConfirmation(
       title: Text(plan.setbackApplied ? 'Abwesenheitsmodus beenden?' : 'Geplante Abwesenheit verwerfen?'),
       content: Text(plan.setbackApplied
           ? (plan.controlMode == 'room'
-              ? 'Der Raum-Sollwert geht sofort zurück auf ${plan.normalRoomTemp.fixed(1)} °C.'
+              ? 'Der Raum-Sollwert geht sofort zurück auf ${plan.normalRoomTemp.de(1)} °C.'
               : 'Die Heizung schaltet sofort wieder auf die normalen Komfort-Einstellungen um.')
           : 'Die Heizung wurde noch nicht abgesenkt; der Plan wird verworfen.'),
       actions: [
@@ -48,8 +48,8 @@ Future<bool> endHolidayPlanWithConfirmation(
   } catch (e) {
     if (!context.mounted) return false;
     final manual = plan.controlMode == 'room'
-        ? 'den Raum-Sollwert bitte selbst auf ${plan.normalRoomTemp.fixed(1)} °C'
-        : 'die Parallelverschiebung bitte selbst auf ${plan.normalShift.fixed(0)}';
+        ? 'den Raum-Sollwert bitte selbst auf ${plan.normalRoomTemp.de(1)} °C'
+        : 'die Parallelverschiebung bitte selbst auf ${plan.normalShift.de(0)}';
     final closeAnyway = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -75,7 +75,7 @@ Future<bool> endHolidayPlanWithConfirmation(
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: Text(plan.setbackApplied
           ? (plan.controlMode == 'room'
-              ? '✓ Normalbetrieb: Raum-Sollwert wieder ${plan.normalRoomTemp.fixed(1)} °C.'
+              ? '✓ Normalbetrieb: Raum-Sollwert wieder ${plan.normalRoomTemp.de(1)} °C.'
               : '✓ Normalbetrieb wiederhergestellt.')
           : '✓ Geplante Abwesenheit verworfen.'),
     ));
@@ -143,12 +143,12 @@ class _ActiveHolidayCardState extends State<ActiveHolidayCard> {
     final heatUp = plan.preheatStartTime;
     final controllerEnd = DateTime(heatUp.year, heatUp.month, heatUp.day);
     final what = plan.runsInController
-        ? 'Im Regler (P${plan.controllerSlot}): Spar ${plan.targetRoomTemp.fixed(1)} °C statt ${plan.normalRoomTemp.fixed(1)} °C'
+        ? 'Im Regler (P${plan.controllerSlot}): Spar ${plan.targetRoomTemp.de(1)} °C statt ${plan.normalRoomTemp.de(1)} °C'
         : armed
         ? 'Geplant ab ${_when(plan.startDateTime)}'
         : (plan.controlMode == 'room'
-            ? 'Raum-Sollwert auf ${plan.targetRoomTemp.fixed(1)} °C (normal ${plan.normalRoomTemp.fixed(1)} °C)'
-            : 'Parallelverschiebung ${plan.setbackShift.fixed(0)} (normal ${plan.normalShift.fixed(0)})');
+            ? 'Raum-Sollwert auf ${plan.targetRoomTemp.de(1)} °C (normal ${plan.normalRoomTemp.de(1)} °C)'
+            : 'Parallelverschiebung ${plan.setbackShift.de(0)} (normal ${plan.normalShift.de(0)})');
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Container(

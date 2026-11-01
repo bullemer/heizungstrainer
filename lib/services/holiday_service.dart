@@ -152,13 +152,13 @@ class HolidayService {
     final comfort = provider.getReading(ECLRegisters.roomTargetTemp)?.displayValue;
     final saving = provider.getReading(ECLRegisters.savingRoomTemp)?.displayValue;
     if (comfort == null || saving == null) {
-      throw const HolidayModeException('Komfort- und Spar-Sollwert des Reglers sind noch nicht gelesen – bitte kurz warten.');
+      throw const HolidayModeException('Basis-Wärme und abgesenkte Temperatur sind noch nicht gelesen – bitte kurz warten.');
     }
     if (saving >= comfort) {
       throw HolidayModeException(
-        'Der Spar-Sollwert des Reglers (${saving.fixed(1)} °C) ist nicht niedriger als Komfort '
-        '(${comfort.fixed(1)} °C) – im Urlaub würde der Regler nicht absenken. Bitte zuerst auf der '
-        'Startseite unter „Zeitprogramm im Regler“ den Spar-Sollwert anpassen.',
+        'Die abgesenkte Temperatur des Reglers (${saving.de(1)} °C) ist nicht niedriger als die Basis-Wärme '
+        '(${comfort.de(1)} °C) – im Urlaub würde der Regler nicht absenken. Bitte zuerst auf der '
+        'Startseite unter „Wann soll es warm sein?“ den Wert „Abgesenkt“ anpassen.',
       );
     }
     final start = plan.startDateTime.isBefore(at) ? at : plan.startDateTime;
@@ -187,7 +187,7 @@ class HolidayService {
       controllerId: provider.selectedControllerId,
       action: 'HOLIDAY_MODE_IN_CONTROLLER',
       message: 'Abwesenheit "${plan.title}" im Regler gespeichert (${entry.describe()}): '
-          'Spar ${saving.fixed(1)} °C statt Komfort ${comfort.fixed(1)} °C – läuft auch ohne App.',
+          'Spar ${saving.de(1)} °C statt Komfort ${comfort.de(1)} °C – läuft auch ohne App.',
       details: {'planId': plan.id, 'slot': entry.slot},
     );
     return stored;
@@ -267,8 +267,8 @@ class HolidayService {
     final clamped = target < minHolidayRoomSetpoint ? minHolidayRoomSetpoint : target;
     if (clamped >= current) {
       throw HolidayModeException(
-        'Der Raum-Sollwert steht schon bei ${current.fixed(1)} °C – tiefer als '
-        '${minHolidayRoomSetpoint.fixed(0)} °C senkt der Urlaubsmodus nicht.',
+        'Der Raum-Sollwert steht schon bei ${current.de(1)} °C – tiefer als '
+        '${minHolidayRoomSetpoint.de(0)} °C senkt der Urlaubsmodus nicht.',
       );
     }
     try {

@@ -13,3 +13,9 @@ extension FixedDecimal on num {
     return (rounded / f).toStringAsFixed(digits);
   }
 }
+
+/// Number for display in German: [fixed] with a decimal comma ("21,5").
+/// Use [fixed] for values that are parsed again, stored or written.
+extension GermanDecimal on num {
+  String de(int digits) => fixed(digits).replaceAll('.', ',');
+}

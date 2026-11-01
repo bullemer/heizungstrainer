@@ -280,7 +280,7 @@ class _ConnectionScreenState extends State<ConnectionScreen>
     switch (provider.connectionState) {
       case ECLConnectionState.disconnected:
         title = 'Bereit';
-        subtitle = 'Starten Sie die Suche nach Ihrem ECL 310 Regler';
+        subtitle = 'Starte die Suche nach deinem ECL 310 Regler';
       case ECLConnectionState.discovering:
         title = 'Suche läuft…';
         final pct = (provider.discoveryProgress * 100).toInt();

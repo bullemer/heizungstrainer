@@ -137,7 +137,7 @@ void main() {
     testWidgets('slider preview shows the new flow and kWh/€ per year', (tester) async {
       await tester.pumpWidget(build(preview: 21));
       // 5 °C outdoor: 26 + 2.5 = 28.5 now, 26 + 1.25 = 27.25 at 21 °C
-      expect(find.textContaining('28.5 → 27.3'), findsOneWidget);
+      expect(find.textContaining('28,5 → 27,3'), findsOneWidget);
       expect(find.textContaining('ca. 6 % weniger Heizenergie · ≈ 480 kWh/Jahr · ≈ 58 €/Jahr'), findsOneWidget);
     });
   });
@@ -203,7 +203,7 @@ void main() {
       ),
     ));
     expect(find.text('Was kann ich sparen?'), findsOneWidget);
-    expect(find.text('21.0 °C (−1.0)'), findsOneWidget);
+    expect(find.text('21,0 °C (−1,0)'), findsOneWidget);
     expect(find.text('−600 kWh (6 %)'), findsOneWidget);
     expect(find.text('−72 €'), findsOneWidget);
     expect(find.text('−1200 kWh (12 %)'), findsOneWidget);

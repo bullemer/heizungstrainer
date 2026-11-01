@@ -91,7 +91,7 @@ const double _percentPerKelvin = 6;
 
 List<ConfigFinding> runConfigCheck(ConfigCheckInput i) {
   final out = <ConfigFinding>[];
-  String t(double v) => '${v.fixed(v == v.roundToDouble() ? 0 : 1)} °C';
+  String t(double v) => '${v.de(v == v.roundToDouble() ? 0 : 1)} °C';
 
   // ── Controller ─────────────────────────────────────────────────────
   for (final n in i.alarms.toList()..sort()) {
@@ -144,7 +144,7 @@ List<ConfigFinding> runConfigCheck(ConfigCheckInput i) {
         4 => 'Heizkreis auf Frostschutz',
         _ => 'Ungewöhnliche Betriebsart des Heizkreises',
       },
-      detail: 'Der Regler folgt weder Zeitprogramm noch Komfort-Sollwert. Wenn das nicht gewollt ist, '
+      detail: 'Der Regler folgt weder den warmen Zeiten noch der Basis-Wärme. Wenn das nicht gewollt ist, '
           'am Regler auf „Zeitprogramm“ stellen.',
     ));
   }
@@ -153,8 +153,8 @@ List<ConfigFinding> runConfigCheck(ConfigCheckInput i) {
       id: 'saving_above_comfort',
       area: FindingArea.heating,
       severity: FindingSeverity.problem,
-      title: 'Spar-Sollwert höher als Komfort',
-      detail: 'Spar ${t(saving)}, Komfort ${t(comfort)}: außerhalb der Komfortzeiten heizt der Regler wärmer '
+      title: 'Abgesenkt ist wärmer als die Basis-Wärme',
+      detail: 'Abgesenkt ${t(saving)}, Basis-Wärme ${t(comfort)}: außerhalb der warmen Zeiten heizt der Regler wärmer '
           'statt sparsamer, und ein Urlaub im Regler würde nicht absenken. Üblich sind 2–4 °C unter Komfort.',
       action: FindingAction.fixSavingSetpoint,
     ));
@@ -168,10 +168,10 @@ List<ConfigFinding> runConfigCheck(ConfigCheckInput i) {
         id: 'schedule_empty_days',
         area: FindingArea.heating,
         severity: warmer ? FindingSeverity.problem : FindingSeverity.hint,
-        title: '${empty.map((d) => WeekSchedule.dayNames[d]).join(', ')} ohne Komfortzeit',
+        title: '${empty.map((d) => WeekSchedule.dayNames[d]).join(', ')} ohne warme Zeit',
         detail: warmer
-            ? 'An diesen Tagen gilt ganztags der Spar-Sollwert – der hier höher ist als Komfort.'
-            : 'An diesen Tagen gilt ganztags der Spar-Sollwert${saving == null ? '' : ' (${t(saving)})'}. '
+            ? 'An diesen Tagen bleibt es ganztags abgesenkt – und „abgesenkt“ ist hier sogar wärmer.'
+            : 'An diesen Tagen bleibt es ganztags abgesenkt${saving == null ? '' : ' (${t(saving)})'}. '
                 'Wenn ihr dort zu Hause seid, wird es kühler als an den anderen Tagen.',
         action: FindingAction.fixScheduleDays,
       ));
@@ -182,7 +182,7 @@ List<ConfigFinding> runConfigCheck(ConfigCheckInput i) {
       id: 'comfort_high',
       area: FindingArea.heating,
       severity: FindingSeverity.hint,
-      title: 'Komfort-Sollwert ${t(comfort)} ist hoch',
+      title: 'Basis-Wärme ${t(comfort)} ist hoch',
       detail: 'Jedes Grad weniger spart etwa $_percentPerKelvin % Heizenergie. 20–21 °C reichen in Wohnräumen meist.',
       action: FindingAction.openCurveEditor,
     ));
@@ -210,8 +210,8 @@ List<ConfigFinding> runConfigCheck(ConfigCheckInput i) {
         severity: excess > 8 ? FindingSeverity.warning : FindingSeverity.hint,
         title: 'Heizkurve höher als nötig',
         detail: 'Bei −8 °C liefert deine Kurve ${t(own)}, für ${ref.label} reichen ${t(low)}–${t(high)}. '
-            'Das entspricht grob ${roomK.fixed(1)} °C mehr Raumtemperatur ≈ '
-            '${(roomK * _percentPerKelvin).fixed(0)} % Heizenergie. Schrittweise absenken und beobachten.',
+            'Das entspricht grob ${roomK.de(1)} °C mehr Raumtemperatur ≈ '
+            '${(roomK * _percentPerKelvin).de(0)} % Heizenergie. Schrittweise absenken und beobachten.',
         action: FindingAction.openCurveEditor,
       ));
     } else if (own < low - 2) {
@@ -331,7 +331,7 @@ List<ConfigFinding> runConfigCheck(ConfigCheckInput i) {
         id: 'circulation_long',
         area: FindingArea.hotWater,
         severity: FindingSeverity.hint,
-        title: 'Zirkulation ${perDay.fixed(0)} Std. pro Tag',
+        title: 'Zirkulation ${perDay.de(0)} Std. pro Tag',
         detail: 'Die Leitung wird fast den ganzen Tag warm gehalten. Auf die Zeiten begrenzen, in denen '
             'wirklich gezapft wird (z. B. morgens und abends).',
         action: FindingAction.openHotWater,

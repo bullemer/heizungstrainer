@@ -512,10 +512,10 @@ class _SmartStatusBanner extends StatelessWidget {
         : isSensorDisconnected
             ? 'Außentemperaturfühler nicht verbunden'
             : specialMode != null
-                ? '${outdoorTemp.fixed(1)} °C draußen — $specialMode'
+                ? '${outdoorTemp.de(1)} °C draußen — $specialMode'
                 : isSummerMode
-                    ? '${outdoorTemp.fixed(1)} °C draußen — über der Heizgrenze (${summerCutoff.fixed(0)} °C)'
-                    : '${outdoorTemp.fixed(1)} °C draußen — Heizbetrieb';
+                    ? '${outdoorTemp.de(1)} °C draußen — über der Heizgrenze (${summerCutoff.de(0)} °C)'
+                    : '${outdoorTemp.de(1)} °C draußen — Heizbetrieb';
 
     final subtitle = noValue
         ? (provider.isConnected ? 'Der Wert wird gleich gelesen.' : 'Keine Verbindung zum Regler.')
@@ -530,7 +530,7 @@ class _SmartStatusBanner extends StatelessWidget {
                 _ => isSummerMode
                     ? 'Oberhalb der Heizgrenze heizt der Regler nicht (Sommer-Aus). Er nutzt eine '
                         'gedämpfte Außentemperatur und schaltet deshalb etwas zeitversetzt um.'
-                    : 'Unter der Heizgrenze (${summerCutoff.fixed(0)} °C) heizt der Regler nach Heizkurve.',
+                    : 'Unter der Heizgrenze (${summerCutoff.de(0)} °C) heizt der Regler nach Heizkurve.',
               };
 
     return Container(
@@ -606,7 +606,7 @@ class _HighConsumptionWarning extends StatelessWidget {
               title: const Text('Heizkurve zurücksetzen?'),
               content: Text(
                 'Die Heizkurve steht aktuell auf '
-                '${shiftValue > 0 ? '+' : ''}${shiftValue.fixed(0)}. '
+                '${shiftValue > 0 ? '+' : ''}${shiftValue.de(0)}. '
                 'Möchtest du sie auf 0 (Neutral) zurücksetzen, '
                 'um den Verbrauch zu optimieren?',
               ),
@@ -733,7 +733,7 @@ class _HeatingComfortCardState extends State<_HeatingComfortCard> {
   }
 
   String _comfortLabel(double value) {
-    if (_roomMode) return '${value.fixed(1)} °C';
+    if (_roomMode) return '${value.de(1)} °C';
     if (value <= -3) return 'Sparmodus';
     if (value <= -2) return 'Etwas kühler';
     if (value <= -1) return 'Leicht reduziert';
@@ -764,7 +764,7 @@ class _HeatingComfortCardState extends State<_HeatingComfortCard> {
         });
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text(_roomMode
-              ? 'Komfort-Raumsollwert auf ${_comfortLabel(_sliderValue)} gesetzt'
+              ? 'Basis-Wärme auf ${_comfortLabel(_sliderValue)} gesetzt'
               : 'Heizkurve auf ${_comfortLabel(_sliderValue)} gesetzt'),
           backgroundColor: const Color(0xFF66BB6A),
         ));
@@ -801,7 +801,7 @@ class _HeatingComfortCardState extends State<_HeatingComfortCard> {
       return Padding(
         padding: const EdgeInsets.only(top: 12),
         child: Text(
-          'Aktueller Komfort-Raumsollwert des Reglers. Schieb den Regler, um zu sehen, '
+          'Aktuelle Basis-Wärme des Reglers. Schieb den Regler, um zu sehen, '
           'wie sich Heizkurve, Energie und Kosten ändern.',
           style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 11.5, height: 1.35),
         ),
@@ -816,9 +816,9 @@ class _HeatingComfortCardState extends State<_HeatingComfortCard> {
             Padding(
               padding: const EdgeInsets.only(bottom: 8),
               child: Text(
-                'Vorlauf bei ${outdoorTemp.fixed(1)} °C außen: '
-                '${curve.flowAt(outdoorTemp, current).fixed(1)} → '
-                '${curve.flowAt(outdoorTemp, _sliderValue).fixed(1)} °C '
+                'Vorlauf bei ${outdoorTemp.de(1)} °C außen: '
+                '${curve.flowAt(outdoorTemp, current).de(1)} → '
+                '${curve.flowAt(outdoorTemp, _sliderValue).de(1)} °C '
                 '(Kurve unten gestrichelt)',
                 style: TextStyle(color: Colors.white.withValues(alpha: 0.75), fontSize: 11.5),
               ),
@@ -869,19 +869,19 @@ class _HeatingComfortCardState extends State<_HeatingComfortCard> {
     if (sliderValue < 0) {
       energyText = 'ca. ${(-percentEnergy)}% weniger Heizenergie';
       flowText =
-          'Vorlauf sinkt bei ${outdoorTemp.fixed(0)} °C Außentemp auf ${flowTargetSelected.fixed(1)} °C (${flowDelta.fixed(1)} °C)';
+          'Vorlauf sinkt bei ${outdoorTemp.de(0)} °C Außentemp auf ${flowTargetSelected.de(1)} °C (${flowDelta.de(1)} °C)';
       icon = Icons.eco_rounded;
       color = const Color(0xFF66BB6A);
     } else if (sliderValue == 0) {
       energyText = 'Norm-Auslegung (Ausgangsbasis)';
       flowText =
-          'Vorlauf-Sollwert: ${flowTargetSelected.fixed(1)} °C (bei ${outdoorTemp.fixed(0)} °C Außentemperatur)';
+          'Vorlauf-Sollwert: ${flowTargetSelected.de(1)} °C (bei ${outdoorTemp.de(0)} °C Außentemperatur)';
       icon = Icons.check_circle_outline_rounded;
       color = const Color(0xFF8BC34A);
     } else {
       energyText = 'ca. +$percentEnergy% höherer Energieaufwand';
       flowText =
-          'Vorlauf steigt bei ${outdoorTemp.fixed(0)} °C Außentemp auf ${flowTargetSelected.fixed(1)} °C (+${flowDelta.fixed(1)} °C)';
+          'Vorlauf steigt bei ${outdoorTemp.de(0)} °C Außentemp auf ${flowTargetSelected.de(1)} °C (+${flowDelta.de(1)} °C)';
       icon = Icons.local_fire_department_rounded;
       color = const Color(0xFFFF7043);
     }
@@ -992,7 +992,7 @@ class _HeatingComfortCardState extends State<_HeatingComfortCard> {
                       ),
                     ),
                     Text(
-                      _roomMode ? 'Komfort-Raumsollwert (verschiebt die Heizkurve)' : 'Heizkurve',
+                      _roomMode ? 'Komfort-Raumsollwert – verschiebt die Heizkurve' : 'Heizkurve',
                       style: TextStyle(
                         fontSize: 12,
                         color: Colors.white.withValues(alpha: 0.5),
@@ -1081,14 +1081,14 @@ class _HeatingComfortCardState extends State<_HeatingComfortCard> {
               spacing: 12,
               children: [
                 Text(
-                  _roomMode ? '❄️ ${_roomMin.fixed(0)} °C' : '❄️ Sparmodus',
+                  _roomMode ? '❄️ ${_roomMin.de(0)} °C' : '❄️ Sparmodus',
                   style: TextStyle(
                     fontSize: 11,
                     color: Colors.white.withValues(alpha: 0.4),
                   ),
                 ),
                 Text(
-                  _roomMode ? '🔥 ${_roomMax.fixed(0)} °C' : '🔥 Max. Komfort',
+                  _roomMode ? '🔥 ${_roomMax.de(0)} °C' : '🔥 Max. Komfort',
                   style: TextStyle(
                     fontSize: 11,
                     color: Colors.white.withValues(alpha: 0.4),
@@ -1265,7 +1265,7 @@ class _HotWaterCard extends StatelessWidget {
                       padding: const EdgeInsets.only(top: 6),
                       child: Text(
                         '${extra.id == ECLRegisters.dhwTankBottom.id ? 'Speicher unten (S8)' : 'Ladevorlauf (S4)'}: '
-                        '${r.displayValue.fixed(1)} °C',
+                        '${r.displayValue.de(1)} °C',
                         key: Key('dhw_${extra.id}'),
                         style: const TextStyle(fontSize: 12, color: Color(0xFFBDBDC7)),
                       ),
@@ -1279,7 +1279,7 @@ class _HotWaterCard extends StatelessWidget {
                 Text(
                   isDisconnected
                       ? 'Kein Fühlersignal (S6)'
-                      : 'Zieltemperatur: ${(provider.getReading(ECLRegisters.dhwComfortSetpoint)?.displayValue ?? 55.0).fixed(1)} °C',
+                      : 'Zieltemperatur: ${(provider.getReading(ECLRegisters.dhwComfortSetpoint)?.displayValue ?? 55.0).de(1)} °C',
                   style: TextStyle(
                     fontSize: 11.5,
                     color: Colors.white.withValues(alpha: 0.4),
@@ -1364,7 +1364,7 @@ class _MetricCard extends StatelessWidget {
             crossAxisAlignment: WrapCrossAlignment.end,
             children: [
               Text(
-                isDisconnected ? '—' : temp.fixed(1),
+                isDisconnected ? '—' : temp.de(1),
                 style: TextStyle(
                   fontSize: 28,
                   fontWeight: FontWeight.bold,
@@ -1464,7 +1464,7 @@ class _EfficiencyDeltaChip extends StatelessWidget {
             ),
             const SizedBox(width: 8),
             Text(
-              'Effizienz-Delta: ${delta.fixed(1)}°C',
+              'Spreizung Vor-/Rücklauf: ${delta.de(1)} K',
               style: TextStyle(
                 color: color,
                 fontWeight: FontWeight.w600,

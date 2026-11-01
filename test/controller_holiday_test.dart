@@ -115,7 +115,7 @@ void main() {
       final service = HolidayService(inMemoryStorage: {});
       expect(
         () => service.activatePlan(plan: week(DateTime(2026, 10, 10, 15)), provider: provider, now: DateTime(2026, 10, 10, 15)),
-        throwsA(isA<HolidayModeException>().having((e) => e.message, 'message', contains('25.0 °C'))),
+        throwsA(isA<HolidayModeException>().having((e) => e.message, 'message', contains('25,0 °C'))),
       );
       expect(provider.slots.values.any((e) => e.isSet), isFalse);
     });

@@ -96,7 +96,7 @@ class _BuildingProfileSheetState extends State<_BuildingProfileSheet> {
                 const SizedBox(height: 16),
                 Text(
                   'Richtwert Vorlauf bei −8 °C außen: '
-                  '${preview.reference.lowAtMinus8.fixed(0)}–${preview.reference.highAtMinus8.fixed(0)} °C'
+                  '${preview.reference.lowAtMinus8.de(0)}–${preview.reference.highAtMinus8.de(0)} °C'
                   '${_system == HeatingSystem.mixed ? ' (Heizkörper-Werte, da sie die höhere Vorlauftemperatur brauchen)' : ''}.',
                   style: muted,
                 ),

@@ -1465,7 +1465,7 @@ class ECLProvider extends ChangeNotifier {
     }
   }
 
-  static String _fmtSetting(double v) => v == v.roundToDouble() ? v.fixed(0) : v.fixed(1);
+  static String _fmtSetting(double v) => v == v.roundToDouble() ? v.de(0) : v.de(1);
 
   static String _fmtTime(DateTime t) =>
       '${t.day.toString().padLeft(2, '0')}.${t.month.toString().padLeft(2, '0')}. '
@@ -2753,8 +2753,8 @@ class ECLProvider extends ChangeNotifier {
       if (curve != null) {
         final needed = curve.flowTemps.reduce(math.max) + curve.roomCorrection(comfort);
         if (value < needed - 0.5) {
-          return 'Die Heizkurve braucht bei −30 °C bis zu ${needed.fixed(1)} °C – eine Begrenzung auf '
-              '${value.fixed(0)} °C würde sie abschneiden. Erst die Heizkurve absenken.';
+          return 'Die Heizkurve braucht bei −30 °C bis zu ${needed.de(1)} °C – eine Begrenzung auf '
+              '${value.de(0)} °C würde sie abschneiden. Erst die Heizkurve absenken.';
         }
       }
     } else if (ECLRegisters.dhwSettings.any((p) => p.id == parameter.id)) {

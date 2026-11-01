@@ -73,7 +73,7 @@ class _BackupScreenState extends State<BackupScreen> {
     if (value == null) return '–';
     if (mode != 'room') return _formatShift(value);
     final digits = value == value.roundToDouble() ? 0 : 1;
-    return '${value.fixed(digits)} °C';
+    return '${value.de(digits)} °C';
   }
 
   Future<void> _createBackup(ECLProvider provider) async {
@@ -176,8 +176,8 @@ class _BackupScreenState extends State<BackupScreen> {
                     const SizedBox(height: 4),
                     Text(
                       '• ${_modeLabel(mode)}: ${_formatValue(currentValue, mode)}\n'
-                      '• Außentemperatur: ${outdoorTemp != null ? "${outdoorTemp.fixed(1)} °C" : "–"}\n'
-                      '• Vorlauftemperatur: ${flowTemp != null ? "${flowTemp.fixed(1)} °C" : "–"}',
+                      '• Außentemperatur: ${outdoorTemp != null ? "${outdoorTemp.de(1)} °C" : "–"}\n'
+                      '• Vorlauftemperatur: ${flowTemp != null ? "${flowTemp.de(1)} °C" : "–"}',
                       style: const TextStyle(
                         color: _textPrimary,
                         fontSize: 12,
@@ -425,7 +425,7 @@ class _BackupScreenState extends State<BackupScreen> {
       backgroundColor: _background,
       appBar: AppBar(
         title: const Text(
-          'Sicherungen',
+          'Backup',
           style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18),
         ),
         centerTitle: true,
@@ -634,12 +634,12 @@ class _BackupScreenState extends State<BackupScreen> {
               children: [
                 if (backup.outdoorTemp != null)
                   Text(
-                    'Außen: ${backup.outdoorTemp!.fixed(1)} °C',
+                    'Außen: ${backup.outdoorTemp!.de(1)} °C',
                     style: const TextStyle(color: _textSecondary, fontSize: 11),
                   ),
                 if (backup.flowTemp != null)
                   Text(
-                    'Vorlauf: ${backup.flowTemp!.fixed(1)} °C',
+                    'Vorlauf: ${backup.flowTemp!.de(1)} °C',
                     style: const TextStyle(color: _textSecondary, fontSize: 11),
                   ),
               ],
@@ -721,8 +721,8 @@ class _BackupScreenState extends State<BackupScreen> {
   }
 
   String _formatShift(double shift) {
-    if (shift > 0) return '+${shift.fixed(0)}';
-    return shift.fixed(0);
+    if (shift > 0) return '+${shift.de(0)}';
+    return shift.de(0);
   }
 
   String _formatDateTime(DateTime dt) {

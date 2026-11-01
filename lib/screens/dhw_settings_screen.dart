@@ -59,7 +59,7 @@ class DhwSettingsScreen extends StatelessWidget {
                 if (tank != null)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 10),
-                    child: Text('Speicher oben jetzt: ${tank.fixed(1)} °C',
+                    child: Text('Speicher oben jetzt: ${tank.de(1)} °C',
                         style: const TextStyle(color: _muted, fontSize: 13)),
                   ),
                 _section('Betriebsart', [
@@ -83,7 +83,7 @@ class DhwSettingsScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 6),
                   const Text(
-                    'Zeitplan: Komfort-Temperatur in den Komfortzeiten, sonst Spar. '
+                    'Zeitplan: Basis-Wärme in den warmen Zeiten, sonst abgesenkt. '
                     'Komfort / Spar: rund um die Uhr diese Temperatur.',
                     style: TextStyle(color: _muted, fontSize: 11.5),
                   ),
@@ -160,7 +160,7 @@ class DhwSettingsScreen extends StatelessWidget {
                       child: FilledButton.tonalIcon(
                         key: const Key('circOptimal'),
                         icon: const Icon(Icons.auto_awesome_outlined, size: 18),
-                        label: Text('Optimale Zeiten (jetzt ${circulationHoursPerDay(circulation).fixed(0)} Std./Tag)'),
+                        label: Text('Optimale Zeiten (jetzt ${circulationHoursPerDay(circulation).de(0)} Std./Tag)'),
                         onPressed: () => _optimalCirculation(context, provider, circulation),
                       ),
                     ),
@@ -201,7 +201,7 @@ class DhwSettingsScreen extends StatelessWidget {
           padding: const EdgeInsets.symmetric(vertical: 6),
           child: Row(children: [
             Expanded(child: Text(label, style: const TextStyle(color: _text, fontSize: 13.5))),
-            Text(value == null ? '–' : '${value.fixed(0)} °C',
+            Text(value == null ? '–' : '${value.de(0)} °C',
                 style: const TextStyle(color: _accent, fontSize: 15, fontWeight: FontWeight.w700)),
             const SizedBox(width: 8),
             const Icon(Icons.edit_outlined, size: 16, color: _muted),
@@ -251,7 +251,7 @@ class DhwSettingsScreen extends StatelessWidget {
           backgroundColor: _card,
           title: Text(p.name, style: const TextStyle(color: _text, fontSize: 18)),
           content: Column(mainAxisSize: MainAxisSize.min, children: [
-            Text('${value.fixed(0)} °C', style: const TextStyle(color: _accent, fontSize: 24, fontWeight: FontWeight.w700)),
+            Text('${value.de(0)} °C', style: const TextStyle(color: _accent, fontSize: 24, fontWeight: FontWeight.w700)),
             Slider(
               value: value,
               min: min,
@@ -270,7 +270,7 @@ class DhwSettingsScreen extends StatelessWidget {
       ),
     );
     if (chosen == null || !context.mounted) return;
-    await _run(context, () => provider.writeParameter(p, chosen), '${p.name}: ${chosen.fixed(0)} °C');
+    await _run(context, () => provider.writeParameter(p, chosen), '${p.name}: ${chosen.de(0)} °C');
   }
 
   static Future<void> _enableAntiBacteria(BuildContext context, ECLProvider provider, int days, int start) async {
@@ -304,7 +304,7 @@ class DhwSettingsScreen extends StatelessWidget {
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             const Text('Optimale Zirkulationszeiten', style: TextStyle(color: _text, fontSize: 18, fontWeight: FontWeight.w700)),
             const SizedBox(height: 4),
-            Text('Jetzt läuft die Pumpe ${now.fixed(1)} Std. pro Tag. Wähle, was zu euch passt:',
+            Text('Jetzt läuft die Pumpe ${now.de(1)} Std. pro Tag. Wähle, was zu euch passt:',
                 style: const TextStyle(color: _muted, fontSize: 12.5)),
             const SizedBox(height: 12),
             for (final p in CirculationProfile.profiles) ...[
@@ -313,7 +313,7 @@ class DhwSettingsScreen extends StatelessWidget {
                 final saving = circulationSavingKwh(now - hours);
                 final money = price == null || price <= 0
                     ? ''
-                    : ' ≈ ${(saving.low * price).fixed(0)}–${(saving.high * price).fixed(0)} €';
+                    : ' ≈ ${(saving.low * price).de(0)}–${(saving.high * price).de(0)} €';
                 return InkWell(
                   key: Key('profile_${p.id}'),
                   borderRadius: BorderRadius.circular(12),
@@ -335,9 +335,9 @@ class DhwSettingsScreen extends StatelessWidget {
                       const SizedBox(height: 4),
                       Text(
                         hours < now
-                            ? '${hours.fixed(1)} Std./Tag statt ${now.fixed(1)} · spart ca. '
-                                '${saving.low.fixed(0)}–${saving.high.fixed(0)} kWh Wärme/Jahr$money'
-                            : '${hours.fixed(1)} Std./Tag – nicht weniger als jetzt',
+                            ? '${hours.de(1)} Std./Tag statt ${now.de(1)} · spart ca. '
+                                '${saving.low.de(0)}–${saving.high.de(0)} kWh Wärme/Jahr$money'
+                            : '${hours.de(1)} Std./Tag – nicht weniger als jetzt',
                         style: TextStyle(color: hours < now ? const Color(0xFF66BB6A) : _muted, fontSize: 12.5, fontWeight: FontWeight.w600),
                       ),
                     ]),

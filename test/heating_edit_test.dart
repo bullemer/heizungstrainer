@@ -195,7 +195,7 @@ void main() {
     expect(find.text('6–22'), findsNWidgets(7));
     expect(tester.widget<ChoiceChip>(find.byKey(const Key('schedulePreset_night'))).selected, isTrue);
     // only 0.5 °C lower → the card says it hardly saves anything
-    expect(find.textContaining('nur 0.5 °C kühler'), findsOneWidget);
+    expect(find.textContaining('nur 0,5 °C kühler'), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
     provider.dispose();
   });

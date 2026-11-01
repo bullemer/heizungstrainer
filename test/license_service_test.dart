@@ -243,7 +243,7 @@ void main() {
 
       expect(find.text('Heizungstrainer Pro'), findsOneWidget);
       expect(find.text('Sensoren & Zähler live lesen'), findsOneWidget);
-      expect(find.text('Heizkurven-Shift direkt schreiben'), findsOneWidget);
+      expect(find.text('Heizkurve und Basis-Wärme direkt schreiben'), findsOneWidget);
       expect(find.text('Aktivieren'), findsOneWidget);
       expect(find.textContaining('19,99 € einmalig'), findsOneWidget);
       expect(find.textContaining('In-App'), findsNothing);

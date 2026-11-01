@@ -51,7 +51,7 @@ class ControllerCurveChart extends StatelessWidget {
   bool get showsEffective =>
       (roomSetpoint - ControllerHeatingCurve.referenceRoomTemp).abs() >= 0.25;
 
-  static String _fmt(double v) => v.fixed(1);
+  static String _fmt(double v) => v.de(1);
 
   Widget _chart() {
     const base = ControllerHeatingCurve.referenceRoomTemp;
@@ -182,7 +182,7 @@ class ControllerCurveChart extends StatelessWidget {
                   ? '${_fmt(ref.lowAt(t.x))}–${_fmt(t.y)} °C'
                   : '${_fmt(t.y)} °C';
               items.add(LineTooltipItem(
-                header ? '${t.x.fixed(0)} °C außen\n' : '',
+                header ? '${t.x.de(0)} °C außen\n' : '',
                 const TextStyle(color: Color(0xFFBDBDC7), fontSize: 10.5),
                 textAlign: TextAlign.left,
                 children: [

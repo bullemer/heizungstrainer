@@ -124,7 +124,7 @@ class _A247Painter extends CustomPainter {
     // ── header: outdoor, controller time, alarm output ──
     final outdoor = s.sensors[1];
     _label(canvas, 'Außen S1', const Offset(40, 28), size: 18, color: muted, bold: true);
-    _label(canvas, outdoor == null ? '--' : '${outdoor.fixed(1)} °C', const Offset(40, 56), size: 24, color: text);
+    _label(canvas, outdoor == null ? '--' : '${outdoor.de(1)} °C', const Offset(40, 56), size: 24, color: text);
     if (s.controllerTime != null) {
       final t = s.controllerTime!;
       _label(canvas, 'Reglerzeit', const Offset(380, 28), size: 16, color: muted);
@@ -259,14 +259,14 @@ class _A247Painter extends CustomPainter {
     c.drawCircle(at, 9, Paint()..color = text);
     final measured = s.sensors[n];
     final ref = s.references[n];
-    final value = measured == null ? '--' : '${measured.fixed(1)} °C';
+    final value = measured == null ? '--' : '${measured.de(1)} °C';
     if (compact) {
       _label(c, 'S$n $value', labelAt + const Offset(12, -10), size: 15, color: text, bold: true);
-      if (ref != null) _label(c, '(${ref.fixed(1)}) °C', labelAt + const Offset(30, 8), size: 14, color: target);
+      if (ref != null) _label(c, '(${ref.de(1)}) °C', labelAt + const Offset(30, 8), size: 14, color: target);
       return;
     }
     _label(c, value, labelAt, size: 20, color: text);
-    if (ref != null) _label(c, '(${ref.fixed(1)}) °C', labelAt + const Offset(0, 24), size: 18, color: target);
+    if (ref != null) _label(c, '(${ref.de(1)}) °C', labelAt + const Offset(0, 24), size: 18, color: target);
     _label(c, 'S$n', at + const Offset(16, 10), size: 18, color: text, bold: true);
   }
 

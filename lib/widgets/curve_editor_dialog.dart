@@ -66,18 +66,18 @@ Future<void> showCurveEditor(BuildContext context, ECLProvider provider) async {
         Widget row(int i) => Row(children: [
               SizedBox(
                 width: 52,
-                child: Text('${curve.outdoorTemps[i].fixed(0)} °C', style: const TextStyle(color: muted, fontSize: 12.5)),
+                child: Text('${curve.outdoorTemps[i].de(0)} °C', style: const TextStyle(color: muted, fontSize: 12.5)),
               ),
               SizedBox(
                 width: 44,
-                child: Text('${curve.flowTemps[i].fixed(0)} °C', style: const TextStyle(color: text, fontSize: 12.5)),
+                child: Text('${curve.flowTemps[i].de(0)} °C', style: const TextStyle(color: text, fontSize: 12.5)),
               ),
               const Spacer(),
               step(Key('pointDown_$i'), Icons.remove_rounded, canLower(i) ? () => nudge(i, -1) : null),
               SizedBox(
                 width: 46,
                 child: Text(
-                  '${points[i].fixed(0)} °C',
+                  '${points[i].de(0)} °C',
                   key: Key('curvePoint_$i'),
                   textAlign: TextAlign.center,
                   style: TextStyle(
@@ -119,7 +119,7 @@ Future<void> showCurveEditor(BuildContext context, ECLProvider provider) async {
                   child: Text(label(percent),
                       key: const Key('curveChange'),
                       textAlign: TextAlign.center,
-                      style: const TextStyle(color: accent, fontSize: 18, fontWeight: FontWeight.w700)),
+                      style: const TextStyle(color: accent, fontSize: 16, fontWeight: FontWeight.w700)),
                 ),
                 IconButton.filledTonal(
                   key: const Key('curveSteeper'),
@@ -145,15 +145,15 @@ Future<void> showCurveEditor(BuildContext context, ECLProvider provider) async {
                   style: TextStyle(color: muted, fontSize: 11)),
               if (cappedAt != null) ...[
                 const SizedBox(height: 6),
-                Text('Bei großer Kälte begrenzt „Max. Vorlauf“ auf ${cappedAt.fixed(0)} °C.',
+                Text('Bei großer Kälte begrenzt „Max. Vorlauf“ auf ${cappedAt.de(0)} °C.',
                     style: const TextStyle(color: Color(0xFFFFB74D), fontSize: 11.5)),
               ],
               if (reference != null) ...[
                 const SizedBox(height: 8),
                 Text(
-                  'Richtwert für ${reference.label}: ${reference.lowAtMinus8.fixed(0)}–'
-                  '${reference.highAtMinus8.fixed(0)} °C bei −8 °C außen '
-                  '(jetzt ${curve.flowAt(-8, 20).fixed(0)} °C, neu ${preview.flowAt(-8, 20).fixed(0)} °C).',
+                  'Richtwert für ${reference.label}: ${reference.lowAtMinus8.de(0)}–'
+                  '${reference.highAtMinus8.de(0)} °C bei −8 °C außen '
+                  '(jetzt ${curve.flowAt(-8, 20).de(0)} °C, neu ${preview.flowAt(-8, 20).de(0)} °C).',
                   style: const TextStyle(color: muted, fontSize: 11.5, height: 1.35),
                 ),
               ],
@@ -180,12 +180,12 @@ Future<void> showCurveEditor(BuildContext context, ECLProvider provider) async {
   if (chosen == null || !context.mounted) return;
 
   final messenger = ScaffoldMessenger.of(context);
-  final before = curve.flowTemps.map((f) => f.fixed(0)).join('/');
+  final before = curve.flowTemps.map((f) => f.de(0)).join('/');
   try {
     await provider.writeHeatingCurve(chosen.flowTemps);
     final now = ControllerHeatingCurve.fromReadings(provider.getReading)?.flowTemps ?? chosen.flowTemps;
     messenger.showSnackBar(SnackBar(
-      content: Text('Heizkurve übernommen: $before → ${now.map((f) => f.fixed(0)).join('/')} °C'),
+      content: Text('Heizkurve übernommen: $before → ${now.map((f) => f.de(0)).join('/')} °C'),
       backgroundColor: const Color(0xFF66BB6A),
     ));
   } on LicenseRequiredException {

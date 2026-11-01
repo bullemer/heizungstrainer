@@ -67,7 +67,7 @@ class WeekSchedule {
 
   String describeDay(int day) {
     final active = activePeriods(day);
-    return active.isEmpty ? 'keine Komfortzeit' : active.join(', ');
+    return active.isEmpty ? 'keine warme Zeit' : active.join(', ');
   }
 
   /// The day plan most days use (as a template for fixing a day), or null if

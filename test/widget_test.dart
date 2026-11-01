@@ -61,6 +61,6 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(HomeScreen, skipOffstage: false), findsOneWidget);
-    expect(find.text('Sicherungen'), findsWidgets);
+    expect(find.text('Backup'), findsWidgets);
   });
 }

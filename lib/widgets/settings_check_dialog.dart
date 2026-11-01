@@ -37,7 +37,7 @@ class _SettingsCheckDialogState extends State<SettingsCheckDialog> {
   static String _fmt(double? v, String unit, [String? id]) {
     if (v == null) return '–';
     if (id == ECLRegisters.circuitMode.id) return eclModeLabel(v);
-    final s = v == v.roundToDouble() ? v.fixed(0) : v.fixed(1);
+    final s = v == v.roundToDouble() ? v.de(0) : v.de(1);
     return unit.isEmpty ? s : '$s $unit';
   }
 

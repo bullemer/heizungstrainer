@@ -34,7 +34,7 @@ abstract final class FindingStyle {
         FindingArea.controller => 'Regler',
       };
   static String? actionLabel(FindingAction a) => switch (a) {
-        FindingAction.fixSavingSetpoint => 'Spar-Sollwert ändern',
+        FindingAction.fixSavingSetpoint => 'Absenkung ändern',
         FindingAction.fixScheduleDays => 'Wie die anderen Tage',
         FindingAction.setMaxFlow => 'Max. Vorlauf ändern',
         FindingAction.openCurveEditor => 'Heizkurve anpassen',
@@ -77,7 +77,7 @@ Future<void> _setMaxFlow(BuildContext context, ECLProvider provider) async {
   if (min >= current) {
     // only lowering is offered here – the curve itself must come down first
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text('Die Heizkurve braucht bis zu ${needed.fixed(0)} °C – erst die Heizkurve absenken.'),
+      content: Text('Die Heizkurve braucht bis zu ${needed.de(0)} °C – erst die Heizkurve absenken.'),
       backgroundColor: const Color(0xFFFFB74D),
     ));
     return;
@@ -90,10 +90,10 @@ Future<void> _setMaxFlow(BuildContext context, ECLProvider provider) async {
         backgroundColor: const Color(0xFF2A2A32),
         title: const Text('Max. Vorlauftemperatur', style: TextStyle(color: Color(0xFFECECF0), fontSize: 18)),
         content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('Aktuell ${current.fixed(0)} °C. Deine Heizkurve braucht höchstens ${needed.fixed(0)} °C (bei −30 °C).',
+          Text('Aktuell ${current.de(0)} °C. Deine Heizkurve braucht höchstens ${needed.de(0)} °C (bei −30 °C).',
               style: const TextStyle(color: Color(0xFFB0B0BA), fontSize: 13.5)),
           const SizedBox(height: 12),
-          Center(child: Text('${value.fixed(0)} °C', style: const TextStyle(color: Color(0xFFFFA726), fontSize: 24, fontWeight: FontWeight.w700))),
+          Center(child: Text('${value.de(0)} °C', style: const TextStyle(color: Color(0xFFFFA726), fontSize: 24, fontWeight: FontWeight.w700))),
           Slider(
             value: value,
             min: min,
@@ -116,7 +116,7 @@ Future<void> _setMaxFlow(BuildContext context, ECLProvider provider) async {
   final messenger = ScaffoldMessenger.of(context);
   try {
     await provider.writeParameter(ECLRegisters.curveMaxFlow, chosen);
-    messenger.showSnackBar(SnackBar(content: Text('Max. Vorlauf auf ${chosen.fixed(0)} °C gesetzt.'), backgroundColor: const Color(0xFF66BB6A)));
+    messenger.showSnackBar(SnackBar(content: Text('Max. Vorlauf auf ${chosen.de(0)} °C gesetzt.'), backgroundColor: const Color(0xFF66BB6A)));
   } catch (e) {
     if (context.mounted) await showWriteError(context, e);
   }

@@ -141,7 +141,7 @@ class _FeedbackSheetState extends State<FeedbackSheet> {
             ),
             const SizedBox(height: 10),
             Text(
-              'Mitgesendet werden: App-Version, Android-Version und Reglertyp '
+              'Mitgesendet werden: App-Version, Betriebssystem-Version und Reglertyp '
               '(${controller.brand} ${controller.model}). Keine Zugangsdaten, keine Messwerte.',
               style: const TextStyle(fontSize: 11, color: Colors.white54, height: 1.4),
             ),

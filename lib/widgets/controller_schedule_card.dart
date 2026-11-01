@@ -21,7 +21,7 @@ class ControllerScheduleCard extends StatelessWidget {
   static const _text = Color(0xFFECECF0);
   static const _muted = Color(0xFF9E9EA8);
 
-  static String _t(double? v) => v == null ? '–' : '${v.fixed(v == v.roundToDouble() ? 0 : 1)} °C';
+  static String _t(double? v) => v == null ? '–' : '${v.de(v == v.roundToDouble() ? 0 : 1)} °C';
 
   static const _warmColor = Color(0xFFFF8A50);
   static const _lowColor = Color(0xFF42A5F5);
@@ -117,17 +117,17 @@ class ControllerScheduleCard extends StatelessWidget {
             _info(
               'Es wird nie abgesenkt, die Heizung hält rund um die Uhr ${_t(comfort)}. '
               '${kelvin != null && kelvin >= 1 ? 'Nachts absenken (22–6 Uhr) spart grob bis zu '
-                  '${WeekSchedule.savingPercent(loweredHoursPerWeek: 56, kelvin: kelvin).fixed(0)} %.' : ''}',
+                  '${WeekSchedule.savingPercent(loweredHoursPerWeek: 56, kelvin: kelvin).de(0)} %.' : ''}',
             )
           else if (kelvin != null && kelvin >= 0 && kelvin < 1)
             _info(
-              'Abgesenkt ist nur ${kelvin.fixed(1)} °C kühler als warm – das spart kaum etwas. '
+              'Abgesenkt ist nur ${kelvin.de(1)} °C kühler als warm – das spart kaum etwas. '
               'Üblich sind 2–4 °C weniger (Wert „Abgesenkt“ antippen).',
             )
           else if (kelvin != null && kelvin > 0)
             _info(
-              '${lowered.fixed(0)} Stunden pro Woche abgesenkt um ${kelvin.fixed(1)} °C: '
-              'spart grob bis zu ${WeekSchedule.savingPercent(loweredHoursPerWeek: lowered, kelvin: kelvin).fixed(0)} % Heizenergie.',
+              '${lowered.de(0)} Stunden pro Woche abgesenkt um ${kelvin.de(1)} °C: '
+              'spart grob bis zu ${WeekSchedule.savingPercent(loweredHoursPerWeek: lowered, kelvin: kelvin).de(0)} % Heizenergie.',
             ),
           if (savingTooHigh) ...[
             const SizedBox(height: 8),

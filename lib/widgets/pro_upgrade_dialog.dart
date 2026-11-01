@@ -282,7 +282,7 @@ class _ProUpgradeDialogState extends State<ProUpgradeDialog> {
                     _FeatureRow(
                       icon: Icons.edit_calendar_rounded,
                       iconColor: _accentOrange,
-                      title: 'Heizkurven-Shift direkt schreiben',
+                      title: 'Heizkurve und Basis-Wärme direkt schreiben',
                       isFree: false,
                     ),
                     Divider(height: 16, color: Color(0xFF3A3A44)),

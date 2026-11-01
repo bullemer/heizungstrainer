@@ -69,7 +69,7 @@ void main() {
     await tester.tap(find.byKey(const Key('circOptimal')));
     await tester.pumpAndSettle();
     expect(find.text('Berufstätig'), findsOneWidget);
-    expect(find.textContaining('9.5 Std./Tag statt 17.7'), findsOneWidget);
+    expect(find.textContaining('9,5 Std./Tag statt 17,7'), findsOneWidget);
     await tester.tap(find.byKey(const Key('profile_working')));
     await tester.pumpAndSettle();
     expect(find.textContaining('„Berufstätig“ übernehmen?'), findsOneWidget);

@@ -698,9 +698,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
         SnackBar(
           content: Text(
             '${provider.isExampleBillingData ? '${provider.currentBillingDescriptor.name}: Beispieldaten geladen (noch keine echte Portalanbindung).' : '${provider.currentBillingDescriptor.name} Synchronisation erfolgreich!'}\n'
-            'Verbrauch: ${provider.brunataData!.consumedKwh.fixed(0)} kWh | '
-            'Kosten: ${provider.brunataData!.currentBillingPeriodCost.fixed(2)} € | '
-            'Gebäudevergleich: ${provider.brunataData!.communityComparisonPercentage > 0 ? "+" : ""}${provider.brunataData!.communityComparisonPercentage.fixed(1)}%',
+            'Verbrauch: ${provider.brunataData!.consumedKwh.de(0)} kWh | '
+            'Kosten: ${provider.brunataData!.currentBillingPeriodCost.de(2)} € | '
+            'Gebäudevergleich: ${provider.brunataData!.communityComparisonPercentage > 0 ? "+" : ""}${provider.brunataData!.communityComparisonPercentage.de(1)}%',
           ),
           backgroundColor: const Color(0xFF1B3D2F),
           behavior: SnackBarBehavior.floating,
@@ -1161,12 +1161,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
               const Icon(Icons.settings_input_component_rounded,
                   color: accent, size: 20),
               const SizedBox(width: 8),
-              const Text(
+              Expanded(
+                child: Text(
                 'Modbus TCP Register-Konfiguration',
                 style: TextStyle(
                   fontSize: 14.5,
                   fontWeight: FontWeight.w700,
                   color: Color(0xFFECECF0),
+                ),
                 ),
               ),
             ],
@@ -1183,6 +1185,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
           // ── Preset Selector ──────────────────────────────────
           DropdownButtonFormField<String>(
+            isExpanded: true,
             initialValue: _modbusPresetId,
             decoration: _decoration(
               label: 'Hersteller-Profil / Preset',
@@ -1370,6 +1373,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               Expanded(
                 flex: 3,
                 child: DropdownButtonFormField<double>(
+                  isExpanded: true,
                   initialValue: _modbusMultiplier,
                   decoration: _decoration(
                     label: 'Skalierungsfaktor',
@@ -1402,6 +1406,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               Expanded(
                 flex: 2,
                 child: DropdownButtonFormField<bool>(
+                  isExpanded: true,
                   initialValue: _modbusIsHolding,
                   decoration: _decoration(
                     label: 'Registertyp',
@@ -1435,6 +1440,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               Expanded(
                 flex: 3,
                 child: DropdownButtonFormField<ModbusWordOrder>(
+                  isExpanded: true,
                   initialValue: _modbusWordOrder,
                   decoration: _decoration(
                     label: 'Word- / Byte-Order',
@@ -1472,6 +1478,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               Expanded(
                 flex: 2,
                 child: DropdownButtonFormField<ModbusRegisterDataType>(
+                  isExpanded: true,
                   initialValue: _modbusDataType,
                   decoration: _decoration(
                     label: 'Datentyp',
@@ -1601,12 +1608,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
               const Icon(Icons.fireplace_rounded,
                   color: accent, size: 20),
               const SizedBox(width: 8),
-              const Text(
+              Expanded(
+                child: Text(
                 'Bosch / Buderus EMS-ESP Konfiguration',
                 style: TextStyle(
                   fontSize: 14.5,
                   fontWeight: FontWeight.w700,
                   color: Color(0xFFECECF0),
+                ),
                 ),
               ),
             ],
@@ -1623,6 +1632,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
           // ── Preset Selector ──────────────────────────────────
           DropdownButtonFormField<String>(
+            isExpanded: true,
             initialValue: _emsPresetId,
             decoration: _decoration(
               label: 'Gateway-Profil / Preset',
@@ -1652,6 +1662,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
           // ── Gateway-Typ Selector ─────────────────────────────
           DropdownButtonFormField<BoschGatewayType>(
+            isExpanded: true,
             initialValue: _emsGatewayType,
             decoration: _decoration(
               label: 'Gateway-Typ & Protokoll',
@@ -1744,6 +1755,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 Expanded(
                   flex: 3,
                   child: DropdownButtonFormField<String>(
+                    isExpanded: true,
                     initialValue: _emsCircuit,
                     decoration: _decoration(
                       label: 'Heizkreis (Circuit)',
@@ -1786,12 +1798,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text(
+                        const Flexible(
+                          child: Text(
                           'HTTPS',
                           style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w600,
                             color: Color(0xFFECECF0),
+                          ),
                           ),
                         ),
                         Switch(
@@ -1830,6 +1844,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ] else ...[
             // ── KM200 / MB LAN ──────────────────────────────────
             DropdownButtonFormField<String>(
+              isExpanded: true,
               initialValue: _emsCircuit,
               decoration: _decoration(
                 label: 'Heizkreis (Circuit)',
@@ -1998,12 +2013,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
               const Icon(Icons.heat_pump_rounded,
                   color: accent, size: 20),
               const SizedBox(width: 8),
-              const Text(
+              Expanded(
+                child: Text(
                 'Viessmann Vitotronic & ViCare Konfiguration',
                 style: TextStyle(
                   fontSize: 14.5,
                   fontWeight: FontWeight.w700,
                   color: Color(0xFFECECF0),
+                ),
                 ),
               ),
             ],
@@ -2020,6 +2037,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
           // ── Preset Selector ──────────────────────────────────
           DropdownButtonFormField<String>(
+            isExpanded: true,
             initialValue: _viessmannPresetId,
             decoration: _decoration(
               label: 'Viessmann Profil / Preset',
@@ -2048,6 +2066,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
           // ── Connection Type Selector ─────────────────────────
           DropdownButtonFormField<ViessmannConnectionType>(
+            isExpanded: true,
             initialValue: _viessmannConnType,
             decoration: _decoration(
               label: 'Verbindungsart',
@@ -2158,6 +2177,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
           // ── Heating Circuit Selector ─────────────────────────
           DropdownButtonFormField<String>(
+            isExpanded: true,
             initialValue: _viessmannCircuit,
             decoration: _decoration(
               label: 'Heizkreis (Circuit)',
@@ -2185,6 +2205,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           if (_viessmannConnType == ViessmannConnectionType.vicareRest) ...[
             const SizedBox(height: 14),
             DropdownButtonFormField<int>(
+              isExpanded: true,
               initialValue: _viessmannCloudPollingInterval,
               decoration: _decoration(
                 label: 'Cloud Abfrage-Intervall',
@@ -2296,12 +2317,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
               const Icon(Icons.solar_power_rounded,
                   color: accent, size: 20),
               const SizedBox(width: 8),
-              const Text(
+              Expanded(
+                child: Text(
                 'Vaillant eBUSd Gateway Konfiguration',
                 style: TextStyle(
                   fontSize: 14.5,
                   fontWeight: FontWeight.w700,
                   color: Color(0xFFECECF0),
+                ),
                 ),
               ),
             ],
@@ -2318,6 +2341,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
           // ── Preset Selector ──────────────────────────────────
           DropdownButtonFormField<String>(
+            isExpanded: true,
             initialValue: _vaillantPresetId,
             decoration: _decoration(
               label: 'Gateway-Profil / Preset',
@@ -2405,12 +2429,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text(
+                      const Flexible(
+                        child: Text(
                         'HTTPS',
                         style: TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w600,
                           color: Color(0xFFECECF0),
+                        ),
                         ),
                       ),
                       Switch(
@@ -2517,12 +2543,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
               const Icon(Icons.hvac_rounded,
                   color: accent, size: 20),
               const SizedBox(width: 8),
-              const Text(
+              Expanded(
+                child: Text(
                 'Weishaupt WEM Gateway Konfiguration',
                 style: TextStyle(
                   fontSize: 14.5,
                   fontWeight: FontWeight.w700,
                   color: Color(0xFFECECF0),
+                ),
                 ),
               ),
             ],
@@ -2539,6 +2567,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
           // ── Preset Selector ──────────────────────────────────
           DropdownButtonFormField<String>(
+            isExpanded: true,
             initialValue: _weishauptPresetId,
             decoration: _decoration(
               label: 'Weishaupt Modell / Preset',
@@ -2719,6 +2748,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               Expanded(
                 flex: 3,
                 child: DropdownButtonFormField<double>(
+                  isExpanded: true,
                   initialValue: _weishauptMultiplier,
                   decoration: _decoration(
                     label: 'Skalierungsfaktor',
@@ -2751,6 +2781,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               Expanded(
                 flex: 2,
                 child: DropdownButtonFormField<bool>(
+                  isExpanded: true,
                   initialValue: _weishauptIsHolding,
                   decoration: _decoration(
                     label: 'Registertyp',
@@ -2848,12 +2879,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
               const Icon(Icons.air_rounded,
                   color: accent, size: 20),
               const SizedBox(width: 8),
-              const Text(
+              Expanded(
+                child: Text(
                 'NIBE Wärmepumpe Konfiguration',
                 style: TextStyle(
                   fontSize: 14.5,
                   fontWeight: FontWeight.w700,
                   color: Color(0xFFECECF0),
+                ),
                 ),
               ),
             ],
@@ -2870,6 +2903,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
           // ── Preset Selector ──────────────────────────────────
           DropdownButtonFormField<String>(
+            isExpanded: true,
             initialValue: _nibePresetId,
             decoration: _decoration(
               label: 'NIBE Modell / Preset',
@@ -3050,6 +3084,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               Expanded(
                 flex: 3,
                 child: DropdownButtonFormField<double>(
+                  isExpanded: true,
                   initialValue: _nibeMultiplier,
                   decoration: _decoration(
                     label: 'Skalierungsfaktor',
@@ -3082,6 +3117,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               Expanded(
                 flex: 2,
                 child: DropdownButtonFormField<bool>(
+                  isExpanded: true,
                   initialValue: _nibeIsHolding,
                   decoration: _decoration(
                     label: 'Registertyp',

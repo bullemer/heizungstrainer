@@ -74,8 +74,8 @@ void main() {
     await tester.pump();
     expect(find.byType(A247Diagram), findsOneWidget);
     expect(find.text('Vorlauf Heizung'), findsOneWidget);
-    expect(find.text('26.5 °C'), findsOneWidget); // S3, rounded like Danfoss
-    expect(find.text('22.5 °C'), findsOneWidget); // S5 target
+    expect(find.text('26,5 °C'), findsOneWidget); // S3, rounded like Danfoss
+    expect(find.text('22,5 °C'), findsOneWidget); // S5 target
     expect(find.text('Heizungspumpe'), findsOneWidget);
     expect(find.text('schließt'), findsNWidgets(2));
     expect(find.text('• Sommerabschaltung aktiv (Heizgrenze)'), findsOneWidget);

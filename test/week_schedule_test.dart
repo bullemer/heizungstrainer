@@ -36,7 +36,7 @@ void main() {
   test('decodes the real controller schedule', () {
     final s = realSchedule();
     expect(s.hasComfort(0), isFalse);
-    expect(s.describeDay(0), 'keine Komfortzeit');
+    expect(s.describeDay(0), 'keine warme Zeit');
     expect(s.describeDay(1), '00:00–24:00');
     expect(s.mostCommonDay, [SchedulePeriod.allDay, SchedulePeriod.unused, SchedulePeriod.unused]);
     expect(WeekSchedule.decode(s.encode())!.sameDay(s, 0), isTrue);

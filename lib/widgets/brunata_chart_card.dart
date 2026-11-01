@@ -12,9 +12,9 @@ class _C {
 
 String _fmtKwh(double v) {
   if (v >= 100) return '${v.round()}';
-  return v.fixed(v == v.roundToDouble() ? 0 : 1);
+  return v.de(v == v.roundToDouble() ? 0 : 1);
 }
-String _fmtEur(double v) => '${v.fixed(2)} €';
+String _fmtEur(double v) => '${v.de(2)} €';
 
 /// Brunata chart as a table: one column per series plus a Δ % column
 /// (see [BrunataChart.comparison]).
@@ -144,7 +144,7 @@ class BrunataChartCard extends StatelessWidget {
   static String _fmtPct(double? p) {
     if (p == null) return '–';
     final sign = p > 0.05 ? '+' : (p < -0.05 ? '−' : '±');
-    return '$sign${p.abs().fixed(0)} %';
+    return '$sign${p.abs().de(0)} %';
   }
 
   /// Green = less than the reference (good), orange = more.

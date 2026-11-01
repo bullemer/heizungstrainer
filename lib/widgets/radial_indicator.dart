@@ -39,7 +39,7 @@ class RadialTemperatureIndicator extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                isDisconnected ? '—' : currentTemp.fixed(1),
+                isDisconnected ? '—' : currentTemp.de(1),
                 style: TextStyle(
                   color: isDisconnected ? const Color(0xFF9E9EA8) : Colors.white,
                   fontSize: size * 0.22,

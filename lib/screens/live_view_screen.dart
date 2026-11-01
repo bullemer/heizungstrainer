@@ -161,7 +161,7 @@ class _LiveViewScreenState extends State<LiveViewScreen> {
                 const SizedBox(height: 8),
                 const Text(
                   'Weiß = gemessen, blau in Klammern = Sollwert des Reglers (10.0 °C = „aus“). '
-                  'Werte direkt aus dem Regler (Danfoss Modbus).',
+                  'Werte direkt aus dem Regler.',
                   style: TextStyle(color: _muted, fontSize: 11),
                 ),
               ],
@@ -228,11 +228,11 @@ class _LiveViewScreenState extends State<LiveViewScreen> {
             Padding(padding: const EdgeInsets.symmetric(vertical: 3), child: Text(s.spec.sensorNames[n] ?? 'Fühler $n', style: cell)),
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 3),
-              child: Text(s.sensors[n] == null ? '--' : '${s.sensors[n]!.fixed(1)} °C', style: cell),
+              child: Text(s.sensors[n] == null ? '--' : '${s.sensors[n]!.de(1)} °C', style: cell),
             ),
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 3),
-              child: Text(s.references[n] == null ? '' : '${s.references[n]!.fixed(1)} °C',
+              child: Text(s.references[n] == null ? '' : '${s.references[n]!.de(1)} °C',
                   style: cell.copyWith(color: _target)),
             ),
           ]),
