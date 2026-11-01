@@ -27,48 +27,47 @@ wenn die Startphase endet (dann In-App-Kauf mit der Version zur Prüfung einreic
 **Werbetext** (max. 170, jederzeit ohne Prüfung änderbar):
 
 ```
-Heizkurve und Zeitprogramm deines Danfoss ECL verstehen und anpassen – mit Vorschau, Sicherheitsprüfung und Spartipps. In der Startphase kostenlos.
+Viele Heizungen laufen wärmer als nötig. Heizungstrainer zeigt, wie deine eingestellt ist – und hilft dir, Heizkurve und Zeitprogramm sparsamer zu machen.
 ```
 
 **Beschreibung** (max. 4000):
 
 ```
-Warum läuft die Heizung so warm? Passt die Heizkurve zum Haus? Und was spart eine Woche Urlaub?
+Viele Heizungen laufen seit Jahren mit den Werkseinstellungen – und damit oft wärmer als nötig. In Studien war die Heizkurve nur bei einem kleinen Teil der Anlagen passend eingestellt.
 
-Heizungstrainer macht deine Heizungsanlage verständlich. Sieh aktuelle Temperaturen, prüfe Einstellungen und passe sie gezielt an – direkt auf deinem iPhone.
+Heizungstrainer zeigt dir, wie deine Heizung arbeitet, und hilft dir, sie Schritt für Schritt sparsamer einzustellen. Direkt vom iPhone, im eigenen Heimnetz, ohne Konto.
 
-DEINE HEIZUNG AUF EINEN BLICK
-• Live-Werte für Außen-, Vorlauf-, Rücklauf- und Warmwassertemperatur, abhängig von Regler und Sensoren.
-• Anlagenbild für unterstützte Danfoss-Anwendungen: Temperaturen, Pumpen und Ventile im Zusammenhang.
-• Einstellungs-Check: Hinweise auf auffällige Einstellungen und wie du sie behebst.
+HEIZKURVE VERSTEHEN UND ANPASSEN
+• Deine Heizkurve als Diagramm – mit Richtwert für dein Gebäude und Baujahr.
+• Basis-Wärme mit einem Regler verschieben, die Kurve flacher oder steiler stellen oder jeden Punkt einzeln ändern.
+• Vorher siehst du genau, welche Vorlauftemperaturen geschrieben werden.
+• Jede Änderung wird auf Grenzwerte geprüft, an den Regler gesendet und zurückgelesen.
 
-HEIZKURVE VERSTEHEN UND GEZIELT ANPASSEN
-• Heizkurve als Diagramm mit Richtwerten für deinen Gebäudetyp.
-• Basis-Wärme verschieben oder die Kurve flacher bzw. steiler stellen – mit Vorschau der neuen Vorlauftemperaturen.
-• Jede Änderung wird gegen Grenzwerte geprüft, an den Regler gesendet und zurückgelesen.
-• Einstellungen sichern und bei Bedarf wiederherstellen.
+WARM, WENN DU DA BIST
+Das Zeitprogramm deines Reglers als übersichtliche Zeitleiste. Lege fest, wann es warm sein soll und wie stark nachts oder tagsüber abgesenkt wird – oder wähle eine Vorlage wie „Nachts absenken“ oder „Berufstätig“. Die App schätzt, was das spart.
 
-WANN SOLL ES WARM SEIN?
-Das Zeitprogramm deines Reglers als Zeitleiste: warme Zeiten und Absenkung pro Tag ändern oder eine Vorlage wählen – „Nachts absenken“ oder „Berufstätig“.
+EINSTELLUNGEN PRÜFEN LASSEN
+Der Einstellungs-Check findet typische Fehler: Absenkung wärmer als Komfort, Tage ohne warme Zeit, zu hohe Vorlaufgrenze bei Fußbodenheizung oder eine Zirkulationspumpe, die nachts läuft. Mit einem Tipp behebst du sie.
 
-URLAUB UND ABWESENHEIT
-Plane Absenkung und Rückkehr. Bei unterstützten Danfoss-ECL-Anwendungen wird der Urlaub im Regler gespeichert und läuft ohne App. Die App zeigt, was eine Woche Urlaub je nach Monat spart.
+DEINE ANLAGE LIVE
+Außen-, Vorlauf-, Rücklauf- und Warmwassertemperatur auf einen Blick. Für unterstützte Danfoss-Anwendungen zeigt das Anlagenbild Pumpen, Ventile und Fühler mit Ist- und Sollwerten.
+
+URLAUB PLANEN
+Abreise und Rückkehr eintragen – die Heizung senkt ab und ist rechtzeitig wieder warm. Beim Danfoss ECL wird der Urlaub im Regler gespeichert und läuft ganz ohne App. Die App zeigt, was eine Woche Urlaub je nach Monat spart.
 
 PASST HEIZUNGSTRAINER ZU DEINER ANLAGE?
-• An echter Hardware getestet: Danfoss ECL Comfort 310 über Ethernet und Modbus TCP.
-• Als Beta vorhanden: Viessmann, Bosch/Buderus, Vaillant, NIBE, Weishaupt und generisches Modbus. Je nach System sind ein Gateway, ein Adapter oder ein Herstellerkonto nötig. Diese Anbindungen sind noch nicht an echter Hardware verifiziert.
-• Verbrauchsanalyse: Brunata Hamburg. Weitere Messdienstleister folgen.
-• Noch kein passender Regler? Probiere alles im Demo-Modus aus.
+• Getestet an echter Hardware: Danfoss ECL Comfort 310 über Ethernet (Modbus TCP).
+• Beta: Viessmann, Bosch/Buderus, Vaillant, NIBE, Weishaupt und generisches Modbus – je nach System mit Gateway oder Herstellerkonto, noch nicht an echter Hardware verifiziert.
+• Verbrauchsvergleich: Brunata Hamburg. Weitere Messdienstleister folgen.
+• Kein passender Regler? Im Demo-Modus kannst du alles ausprobieren.
 
-LOKAL IM HEIMNETZ
-Die App verbindet sich direkt mit deiner Anlage im lokalen Netzwerk – ohne Heizungstrainer-Konto. Dafür fragt iOS einmal nach dem Zugriff auf das lokale Netzwerk. Fernzugriff ist über dein eigenes VPN möglich, etwa WireGuard auf der FRITZ!Box.
+LOKAL UND PRIVAT
+Die App spricht direkt mit deinem Regler im Heimnetz. Messwerte und Zugangsdaten bleiben auf deinem iPhone. Von unterwegs geht es über dein eigenes VPN, etwa WireGuard auf der FRITZ!Box.
 
 IN DER STARTPHASE KOSTENLOS
-Alle Funktionen sind während der Startphase kostenlos, ohne Werbung und ohne Abo.
+Alle Funktionen sind in der Startphase kostenlos – ohne Werbung und ohne Abo.
 
-Einsparungen sind Schätzungen; das Ergebnis hängt von Gebäude, Anlage, Wetter und Nutzung ab.
-
-Ein Angebot der Navisense GmbH. Keine Verbindung zu den genannten Geräteherstellern oder Messdienstleistern.
+Einsparungen sind Schätzungen; sie hängen von Gebäude, Anlage, Wetter und Nutzung ab. Ein Angebot der Navisense GmbH, ohne Verbindung zu den genannten Herstellern und Messdienstleistern.
 ```
 
 **Keywords** (max. 100, Komma ohne Leerzeichen, Name/Untertitel nicht wiederholen):
@@ -83,7 +82,7 @@ Heizung,Danfoss,ECL,Fernwärme,Vorlauf,Thermostat,Modbus,Heizkosten,Energie,Brun
 | Marketing-URL | https://heizungstrainer.de/ |
 | Datenschutz-URL | https://heizungstrainer.de/datenschutz.html |
 | Copyright | 2026 Navisense GmbH |
-| Screenshots 6,9″ | `~/Downloads/heizungstrainer-appstore/01–04` (1320 × 2868), erzeugt mit `HEIZUNG_SCREENSHOT_TARGET=ios` (siehe `tool/capture_store_screenshots_test.dart`) |
+| Screenshots 6,9″ | `build/app-store/marketing/01–05` (1320 × 2868): `tool/capture_app_store_marketing_test.dart` (App-Widgets mit Demo-Daten) + `tool/compose_app_store_screenshots.py` (Überschrift + Ausschnitt) |
 | Build | aus TestFlight wählen (Export-Compliance: Standard-Verschlüsselung, nicht Frankreich) |
 | Veröffentlichung | Manuell veröffentlichen |
 

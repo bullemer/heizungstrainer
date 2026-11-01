@@ -117,6 +117,10 @@ class HeizungstrainerApp extends StatelessWidget {
         onPrimary: Colors.black,
         secondary: secondary,
         onSecondary: Colors.white,
+        // Tonal buttons (FilledButton.tonal, IconButton.filledTonal) use the
+        // container colours: dark orange like the rest of the UI, not purple.
+        secondaryContainer: Color(0xFF4A3520),
+        onSecondaryContainer: primary,
         error: Color(0xFFEF5350),
         outlineVariant: Color(0xFF3A3A44),
       ),

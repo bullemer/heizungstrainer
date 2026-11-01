@@ -171,9 +171,15 @@ def upload_texts(asc: Asc, version: dict, version_string: str) -> None:
     # Review notes (contact person stays manual).
     detail = asc.get(f"/appStoreVersions/{version['id']}/appStoreReviewDetail").get('data')
     attrs = {'notes': t['reviewNotes'], 'demoAccountRequired': False}
-    if detail:
-        asc.patch(f"/appStoreReviewDetails/{detail['id']}",
-                  {'type': 'appStoreReviewDetails', 'id': detail['id'], 'attributes': attrs})
+    if detail and detail['attributes'].get('notes') == attrs['notes']:
+        pass  # unchanged; Apple validates the contact fields on every PATCH
+    elif detail:
+        r = asc.s.patch(f"{API}/appStoreReviewDetails/{detail['id']}", timeout=60,
+                        json={'data': {'type': 'appStoreReviewDetails', 'id': detail['id'], 'attributes': attrs}})
+        if not r.ok and 'contact' in r.text:
+            print('Prüfhinweise nicht geändert: erst den Kontakt für die App-Prüfung in App Store Connect eintragen.')
+        else:
+            asc._ok(r)
     else:
         asc.post('/appStoreReviewDetails', {
             'type': 'appStoreReviewDetails', 'attributes': attrs,
