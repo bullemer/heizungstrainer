@@ -8,6 +8,7 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'dart:collection';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -2026,6 +2027,11 @@ class ECLProvider extends ChangeNotifier {
     );
 
     try {
+      final address = InternetAddress.tryParse(ip);
+      if (address?.type == InternetAddressType.IPv4) {
+        await _discoveryService.ensureLocalNetworkPrompt(ip.split('.').take(3).join('.'));
+        if (!_isCurrentConnection(epoch)) return;
+      }
       if (_selectedControllerId == 'danfoss_ecl_310') {
         await _modbusService.connect(ip);
       } else {
