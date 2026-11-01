@@ -105,12 +105,5 @@ void main() {
       final legacyVal = await mockStorage.read(key: 'brunata_price_per_kwh');
       expect(legacyVal, '0.1550');
     });
-
-    test('fetchDynamicMarketPrice returns carrier profile', () async {
-      final service = EnergyPriceService();
-      final carrier = await service.fetchDynamicMarketPrice(carrierId: 'natural_gas_de');
-      expect(carrier.id, 'natural_gas_de');
-      expect(carrier.benchmarkPricePerKwh, 0.118);
-    });
   });
 }

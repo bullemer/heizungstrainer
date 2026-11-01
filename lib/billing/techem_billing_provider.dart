@@ -6,7 +6,7 @@ import 'package:heizungstrainer/models/brunata_meter_data.dart';
 /// Concrete adapter for Techem Smart System / Techem Mieterportal.
 ///
 /// Supports wireless sub-metering (Funk-Heizkostenverteiler OMS / wireless M-Bus)
-/// and monthly consumption reporting (kundenportal.techem.de).
+/// and monthly consumption reporting (portal.techem.de).
 class TechemBillingProvider extends BaseBillingProvider {
   TechemBillingProvider({super.secureStorage});
 
@@ -23,7 +23,7 @@ class TechemBillingProvider extends BaseBillingProvider {
   BillingAuthType get authType => BillingAuthType.restApi;
 
   @override
-  String get defaultPortalUrl => 'https://kundenportal.techem.de';
+  String get defaultPortalUrl => 'https://portal.techem.de';
 
   @override
   double get defaultTariffPrice => 0.125;

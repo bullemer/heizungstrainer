@@ -5,7 +5,7 @@ import 'package:heizungstrainer/models/brunata_meter_data.dart';
 
 /// Concrete adapter for Brunata-Metrona München.
 ///
-/// Supports the BRUNATA München portal (meine.brunata-metrona.de / portal.brunata-metrona.de)
+/// Supports the BRUNATA München portal (www.brunata-metrona.de/portale/)
 /// for regional heating and water consumption analytics in Bavaria / South Germany.
 class BrunataMuenchenBillingProvider extends BaseBillingProvider {
   BrunataMuenchenBillingProvider({super.secureStorage});
@@ -23,7 +23,7 @@ class BrunataMuenchenBillingProvider extends BaseBillingProvider {
   BillingAuthType get authType => BillingAuthType.portalScraper;
 
   @override
-  String get defaultPortalUrl => 'https://meine.brunata-metrona.de';
+  String get defaultPortalUrl => 'https://www.brunata-metrona.de/portale/';
 
   @override
   double get defaultTariffPrice => 0.128;

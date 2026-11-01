@@ -5,7 +5,7 @@ import 'package:heizungstrainer/models/brunata_meter_data.dart';
 
 /// Concrete adapter for KALO (Kalorimeta GmbH / noventic group) sub-metering.
 ///
-/// Supports the KALO Bewohnerportal (bewohner.kalo.de / portal.kalo.de)
+/// Supports the KALO Bewohnerportal (www.kalo.de/bewohnerportal/)
 /// delivering monthly uVI heating and hot water consumption.
 class KaloBillingProvider extends BaseBillingProvider {
   KaloBillingProvider({super.secureStorage});
@@ -23,7 +23,7 @@ class KaloBillingProvider extends BaseBillingProvider {
   BillingAuthType get authType => BillingAuthType.portalScraper;
 
   @override
-  String get defaultPortalUrl => 'https://bewohner.kalo.de';
+  String get defaultPortalUrl => 'https://www.kalo.de/bewohnerportal/';
 
   @override
   double get defaultTariffPrice => 0.122;

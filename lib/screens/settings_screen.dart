@@ -132,7 +132,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _obscurePassword = true;
   bool _loading = true;
   bool _saving = false;
-  bool _fetchingMarketPrice = false;
   String? _selectedCarrierId;
   bool _isCustomPrice = false;
 
@@ -331,41 +330,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   double? _parsePrice(String raw) =>
       double.tryParse(raw.trim().replaceAll(',', '.'));
-
-  Future<void> _fetchDynamicMarketPrice(ECLProvider provider) async {
-    setState(() => _fetchingMarketPrice = true);
-    try {
-      final carrier = await provider.fetchDynamicMarketPrice(
-        carrierId: _selectedCarrierId,
-      );
-      if (!mounted) return;
-      setState(() {
-        _priceController.text = _formatPrice(carrier.benchmarkPricePerKwh);
-        _selectedCarrierId = carrier.id;
-        _isCustomPrice = false;
-        _fetchingMarketPrice = false;
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Marktpreis für ${carrier.name} übernommen: '
-            '${_formatPrice(carrier.benchmarkPricePerKwh)} €/kWh (${carrier.source})',
-          ),
-          backgroundColor: const Color(0xFF1E2836),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _fetchingMarketPrice = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Fehler beim Abrufen des Marktpreises: $e'),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-    }
-  }
 
   Future<void> _testGenericModbusConnection() async {
     setState(() => _testingModbus = true);
@@ -3212,7 +3176,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     String title;
     String userLabel;
     String subtitle;
-    String defaultPortal;
+    // One source for the portal address: the billing provider itself.
+    final defaultPortal = provider.activeBillingProvider.defaultPortalUrl;
 
     switch (provider.selectedBillingId) {
       case 'brunata_hamburg':
@@ -3220,56 +3185,48 @@ class _SettingsScreenState extends State<SettingsScreen> {
         userLabel = 'Kundennummer / Benutzername';
         subtitle =
             'Verschlüsselt lokal gespeichert für den monatlichen Abrechnungsabruf (portal.brunata-hamburg.de).';
-        defaultPortal = 'https://portal.brunata-hamburg.de';
         break;
       case 'brunata_muenchen':
         title = 'Brunata München Portal-Zugang';
         userLabel = 'E-Mail / Benutzername / Kundennummer';
         subtitle =
             'Verschlüsselt lokal gespeichert für das BRUNATA-METRONA München Portal.';
-        defaultPortal = 'https://meine.brunata-metrona.de';
         break;
       case 'brunata_huerth':
         title = 'Brunata Hürth Portal-Zugang';
         userLabel = 'Kundennummer / Benutzername';
         subtitle =
             'Verschlüsselt lokal gespeichert für das BRUNATA-METRONA Hürth Portal (Köln/Rheinland).';
-        defaultPortal = 'https://portal.brunata-huerth.de';
         break;
       case 'kalo':
         title = 'KALO Bewohnerportal-Zugang';
         userLabel = 'E-Mail / Bewohner-ID / Kundennummer';
         subtitle =
             'Verschlüsselt lokal gespeichert für das KALO (Kalorimeta) Bewohnerportal.';
-        defaultPortal = 'https://bewohner.kalo.de';
         break;
       case 'techem_smart':
         title = 'Techem Portal- & Smart System Zugang';
         userLabel = 'Benutzername / E-Mail-Adresse';
         subtitle =
             'Verschlüsselt lokal gespeichert für das Techem Mieter- und Kundenportal.';
-        defaultPortal = 'https://kundenportal.techem.de';
         break;
       case 'ista_ecotrend':
         title = 'ista EcoTrend Portal- & API-Zugang';
         userLabel = 'E-Mail / ista Connect Benutzername';
         subtitle =
             'Verschlüsselt lokal gespeichert für ista EcoTrend (Essen) Webportal & REST API.';
-        defaultPortal = 'https://ecotrend.ista.de';
         break;
       case 'minol_zenner':
-        title = 'Minol e-Service Portal-Zugang';
+        title = 'Minol eMonitoring-Zugang';
         userLabel = 'Nutzername / Liegenschafts-ID';
         subtitle =
-            'Verschlüsselt lokal gespeichert für das Minol e-Service Portal.';
-        defaultPortal = 'https://www.minol.de/e-service-portal.html';
+            'Verschlüsselt lokal gespeichert für das Minol eMonitoring.';
         break;
       default:
         title = '${desc.name} Portal-Zugang';
         userLabel = 'Benutzername / Kundennummer';
         subtitle =
             'Verschlüsselt lokal gespeichert für die Abrechnungssynchronisation.';
-        defaultPortal = '';
     }
 
     const accent = Color(0xFFFFA726);
@@ -3627,7 +3584,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ── Status & Dynamic Sync Row ───────────────────────
+          // ── Price source ───────────────────────────────────
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
@@ -3663,7 +3620,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         child: Text(
                           _isCustomPrice
                               ? 'Manueller Vertragspreis'
-                              : 'Markt-Benchmark aktiv',
+                              : 'Richtwert (Durchschnittspreis)',
                           style: TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.w700,
@@ -3676,31 +3633,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                     ],
                   ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              OutlinedButton.icon(
-                onPressed: _fetchingMarketPrice
-                    ? null
-                    : () => _fetchDynamicMarketPrice(provider),
-                icon: _fetchingMarketPrice
-                    ? const SizedBox(
-                        width: 14,
-                        height: 14,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Color(0xFFFFA726),
-                        ),
-                      )
-                    : const Icon(Icons.sync_rounded, size: 16),
-                label: const Text('Marktpreis abrufen',
-                    style: TextStyle(fontSize: 12)),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: const Color(0xFFFFA726),
-                  side: const BorderSide(color: Color(0xFFFFA726)),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  visualDensity: VisualDensity.compact,
                 ),
               ),
             ],

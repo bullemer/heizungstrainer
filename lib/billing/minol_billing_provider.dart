@@ -23,7 +23,7 @@ class MinolBillingProvider extends BaseBillingProvider {
   BillingAuthType get authType => BillingAuthType.portalScraper;
 
   @override
-  String get defaultPortalUrl => 'https://www.minol.de/e-service-portal.html';
+  String get defaultPortalUrl => 'https://www.minol.de/heizkostenabrechnung/emonitoring/';
 
   @override
   double get defaultTariffPrice => 0.125;

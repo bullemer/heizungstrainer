@@ -267,7 +267,7 @@ void main() {
 
       // Check Section 3 elements
       expect(find.text('Tarif & Energiepreis'), findsOneWidget);
-      expect(find.text('Marktpreis abrufen'), findsOneWidget);
+      expect(find.text('Marktpreis abrufen'), findsNothing); // removed: it never fetched a price
       expect(find.textContaining('Fernwärme Hamburg'), findsWidgets);
       expect(find.textContaining('Erdgas Deutschland'), findsWidgets);
       expect(find.textContaining('Wärmepumpe'), findsWidgets);
@@ -289,32 +289,6 @@ void main() {
 
       expect(find.text('0.145'), findsOneWidget);
       expect(find.text('Manueller Vertragspreis'), findsOneWidget);
-    });
-
-    testWidgets('tapping Marktpreis abrufen triggers dynamic price probe and updates field',
-        (WidgetTester tester) async {
-      tester.view.physicalSize = const Size(1080, 5000);
-      tester.view.devicePixelRatio = 1.0;
-      addTearDown(tester.view.resetPhysicalSize);
-
-      final provider = ECLProvider(autoLoadDatabase: false);
-
-      await tester.pumpWidget(buildSettingsScreen(provider));
-      await tester.pumpAndSettle();
-
-      // Enter arbitrary custom price
-      final priceField = find.widgetWithText(TextFormField, 'Arbeitspreis pro kWh (manuell anpassbar)');
-      await tester.enterText(priceField, '0.05');
-      await tester.pumpAndSettle();
-      expect(find.text('0.05'), findsOneWidget);
-
-      // Tap 'Marktpreis abrufen'
-      await tester.tap(find.text('Marktpreis abrufen'));
-      await tester.pumpAndSettle();
-
-      // Benchmark for Brunata Hamburg (0.132) should be restored
-      expect(find.text('0.132'), findsWidgets);
-      expect(find.text('Markt-Benchmark aktiv'), findsOneWidget);
     });
 
     testWidgets('renders WireGuard remote access card and toggles step-by-step guide',

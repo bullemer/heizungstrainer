@@ -1,6 +1,5 @@
 import 'package:heizungstrainer/utils/number_format.dart';
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -200,28 +199,5 @@ class EnergyPriceService {
     } catch (e) {
       debugPrint('[EnergyPriceService] Error saving price: $e');
     }
-  }
-
-  /// Dynamically queries the latest market benchmark or connectivity.
-  ///
-  /// Queries public energy benchmark servers with a strict timeout;
-  /// seamlessly falls back to the calibrated 2026 benchmark profile.
-  Future<EnergyCarrier> fetchDynamicMarketPrice({String? carrierId}) async {
-    final carrier = getCarrierById(carrierId ?? 'district_heating_hamburg');
-
-    try {
-      final client = HttpClient()
-        ..connectionTimeout = const Duration(seconds: 3);
-      final request = await client.getUrl(
-        Uri.parse('https://api.energy-charts.info/public_status'),
-      );
-      final response = await request.close().timeout(const Duration(seconds: 3));
-      await response.drain<void>();
-      client.close();
-    } catch (e) {
-      debugPrint('[EnergyPriceService] Dynamic probe completed with fallback: $e');
-    }
-
-    return carrier;
   }
 }

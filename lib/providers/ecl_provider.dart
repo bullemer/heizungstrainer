@@ -2959,16 +2959,6 @@ class ECLProvider extends ChangeNotifier {
   Future<double> getPricePerKwh() =>
       _energyPriceService.getEffectivePrice(billingProviderId: _selectedBillingId);
 
-  /// Queries dynamic market price benchmark for a given carrier.
-  Future<EnergyCarrier> fetchDynamicMarketPrice({String? carrierId}) {
-    return _energyPriceService.fetchDynamicMarketPrice(
-      carrierId: carrierId ??
-          (_selectedBillingId == 'brunata_hamburg'
-              ? 'district_heating_hamburg'
-              : 'national_average'),
-    );
-  }
-
   /// Directly updates and saves the energy price with optional carrier metadata.
   Future<void> updateEnergyPrice(
     double price, {
