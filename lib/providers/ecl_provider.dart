@@ -268,13 +268,20 @@ class ECLProvider extends ChangeNotifier {
     return null;
   }
 
+  /// Typical share of the annual heating demand per month (Gradtagzahlen in
+  /// ‰, as used for Heizkostenabrechnungen, § 9b HeizkostenV): Jan … Dec.
+  static const List<double> typicalHeatingProfile = [
+    0.170, 0.150, 0.130, 0.080, 0.040, 0.0133, 0.0133, 0.0134, 0.030, 0.080, 0.120, 0.160,
+  ];
+
   /// Heating consumption on [day] in kWh: the yearly consumption distributed
-  /// by last year's monthly profile (if known), else evenly. Null without data.
+  /// by last year's monthly profile (if known), else by the typical
+  /// Gradtagzahl profile – never evenly (summer would "save" like winter).
+  /// Null without an annual consumption.
   double? dailyHeatingKwh(DateTime day) {
     final annual = annualHeatingKwh;
     if (annual == null) return null;
-    final profile = heatingMonthlyProfile;
-    if (profile == null) return annual / 365;
+    final profile = heatingMonthlyProfile ?? typicalHeatingProfile;
     final daysInMonth = DateTime(day.year, day.month + 1, 0).day;
     return annual * profile[day.month - 1] / daysInMonth;
   }

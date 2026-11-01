@@ -105,4 +105,14 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
     provider.dispose();
   });
+
+  test('without a billing profile the annual consumption follows the Gradtagzahl profile', () async {
+    final provider = _provider();
+    await provider.setAnnualHeatingKwh(9000);
+    final jan = provider.dailyHeatingKwh(DateTime(2027, 1, 10))!;
+    final jul = provider.dailyHeatingKwh(DateTime(2027, 7, 10))!;
+    expect(jan, closeTo(9000 * 0.170 / 31, 0.01));
+    expect(jul, lessThan(jan / 10)); // summer saves almost nothing
+    provider.dispose();
+  });
 }

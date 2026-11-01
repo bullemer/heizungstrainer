@@ -811,9 +811,9 @@ class _HolidayScreenState extends State<HolidayScreen> {
             Text(
               hasProfile
                   ? 'Basis: Verbrauch des jeweiligen Monats im vergleichbaren Vorjahres-Abrechnungszeitraum '
-                      '(Brunata), skaliert auf ${provider.annualHeatingKwh!.de(0)} kWh/Jahr; ~6 % je °C.'
-                  : 'Kein Monatsprofil aus der Abrechnung – Jahresverbrauch gleichmäßig verteilt. Mit Brunata-'
-                      'Synchronisation wird es saisonal (Winter spart deutlich mehr als Sommer).',
+                      '(Abrechnung), skaliert auf ${provider.annualHeatingKwh!.de(0)} kWh/Jahr; ~6 % je °C.'
+                  : 'Basis: ${provider.annualHeatingKwh!.de(0)} kWh/Jahr, verteilt wie üblich nach Gradtagzahlen '
+                      '(Winter viel, Sommer kaum Heizbedarf); ~6 % je °C. Schätzung.',
               style: muted,
             ),
           ],
