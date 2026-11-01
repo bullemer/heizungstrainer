@@ -135,6 +135,9 @@ class ECLProvider extends ChangeNotifier {
 
   ECLConnectionState get connectionState => _connectionState;
   String? get controllerIp => _controllerIp;
+
+  /// Last Danfoss controller IP found by discovery or entered manually.
+  Future<String?> savedControllerIp() => _discoveryService.getSavedControllerIp();
   String? get errorMessage => _errorMessage;
   Map<String, ECLReading> get readings => Map.unmodifiable(_readings);
   double get discoveryProgress => _discoveryProgress;

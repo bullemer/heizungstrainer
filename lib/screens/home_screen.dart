@@ -164,9 +164,11 @@ class HomeScreen extends StatelessWidget {
                 // ── Aktiver Urlaubsmodus (nur wenn aktiv) ───
                 ActiveHolidayCard(provider: provider),
 
-                // ── Gebäude ─────────────────────────────────
-                BuildingProfileCard(provider: provider),
-                const SizedBox(height: 12),
+                // ── Gebäude (only until set; afterwards in Einstellungen) ──
+                if (provider.buildingProfile == null) ...[
+                  BuildingProfileCard(provider: provider),
+                  const SizedBox(height: 12),
+                ],
 
                 // ── Smart Status Banner ─────────────────────
                 _SmartStatusBanner(provider: provider),
@@ -205,7 +207,10 @@ class HomeScreen extends StatelessWidget {
                     pricePerKwh: provider.pricePerKwhCached,
                     onEditAnnualKwh: () => _editAnnualKwh(context, provider),
                     buildingReference: provider.buildingReference,
-                    onPickBuildingReference: () => showBuildingProfilePicker(context, provider),
+                    // Heating type is changed in Einstellungen; here only the first-time prompt.
+                    onPickBuildingReference: provider.buildingProfile == null
+                        ? () => showBuildingProfilePicker(context, provider)
+                        : null,
                     onOpenAssistant: () => Navigator.of(context).push(
                       MaterialPageRoute(builder: (_) => const CurveSimulatorScreen()),
                     ),

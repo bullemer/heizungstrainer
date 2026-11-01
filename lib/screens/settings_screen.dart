@@ -28,6 +28,7 @@ import 'package:heizungstrainer/providers/ecl_provider.dart';
 import 'package:heizungstrainer/screens/log_screen.dart';
 import 'package:heizungstrainer/services/device_registry.dart';
 import 'package:heizungstrainer/services/energy_price_service.dart';
+import 'package:heizungstrainer/widgets/building_profile_picker.dart';
 import 'package:heizungstrainer/widgets/pro_upgrade_dialog.dart';
 
 /// Hub for hardware controller selection, sub-metering provider configuration,
@@ -57,6 +58,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final _modbusShiftRegController = TextEditingController();
   final _modbusPollingIntervalController = TextEditingController(text: '10');
   String _modbusPresetId = 'standard';
+  String? _savedControllerIp;
   double _modbusMultiplier = 0.1;
   bool _modbusIsHolding = true;
   ModbusWordOrder _modbusWordOrder = ModbusWordOrder.bigEndian;
@@ -140,6 +142,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _loadCurrentValues();
   }
 
+  /// IP shown on the selected controller card: the live one while connected,
+  /// otherwise the one remembered from discovery / manual entry (Danfoss).
+  String? _controllerIpFor(ECLProvider provider) {
+    final live = provider.controllerIp;
+    if (provider.isConnected && live != null && !provider.isSimulatedController) {
+      return live;
+    }
+    return provider.selectedControllerId == 'danfoss_ecl_310' ? _savedControllerIp : null;
+  }
+
   Future<void> _loadCurrentValues() async {
     try {
       final provider = context.read<ECLProvider>();
@@ -148,6 +160,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       final portalUrl = await provider.getBillingPortalUrl();
       final price = await provider.getPricePerKwh();
       final isCustom = await provider.energyPriceService.isCustomPrice();
+      final savedIp = await provider.savedControllerIp();
       final savedCarrierId = await provider.energyPriceService.getSavedCarrierId();
 
       final modbusCfg = provider.genericModbusConfig;
@@ -243,6 +256,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ? 'district_heating_hamburg'
                 : 'national_average');
         _isCustomPrice = isCustom;
+        _savedControllerIp = savedIp;
         _loading = false;
       });
     } catch (e) {
@@ -959,13 +973,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   child: ListView(
                     padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
                     children: [
-                      _ActiveSystemSummary(provider: provider),
-                      const SizedBox(height: 16),
                       _LicenseStatusCard(provider: provider),
                       const SizedBox(height: 12),
                       _FeedbackCard(provider: provider),
                       const SizedBox(height: 12),
                       SettingsTransferCard(provider: provider),
+                      const SizedBox(height: 24),
+
+                      // ── SECTION 0: BUILDING ───────────────────────
+                      const _SectionHeader(
+                        icon: Icons.home_work_outlined,
+                        title: 'Gebäude & Heizsystem',
+                        subtitle:
+                            'Heizkörper oder Fußbodenheizung und Baujahr – für die '
+                            'Richtwerte bei Heizkurve und Einstellungs-Check.',
+                      ),
+                      const SizedBox(height: 12),
+                      BuildingProfileCard(provider: provider),
                       const SizedBox(height: 24),
 
                       // ── SECTION 1: HEATING CONTROLLER ─────────────
@@ -987,6 +1011,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           isConnecting: isSelected &&
                               provider.connectionState ==
                                   ECLConnectionState.connecting,
+                          ipAddress: isSelected ? _controllerIpFor(provider) : null,
                           onSelect: () =>
                               provider.setSelectedController(controllerDesc.id),
                           onStartSimulation: () => provider.startSimulation(),
@@ -3877,104 +3902,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 }
 
-/// Header banner displaying currently active hardware and billing configuration.
-class _ActiveSystemSummary extends StatelessWidget {
-  final ECLProvider provider;
-
-  const _ActiveSystemSummary({required this.provider});
-
-  @override
-  Widget build(BuildContext context) {
-    final controllerDesc = provider.currentControllerDescriptor;
-    final billingDesc = provider.currentBillingDescriptor;
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFF2C251C), Color(0xFF1E1E26)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFFFA726).withValues(alpha: 0.35)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Wrap(
-            children: [
-              const Icon(Icons.hub_rounded, color: Color(0xFFFFA726), size: 20),
-              const SizedBox(width: 8),
-              const Text(
-                'Aktives Setup',
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.5,
-                  color: Color(0xFFFFA726),
-                ),
-              ),
-              const SizedBox(width: 8),
-              _ConnectionStatusBadge(provider: provider),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: _SummaryBox(
-                  icon: controllerDesc.icon,
-                  label: 'Heizung',
-                  value: controllerDesc.brand,
-                  subtitle: controllerDesc.model,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _SummaryBox(
-                  icon: billingDesc.icon,
-                  label: 'Abrechnung',
-                  value: billingDesc.name,
-                  subtitle: provider.isSimulatedBilling ? 'Simulation' : 'Portal',
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            decoration: BoxDecoration(
-              color: const Color(0xFF00BCD4).withValues(alpha: 0.10),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(
-                color: const Color(0xFF00BCD4).withValues(alpha: 0.25),
-              ),
-            ),
-            child: const Row(
-              children: [
-                Icon(Icons.vpn_lock_rounded, color: Color(0xFF00BCD4), size: 15),
-                SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    'Fernzugriff: FRITZ!Box WireGuard® (Zero-Cloud)',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF00BCD4),
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _LicenseStatusCard extends StatelessWidget {
   final ECLProvider provider;
 
@@ -4103,114 +4030,6 @@ class _LicenseStatusCard extends StatelessWidget {
   }
 }
 
-class _SummaryBox extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final String value;
-  final String subtitle;
-
-  const _SummaryBox({
-    required this.icon,
-    required this.label,
-    required this.value,
-    required this.subtitle,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.25),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Wrap(
-            children: [
-              Icon(icon, size: 14, color: const Color(0xFFFFA726)),
-              const SizedBox(width: 5),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 11,
-                  color: Colors.white.withValues(alpha: 0.5),
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Text(
-            value,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontSize: 13.5,
-              fontWeight: FontWeight.w700,
-              color: Color(0xFFECECF0),
-            ),
-          ),
-          Text(
-            subtitle,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 11,
-              color: Colors.white.withValues(alpha: 0.55),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ConnectionStatusBadge extends StatelessWidget {
-  final ECLProvider provider;
-
-  const _ConnectionStatusBadge({required this.provider});
-
-  @override
-  Widget build(BuildContext context) {
-    Color bg;
-    Color fg;
-    String text;
-
-    if (provider.isConnected) {
-      bg = const Color(0xFF1B3D2F);
-      fg = const Color(0xFF4ADE80);
-      text = provider.isSimulatedController ? 'Simulation' : 'Verbunden';
-    } else if (provider.isReconnecting) {
-      bg = const Color(0xFF3D2E14);
-      fg = const Color(0xFFFFB74D);
-      text = 'Reconnecting';
-    } else {
-      bg = const Color(0xFF2C2C36);
-      fg = const Color(0xFF9E9EA8);
-      text = 'Getrennt';
-    }
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Text(
-        text,
-        style: TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.w700,
-          color: fg,
-        ),
-      ),
-    );
-  }
-}
-
-/// Interactive card for selecting or simulating a heating controller.
 /// Opt-in for writes to a controller whose driver is not verified on hardware.
 class _BetaWriteGateCard extends StatelessWidget {
   final ECLProvider provider;
@@ -4302,11 +4121,13 @@ class _BetaWriteGateCard extends StatelessWidget {
   }
 }
 
+/// Interactive card for selecting or simulating a heating controller.
 class _ControllerCard extends StatelessWidget {
   final ControllerDescriptor descriptor;
   final bool isSelected;
   final bool isConnected;
   final bool isConnecting;
+  final String? ipAddress;
   final VoidCallback onSelect;
   final VoidCallback onStartSimulation;
   final VoidCallback onDisconnect;
@@ -4316,6 +4137,7 @@ class _ControllerCard extends StatelessWidget {
     required this.isSelected,
     required this.isConnected,
     required this.isConnecting,
+    this.ipAddress,
     required this.onSelect,
     required this.onStartSimulation,
     required this.onDisconnect,
@@ -4437,6 +4259,28 @@ class _ControllerCard extends StatelessWidget {
                 color: Colors.white.withValues(alpha: 0.6),
               ),
             ),
+            if (ipAddress != null) ...[
+              const SizedBox(height: 8),
+              Row(
+                key: const Key('controllerIpAddress'),
+                children: [
+                  Icon(Icons.router_outlined,
+                      size: 16,
+                      color: isConnected ? const Color(0xFF4ADE80) : const Color(0xFF9E9EA8)),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'IP-Adresse: $ipAddress${isConnected ? ' · verbunden' : ''}',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
+                        color: isConnected ? const Color(0xFF4ADE80) : const Color(0xFFBDBDC7),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
             const SizedBox(height: 10),
             Wrap(
               children: [

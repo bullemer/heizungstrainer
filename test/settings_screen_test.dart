@@ -65,7 +65,7 @@ void main() {
       FlutterSecureStorage.setMockInitialValues({});
     });
 
-    testWidgets('renders all controllers, billing providers, and active setup summary',
+    testWidgets('renders all controllers, billing providers and the building section',
         (WidgetTester tester) async {
       tester.view.physicalSize = const Size(1080, 5000);
       tester.view.devicePixelRatio = 1.0;
@@ -76,11 +76,11 @@ void main() {
       await tester.pumpWidget(buildSettingsScreen(provider));
       await tester.pumpAndSettle();
 
-      // Title & Active Setup
+      // Title; no duplicate "Aktives Setup" summary of controller + billing
       expect(find.text('Einstellungen & Hardware'), findsOneWidget);
-      expect(find.text('Aktives Setup'), findsOneWidget);
-      expect(find.text('Heizung'), findsOneWidget);
-      expect(find.text('Abrechnung'), findsOneWidget);
+      expect(find.text('Aktives Setup'), findsNothing);
+      expect(find.text('Gebäude & Heizsystem'), findsOneWidget);
+      expect(find.byKey(const Key('buildingProfileCard')), findsOneWidget);
 
       // Section Headers
       expect(find.text('Heizungsregler (Hardware)'), findsOneWidget);
@@ -351,6 +351,36 @@ void main() {
       await tester.tap(find.text('Fernzugriff via FRITZ!Box WireGuard®'));
       await tester.pumpAndSettle();
       expect(find.text('Einrichtung in 4 einfachen Schritten:'), findsNothing);
+    });
+  });
+
+  group('SettingsScreen controller IP', () {
+    testWidgets('shows the saved controller IP on the selected Danfoss card', (tester) async {
+      FlutterSecureStorage.setMockInitialValues({'ecl_controller_ip': '192.168.178.47'});
+      tester.view.physicalSize = const Size(1080, 5000);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      final provider = ECLProvider(autoLoadDatabase: false);
+
+      await tester.pumpWidget(buildSettingsScreen(provider));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('controllerIpAddress')), findsOneWidget);
+      expect(find.text('IP-Adresse: 192.168.178.47'), findsOneWidget);
+    });
+
+    testWidgets('shows the live IP while connected', (tester) async {
+      FlutterSecureStorage.setMockInitialValues({});
+      tester.view.physicalSize = const Size(1080, 5000);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      final provider = ECLProvider(autoLoadDatabase: false);
+      provider.setConnectedForTesting(ip: '10.0.0.12');
+
+      await tester.pumpWidget(buildSettingsScreen(provider));
+      await tester.pumpAndSettle();
+
+      expect(find.text('IP-Adresse: 10.0.0.12 · verbunden'), findsOneWidget);
     });
   });
 }
