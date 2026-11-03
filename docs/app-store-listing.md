@@ -99,6 +99,8 @@ To test: on the first screen tap "Ohne Regler ausprobieren (Demo)" (Try without 
 
 Local network access: the app asks for it once, because it searches for and talks to the user's heating controller in the home network (Modbus TCP, port 502). In demo mode nothing is sent to the network.
 
+VPN: the app has NO VPN functionality. It does not use the NetworkExtension framework, creates no VPN tunnel or VPN configuration, and collects, routes or inspects no user traffic. The words "VPN" and "WireGuard" only appear in a help text (Settings > "Sicherer Fernzugriff") that explains how users can set up the VPN built into their own FRITZ!Box router with the separate official WireGuard app, so they can reach their heating controller from outside the home. No user information is collected via VPN and nothing is shared with third parties.
+
 Pro features are free for everyone during the launch phase; there are no purchases in this version.
 
 Billing portals (e.g. Brunata Hamburg) need the tenant's own credentials; the other providers show clearly labelled example data.
