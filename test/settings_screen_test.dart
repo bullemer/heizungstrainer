@@ -168,7 +168,7 @@ void main() {
       await tester.pumpWidget(buildSettingsScreen(provider));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text('WEM Gateway (Modbus TCP)'));
+      await tester.tap(find.text('Wärmepumpen (Modbus TCP)'));
       await tester.pumpAndSettle();
 
       expect(provider.selectedControllerId, 'weishaupt_wem');

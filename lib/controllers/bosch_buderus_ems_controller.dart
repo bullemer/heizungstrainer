@@ -25,18 +25,24 @@ class DiscoveredEmsGateway {
   });
 }
 
-/// Heating controller adapter for Bosch, Buderus and Junkers systems
-/// connected via an EMS-ESP gateway (Local REST API v2/v3) or official
-/// Bosch / Buderus KM200 / MB LAN 2 / MX300 gateway (local AES-128-ECB).
+/// Heating controller adapter for Bosch, Buderus and Junkers systems. Two
+/// gateways, both NOT verified on hardware:
 ///
-/// Communicates over the local network via HTTP/HTTPS:
-/// - EMS-ESP: `/api/system`, `/api/boiler`, `/api/thermostat`
-/// - KM200: AES-128 encrypted `/gateway/versionFirmware`, `/system/...`, `/heatingCircuits/...`
+/// - EMS-ESP (emsesp.org) REST API: `GET /api/boiler` (curflowtemp, rettemp,
+///   outdoortemp, DHW as `wwcurtemp` up to 3.6 or nested `dhw.curtemp` from
+///   3.7) and `GET /api/thermostat` (per circuit `hc1.seltemp`,
+///   `hc1.offsettemp` – the latter only on some thermostats). Writes are
+///   `POST /api/thermostat {"cmd": …, "data": …, "id": circuit}` with a
+///   Bearer token; from EMS-ESP 3.10 every call needs an API key.
+/// - Bosch/Buderus KM200 / KM50 / KM100: AES-256-ECB (zero padding), base64
+///   body, key from gateway + private password (see the config class).
+///   Writes are POSTs of the encrypted `{"value": x}`. No heating-curve
+///   offset is writable there.
+///
+/// The provider polls [readTelemetry]; this class has no timer of its own.
 class BoschBuderusEmsController implements HeatingController {
   BoschBuderusEmsConfig _config;
   bool _isConnected = false;
-  Timer? _pollingTimer;
-
   final StreamController<ControllerTelemetry> _telemetryController =
       StreamController<ControllerTelemetry>.broadcast();
 
@@ -66,9 +72,12 @@ class BoschBuderusEmsController implements HeatingController {
   @override
   ConnectionProtocol get protocol => ConnectionProtocol.restApi;
 
+  bool get _isKm200 => _config.gatewayType == BoschGatewayType.km200;
+
   @override
-  HeatingCapabilities get capabilities => const HeatingCapabilities(
-        supportsHeatingCurveShift: true,
+  HeatingCapabilities get capabilities => HeatingCapabilities(
+        // KM200 exposes no writable heating-curve offset.
+        supportsHeatingCurveShift: !_isKm200,
         minShift: -10.0,
         maxShift: 10.0,
         supportsRoomTarget: true,
@@ -107,36 +116,11 @@ class BoschBuderusEmsController implements HeatingController {
     );
 
     try {
-      // 1. Probe gateway
-      final isOnline = await _probeGateway();
-      if (!isOnline) {
-        final gwName = _config.gatewayType == BoschGatewayType.km200
-            ? 'Buderus KM200 Gateway'
-            : 'EMS-ESP Gateway';
-        throw ModbusCommunicationException(
-          message: '$gwName unter ${_config.baseUrl} antwortet nicht.',
-        );
-      }
-
+      await _probeGateway();
       _isConnected = true;
-
-      // 2. Read initial telemetry
       final initial = await readTelemetry();
       _telemetryController.add(initial);
-
-      // 3. Start telemetry stream (polling every 10s)
-      _pollingTimer?.cancel();
-      _pollingTimer = Timer.periodic(const Duration(seconds: 10), (_) async {
-        if (!_isConnected) return;
-        try {
-          final t = await readTelemetry();
-          _telemetryController.add(t);
-        } catch (e) {
-          debugPrint('[BoschBuderusEmsController] Periodic poll error: $e');
-        }
-      });
     } catch (e) {
-      _isConnected = false;
       await disconnect();
       if (e is ModbusCommunicationException) rethrow;
       throw ModbusCommunicationException(
@@ -148,8 +132,6 @@ class BoschBuderusEmsController implements HeatingController {
 
   @override
   Future<void> disconnect() async {
-    _pollingTimer?.cancel();
-    _pollingTimer = null;
     try {
       _httpClient?.close(force: true);
     } catch (_) {}
@@ -157,45 +139,54 @@ class BoschBuderusEmsController implements HeatingController {
     _isConnected = false;
   }
 
-  Future<bool> _probeGateway() async {
-    if (_config.gatewayType == BoschGatewayType.km200) {
-      try {
-        final res = await _httpGetKm200('/gateway/versionFirmware');
-        if (res != null) return true;
-      } catch (_) {}
-      try {
-        final res = await _httpGetKm200('/system/sensors/temperatures/outdoor_t1');
-        if (res != null) return true;
-      } catch (_) {}
-      return false;
+  /// Throws with a specific reason when the gateway cannot be used.
+  Future<void> _probeGateway() async {
+    if (_isKm200) {
+      if (_config.getKm200KeyBytes() == null) {
+        throw const ModbusCommunicationException(
+          message: 'Für das KM200 fehlen Gateway-Passwort und privates Passwort.',
+        );
+      }
+      // Throws when the gateway answers but the key does not fit.
+      final res = await _httpGetKm200('/gateway/versionFirmware') ??
+          await _httpGetKm200('/system/sensors/temperatures/outdoor_t1');
+      if (res == null) {
+        throw ModbusCommunicationException(
+          message: 'Unter ${_config.baseUrl} antwortet kein KM200-Gateway.',
+        );
+      }
+      return;
     }
-
-    try {
-      final res = await _httpGet('/api/system');
-      if (res != null) return true;
-    } catch (_) {}
-
-    try {
-      final res = await _httpGet('/api/boiler');
-      if (res != null) return true;
-    } catch (_) {}
-
-    return false;
+    final res = await _httpGet('/api/system') ?? await _httpGet('/api/boiler');
+    if (res == null) {
+      throw ModbusCommunicationException(
+        message: 'Unter ${_config.baseUrl} antwortet kein EMS-ESP.',
+      );
+    }
   }
 
   // ──────────────────────────────────────────────────────────────────
-  // KM200 AES-128-ECB Helpers
+  // KM200: AES-256-ECB, zero padding, base64
   // ──────────────────────────────────────────────────────────────────
+
+  enc.Encrypter? _km200Cipher() {
+    final keyBytes = _config.getKm200KeyBytes();
+    if (keyBytes == null) return null;
+    return enc.Encrypter(enc.AES(enc.Key(keyBytes), mode: enc.AESMode.ecb, padding: null));
+  }
 
   String? _decryptKm200(String base64Body) {
     try {
-      final keyBytes = _config.getKm200KeyBytes();
-      if (keyBytes == null) return null;
-      final key = enc.Key(keyBytes);
-      final encrypter = enc.Encrypter(enc.AES(key, mode: enc.AESMode.ecb, padding: 'PKCS7'));
+      final cipher = _km200Cipher();
+      if (cipher == null) return null;
       final clean = base64Body.replaceAll(RegExp(r'\s+'), '');
-      final encrypted = enc.Encrypted.fromBase64(clean);
-      return encrypter.decrypt(encrypted);
+      final bytes = cipher.decryptBytes(enc.Encrypted.fromBase64(clean));
+      // Strip the padding (zero bytes; some firmware pads PKCS#7-style).
+      var end = bytes.length;
+      while (end > 0 && bytes[end - 1] <= 0x10) {
+        end--;
+      }
+      return utf8.decode(bytes.sublist(0, end));
     } catch (e) {
       debugPrint('[KM200] Decrypt error: $e');
       return null;
@@ -204,25 +195,27 @@ class BoschBuderusEmsController implements HeatingController {
 
   String? _encryptKm200(String jsonPayload) {
     try {
-      final keyBytes = _config.getKm200KeyBytes();
-      if (keyBytes == null) return null;
-      final key = enc.Key(keyBytes);
-      final encrypter = enc.Encrypter(enc.AES(key, mode: enc.AESMode.ecb, padding: 'PKCS7'));
-      final encrypted = encrypter.encrypt(jsonPayload);
-      return encrypted.base64;
+      final cipher = _km200Cipher();
+      if (cipher == null) return null;
+      final data = utf8.encode(jsonPayload);
+      final padded = Uint8List((data.length + 15) ~/ 16 * 16)..setAll(0, data);
+      return cipher.encryptBytes(padded).base64;
     } catch (e) {
       debugPrint('[KM200] Encrypt error: $e');
       return null;
     }
   }
 
+  static const _km200UserAgent = 'TeleHeater/2.2.3';
+
+  /// Decrypted JSON of a KM200 service; null when the service does not exist.
   Future<dynamic> _httpGetKm200(String endpoint) async {
     final uri = _config.getUri(endpoint);
     final client = _getClient();
     final req = await client.getUrl(uri).timeout(
       Duration(seconds: _config.timeoutSeconds),
     );
-    req.headers.set(HttpHeaders.userAgentHeader, 'TeleHeater');
+    req.headers.set(HttpHeaders.userAgentHeader, _km200UserAgent);
     req.headers.set(HttpHeaders.acceptHeader, 'application/json');
 
     final resp = await req.close().timeout(
@@ -236,17 +229,26 @@ class BoschBuderusEmsController implements HeatingController {
     final body = await resp.transform(utf8.decoder).join();
     if (body.trim().isEmpty) return null;
     final decrypted = _decryptKm200(body);
-    if (decrypted == null || decrypted.trim().isEmpty) return null;
-    return jsonDecode(decrypted);
+    dynamic json;
+    try {
+      json = decrypted == null ? null : jsonDecode(decrypted);
+    } catch (_) {}
+    if (json == null) {
+      throw const ModbusCommunicationException(
+        message: 'Das KM200 antwortet, aber die Antwort lässt sich nicht entschlüsseln – '
+            'Gateway-Passwort und privates Passwort prüfen.',
+      );
+    }
+    return json;
   }
 
-  Future<bool> _httpPutKm200(String endpoint, Map<String, dynamic> payload) async {
+  Future<bool> _httpWriteKm200(String endpoint, Map<String, dynamic> payload) async {
     final uri = _config.getUri(endpoint);
     final client = _getClient();
-    final req = await client.putUrl(uri).timeout(
+    final req = await client.postUrl(uri).timeout(
       Duration(seconds: _config.timeoutSeconds),
     );
-    req.headers.set(HttpHeaders.userAgentHeader, 'TeleHeater');
+    req.headers.set(HttpHeaders.userAgentHeader, _km200UserAgent);
     req.headers.set(HttpHeaders.acceptHeader, 'application/json');
     req.headers.set(HttpHeaders.contentTypeHeader, 'application/json');
 
@@ -260,6 +262,9 @@ class BoschBuderusEmsController implements HeatingController {
     await resp.drain<void>();
     return success;
   }
+
+  static const _tokenHint = 'EMS-ESP verlangt ein gültiges Zugriffstoken '
+      '(ab Version 3.10 einen API-Schlüssel – zum Schreiben mit Schreibrecht).';
 
   /// Sends an HTTP GET request with timeout and authentication.
   Future<dynamic> _httpGet(String endpoint) async {
@@ -277,6 +282,10 @@ class BoschBuderusEmsController implements HeatingController {
     final resp = await req.close().timeout(
       Duration(seconds: _config.timeoutSeconds),
     );
+    if (resp.statusCode == 401 || resp.statusCode == 403) {
+      await resp.drain<void>();
+      throw const ModbusCommunicationException(message: _tokenHint);
+    }
     if (resp.statusCode != 200) {
       await resp.drain<void>();
       return null;
@@ -307,6 +316,9 @@ class BoschBuderusEmsController implements HeatingController {
     );
     final isSuccess = resp.statusCode >= 200 && resp.statusCode < 300;
     await resp.drain<void>();
+    if (resp.statusCode == 401 || resp.statusCode == 403) {
+      throw const ModbusCommunicationException(message: _tokenHint);
+    }
     return isSuccess;
   }
 
@@ -318,73 +330,45 @@ class BoschBuderusEmsController implements HeatingController {
     return _readEmsEspTelemetry();
   }
 
+  /// First numeric value of the given KM200 services; a sensor that is not
+  /// connected reports −3276.8.
+  Future<double?> _km200Value(List<String> paths) async {
+    for (final path in paths) {
+      final json = await _httpGetKm200(path);
+      final v = json is Map ? json['value'] : null;
+      if (v is num && v > -3000) return v.toDouble();
+    }
+    return null;
+  }
+
+  Future<String?> _km200Text(String path) async {
+    final json = await _httpGetKm200(path);
+    final v = json is Map ? json['value'] : null;
+    return v is String ? v : null;
+  }
+
   Future<ControllerTelemetry> _readKm200Telemetry() async {
-    final rawValues = <String, double>{};
-    double? outdoorTemp;
-    double? flowTemp;
-    double? returnTemp;
-    double? hotWaterTemp;
-    double? roomTarget;
-    double? heatingCurveShift;
+    final hc = '/heatingCircuits/${_config.circuit}';
+    final outdoorTemp = await _km200Value(['/system/sensors/temperatures/outdoor_t1']);
+    final flowTemp = await _km200Value([
+      '$hc/actualSupplyTemperature',
+      '/system/sensors/temperatures/supply_t1',
+      '/heatSources/actualSupplyTemperature',
+    ]);
+    final returnTemp = await _km200Value([
+      '/system/sensors/temperatures/return',
+      '/heatSources/returnTemperature',
+    ]);
+    final hotWaterTemp = await _km200Value([
+      '/dhwCircuits/dhw1/actualTemp',
+      '/system/sensors/temperatures/hotWater_t2',
+    ]);
+    final roomTarget = await _km200Value(['$hc/currentRoomSetpoint']);
 
-    try {
-      final outdoorJson = await _httpGetKm200('/system/sensors/temperatures/outdoor_t1');
-      if (outdoorJson is Map<String, dynamic> && outdoorJson['value'] is num) {
-        outdoorTemp = (outdoorJson['value'] as num).toDouble();
-        rawValues['km200.outdoor'] = outdoorTemp;
-      }
-    } catch (e) {
-      debugPrint('[KM200] Error reading outdoor temp: $e');
-    }
-
-    try {
-      final flowJson = await _httpGetKm200('/heatingCircuits/${_config.circuit}/actualSupplyTemperature');
-      if (flowJson is Map<String, dynamic> && flowJson['value'] is num) {
-        flowTemp = (flowJson['value'] as num).toDouble();
-        rawValues['km200.flow'] = flowTemp;
-      }
-    } catch (e) {
-      debugPrint('[KM200] Error reading flow temp: $e');
-    }
-
-    try {
-      final returnJson = await _httpGetKm200('/system/sensors/temperatures/return');
-      if (returnJson is Map<String, dynamic> && returnJson['value'] is num) {
-        returnTemp = (returnJson['value'] as num).toDouble();
-        rawValues['km200.return'] = returnTemp;
-      }
-    } catch (e) {
-      debugPrint('[KM200] Error reading return temp: $e');
-    }
-
-    try {
-      final hwJson = await _httpGetKm200('/dhwCircuits/dhw1/actualTemp');
-      if (hwJson is Map<String, dynamic> && hwJson['value'] is num) {
-        hotWaterTemp = (hwJson['value'] as num).toDouble();
-        rawValues['km200.hotWater'] = hotWaterTemp;
-      }
-    } catch (e) {
-      debugPrint('[KM200] Error reading hot water temp: $e');
-    }
-
-    try {
-      final targetJson = await _httpGetKm200('/heatingCircuits/${_config.circuit}/temperatureRoomManual');
-      if (targetJson is Map<String, dynamic> && targetJson['value'] is num) {
-        roomTarget = (targetJson['value'] as num).toDouble();
-        rawValues['km200.roomTarget'] = roomTarget;
-      }
-    } catch (e) {
-      debugPrint('[KM200] Error reading room target: $e');
-    }
-
-    try {
-      final shiftJson = await _httpGetKm200('/heatingCircuits/${_config.circuit}/roomTemperatureHeatingCurveOffset');
-      if (shiftJson is Map<String, dynamic> && shiftJson['value'] is num) {
-        heatingCurveShift = (shiftJson['value'] as num).toDouble();
-        rawValues['km200.shift'] = heatingCurveShift;
-      }
-    } catch (e) {
-      debugPrint('[KM200] Error reading heating curve offset: $e');
+    if (outdoorTemp == null && flowTemp == null && returnTemp == null && hotWaterTemp == null) {
+      throw const ModbusCommunicationException(
+        message: 'Das KM200 liefert keinen der erwarteten Temperaturwerte.',
+      );
     }
 
     return ControllerTelemetry(
@@ -394,8 +378,13 @@ class BoschBuderusEmsController implements HeatingController {
       returnTemp: returnTemp,
       hotWaterTemp: hotWaterTemp,
       roomTarget: roomTarget,
-      heatingCurveShift: heatingCurveShift,
-      rawValues: rawValues,
+      rawValues: {
+        'km200.outdoor': ?outdoorTemp,
+        'km200.flow': ?flowTemp,
+        'km200.return': ?returnTemp,
+        'km200.hotWater': ?hotWaterTemp,
+        'km200.roomTarget': ?roomTarget,
+      },
     );
   }
 
@@ -432,19 +421,17 @@ class BoschBuderusEmsController implements HeatingController {
           'outdoorTemp',
           'outdoor_temp',
         ]);
-        hotWaterTemp = _extractDouble(boilerData, [
-          'wwcurtemp',
-          'wwCurTemp',
-          'wwtemp',
-          'dhwtemp',
-          'dhwCurTemp',
-          'curwwtemp',
-        ]);
+        // EMS-ESP <= 3.6: flat `wwcurtemp`; from 3.7: nested `dhw.curtemp`.
+        final dhw = boilerData['dhw'];
+        hotWaterTemp = _extractDouble(boilerData, ['wwcurtemp']) ??
+            (dhw is Map<String, dynamic> ? _extractDouble(dhw, ['curtemp']) : null);
 
         boilerData.forEach((k, v) {
           if (v is num) rawValues['boiler.$k'] = v.toDouble();
         });
       }
+    } on ModbusCommunicationException {
+      rethrow;
     } catch (e) {
       debugPrint('[BoschBuderusEmsController] Error reading boiler: $e');
     }
@@ -460,28 +447,25 @@ class BoschBuderusEmsController implements HeatingController {
           circuitMap = thermostatData[circuitKey] as Map<String, dynamic>;
         }
 
-        roomTarget = _extractDouble(circuitMap, [
-          'seltemp',
-          'targettemp',
-          'setpoint',
-          'roomtarget',
-          'heattemp',
-        ]) ?? _extractDouble(thermostatData, ['seltemp', 'targettemp']);
+        roomTarget = _extractDouble(circuitMap, ['seltemp']);
 
-        heatingCurveShift = _extractDouble(circuitMap, [
-          'offset',
-          'curveoffset',
-          'shift',
-          'parshift',
-          'heatingcurveshift',
-        ]) ?? _extractDouble(thermostatData, ['offset', 'curveoffset']);
+        // Only some thermostats have it; without it the shift stays "—".
+        heatingCurveShift = _extractDouble(circuitMap, ['offsettemp']);
 
         circuitMap.forEach((k, v) {
           if (v is num) rawValues['thermostat.$circuitKey.$k'] = v.toDouble();
         });
       }
+    } on ModbusCommunicationException {
+      rethrow;
     } catch (e) {
       debugPrint('[BoschBuderusEmsController] Error reading thermostat: $e');
+    }
+
+    if (outdoorTemp == null && flowTemp == null && returnTemp == null && hotWaterTemp == null && roomTarget == null) {
+      throw const ModbusCommunicationException(
+        message: 'EMS-ESP liefert keinen der erwarteten Werte (curflowtemp, rettemp, outdoortemp, seltemp).',
+      );
     }
 
     return ControllerTelemetry(
@@ -520,32 +504,25 @@ class BoschBuderusEmsController implements HeatingController {
       );
     }
 
-    if (_config.gatewayType == BoschGatewayType.km200) {
-      final success = await _httpPutKm200(
-        '/heatingCircuits/${_config.circuit}/roomTemperatureHeatingCurveOffset',
-        {'value': shift},
+    if (_isKm200) {
+      throw const ModbusCommunicationException(
+        message: 'Das KM200 bietet keine schreibbare Parallelverschiebung. '
+            'Stattdessen die Raum-Solltemperatur ändern.',
       );
-      if (!success) {
-        throw ModbusCommunicationException(
-          message: 'KM200 Parallelverschiebung (${shift > 0 ? "+$shift" : "$shift"} K) '
-              'konnte nicht gesetzt werden.',
-        );
-      }
-      return;
     }
 
     final circuitNum = _circuitToNumber(_config.circuit);
 
     // Try standard EMS-ESP v3 endpoint
     var success = await _httpPost('/api/thermostat', {
-      'cmd': 'offset',
+      'cmd': 'offsettemp',
       'data': shift,
       'id': circuitNum,
     });
 
-    // Fallback to direct circuit entity endpoint
+    // Same command in path form
     if (!success) {
-      success = await _httpPost('/api/thermostat/${_config.circuit}/offset', {
+      success = await _httpPost('/api/thermostat/${_config.circuit}/offsettemp', {
         'value': shift,
       });
     }
@@ -566,9 +543,13 @@ class BoschBuderusEmsController implements HeatingController {
       );
     }
 
-    if (_config.gatewayType == BoschGatewayType.km200) {
-      final success = await _httpPutKm200(
-        '/heatingCircuits/${_config.circuit}/temperatureRoomManual',
+    if (_isKm200) {
+      // Manual mode has its own setpoint; in the time programme the
+      // temporary setpoint overrides until the next switching point.
+      final hc = '/heatingCircuits/${_config.circuit}';
+      final manual = (await _km200Text('$hc/operationMode'))?.toLowerCase() == 'manual';
+      final success = await _httpWriteKm200(
+        '$hc/${manual ? 'manualRoomSetpoint' : 'temporaryRoomSetpoint'}',
         {'value': temperature},
       );
       if (!success) {
@@ -620,17 +601,11 @@ class BoschBuderusEmsController implements HeatingController {
     final controller = BoschBuderusEmsController(config: config);
     try {
       if (config.gatewayType == BoschGatewayType.km200) {
-        final online = await controller._probeGateway();
-        if (!online) {
-          return {
-            'success': false,
-            'message': 'KM200 Gateway antwortet nicht oder AES-128 Schlüssel ist ungültig.',
-          };
-        }
+        await controller._probeGateway();
         final telemetry = await controller.readTelemetry();
         return {
           'success': true,
-          'message': 'Buderus KM200 Gateway (AES-128) erfolgreich autorisiert!',
+          'message': 'KM200 erreicht, entschlüsselt und Werte gelesen.',
           'version': 'KM200/MB LAN',
           'outdoorTemp': telemetry.outdoorTemp,
           'flowTemp': telemetry.flowTemp,
@@ -678,7 +653,7 @@ class BoschBuderusEmsController implements HeatingController {
     } catch (e) {
       return {
         'success': false,
-        'message': 'Verbindungstest fehlgeschlagen: $e',
+        'message': e is ModbusCommunicationException ? e.message : 'Verbindungstest fehlgeschlagen: $e',
       };
     } finally {
       controller.disconnect();

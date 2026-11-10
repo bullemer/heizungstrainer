@@ -29,6 +29,11 @@ class VaillantEbusdConfig {
 
   final String host;
   final int port;
+
+  /// ebusd TCP command port – the only way to write (the HTTP port is read-only).
+  final int commandPort;
+
+  /// Regulator circuit as ebusd names it (700, ctlv2, 470); `bai` = boiler only.
   final String circuit;
   final String apiToken;
   final bool useHttps;
@@ -40,7 +45,7 @@ class VaillantEbusdConfig {
     VaillantEbusdPreset(
       id: 'ebusd_http_json',
       name: 'eBUSd HTTP JSON API (Standard)',
-      description: 'Standard eBUSd HTTP JSON Daemon (Port 8889, endpoint /data, circuit bai)',
+      description: 'Nur Kessel (Kreis bai), nur lesen. ebusd muss mit --httpport 8889 laufen.',
       defaultPort: 8889,
       defaultCircuit: 'bai',
       defaultUseHttps: false,
@@ -48,15 +53,15 @@ class VaillantEbusdConfig {
     VaillantEbusdPreset(
       id: 'ebusd_sensocomfort',
       name: 'Vaillant sensoCOMFORT (VRC 720)',
-      description: 'sensoCOMFORT Systemregler via eBUSd (Heizkreis 720 / bai)',
+      description: 'sensoCOMFORT Systemregler via ebusd (Kreis ctlv2 + bai)',
       defaultPort: 8889,
-      defaultCircuit: '720',
+      defaultCircuit: 'ctlv2',
       defaultUseHttps: false,
     ),
     VaillantEbusdPreset(
       id: 'ebusd_multimatic',
       name: 'Vaillant multiMATIC (VRC 700)',
-      description: 'multiMATIC 700 Regelung via eBUSd (Heizkreis 700 / bai)',
+      description: 'multiMATIC 700 Regelung via ebusd (Kreis 700 + bai)',
       defaultPort: 8889,
       defaultCircuit: '700',
       defaultUseHttps: false,
@@ -64,7 +69,7 @@ class VaillantEbusdConfig {
     VaillantEbusdPreset(
       id: 'ebusd_calormatic',
       name: 'Vaillant calorMATIC (VRC 470 / 430)',
-      description: 'calorMATIC Witterungsführung via eBUSd (Heizkreis 470 / bai)',
+      description: 'calorMATIC Witterungsführung via ebusd (Kreis 470 + bai)',
       defaultPort: 8889,
       defaultCircuit: '470',
       defaultUseHttps: false,
@@ -72,7 +77,7 @@ class VaillantEbusdConfig {
     VaillantEbusdPreset(
       id: 'custom',
       name: 'Benutzerdefiniert',
-      description: 'Individuelle eBUSd IP-Adresse, Port und Heizkreis-Bezeichnung',
+      description: 'Eigene ebusd-Adresse, HTTP-Port und Regler-Kreis',
       defaultPort: 8889,
       defaultCircuit: 'bai',
       defaultUseHttps: false,
@@ -82,6 +87,7 @@ class VaillantEbusdConfig {
   const VaillantEbusdConfig({
     this.host = '192.168.1.140',
     this.port = 8889,
+    this.commandPort = 8888,
     this.circuit = 'bai',
     this.apiToken = '',
     this.useHttps = false,
@@ -121,6 +127,7 @@ class VaillantEbusdConfig {
   VaillantEbusdConfig copyWith({
     String? host,
     int? port,
+    int? commandPort,
     String? circuit,
     String? apiToken,
     bool? useHttps,
@@ -131,6 +138,7 @@ class VaillantEbusdConfig {
     return VaillantEbusdConfig(
       host: host ?? this.host,
       port: port ?? this.port,
+      commandPort: commandPort ?? this.commandPort,
       circuit: circuit ?? this.circuit,
       apiToken: apiToken ?? this.apiToken,
       useHttps: useHttps ?? this.useHttps,
@@ -144,6 +152,7 @@ class VaillantEbusdConfig {
     return {
       'host': host,
       'port': port,
+      'commandPort': commandPort,
       'circuit': circuit,
       'apiToken': apiToken,
       'useHttps': useHttps,
@@ -157,7 +166,9 @@ class VaillantEbusdConfig {
     return VaillantEbusdConfig(
       host: json['host'] as String? ?? '192.168.1.140',
       port: (json['port'] as num?)?.toInt() ?? 8889,
-      circuit: json['circuit'] as String? ?? 'bai',
+      commandPort: (json['commandPort'] as num?)?.toInt() ?? 8888,
+      // <= 1.2.10 used "720" for the VRC 720; ebusd calls that circuit ctlv2.
+      circuit: (json['circuit'] as String? ?? 'bai') == '720' ? 'ctlv2' : (json['circuit'] as String? ?? 'bai'),
       apiToken: json['apiToken'] as String? ?? '',
       useHttps: json['useHttps'] as bool? ?? false,
       timeoutSeconds: (json['timeoutSeconds'] as num?)?.toInt() ?? 5,

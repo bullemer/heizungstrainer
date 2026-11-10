@@ -8,7 +8,7 @@ enum BoschGatewayType {
   /// EMS-ESP REST API (BBQKees Gateway-E32/S3, open JSON API).
   emsEsp,
 
-  /// Bosch / Buderus KM200 / MB LAN 2 / MX300 (Local AES-128-ECB encrypted REST API).
+  /// Bosch / Buderus KM200 / MB LAN 2 / MX300 (local AES-256-ECB encrypted REST API).
   km200,
 }
 
@@ -18,7 +18,7 @@ extension BoschGatewayTypeExtension on BoschGatewayType {
       case BoschGatewayType.emsEsp:
         return 'EMS-ESP REST API (BBQKees / ESP32)';
       case BoschGatewayType.km200:
-        return 'Bosch/Buderus KM200 / MB LAN (AES-128)';
+        return 'Bosch/Buderus KM200 / MB LAN (verschlüsselt)';
     }
   }
 }
@@ -50,18 +50,14 @@ class BoschBuderusEmsPreset {
 /// 1. EMS-ESP v2 and v3 gateways (e.g. BBQKees Gateway-E32/S3, Buderus Logamatic,
 ///    Bosch Condens, Junkers Cerapur with EMS-Bus).
 /// 2. Official Bosch / Buderus KM200, MB LAN 2, and MX300 gateways with local
-///    hardware AES-128-ECB encryption.
+///    AES-256-ECB encryption.
 class BoschBuderusEmsConfig {
   static const String storageKey = 'bosch_buderus_ems_config';
 
-  static final List<int> _km200Salt1 = [
-    0x86, 0x78, 0x45, 0xcd, 0x72, 0x27, 0x2a, 0x93,
-    0x58, 0x47, 0x3d, 0x3d, 0x99, 0x26, 0xb8, 0xb6,
-  ];
-  static final List<int> _km200Salt2 = [
-    0x30, 0x78, 0x30, 0x62, 0x61, 0x32, 0x34, 0x37,
-    0x35, 0x33, 0x34, 0x39, 0x64, 0x32, 0x30, 0x61,
-  ];
+  /// KM200 salt, identical in ioBroker.km200, FHEM 73_km200 and
+  /// bosch-thermostat-client.
+  static const String _km200SaltHex =
+      '867845e97c4e29dce522b9a7d3a3e07b152bffadddbed7f5ffd842e9895ad1e4';
 
   final String host;
   final int port;
@@ -97,8 +93,8 @@ class BoschBuderusEmsConfig {
     ),
     BoschBuderusEmsPreset(
       id: 'km200_mblan',
-      name: 'Buderus KM200 / MB LAN (AES-128)',
-      description: 'Offizielles Bosch/Buderus LAN-Gateway mit lokaler AES-128-ECB Verschlüsselung (Port 80)',
+      name: 'Buderus KM200 / MB LAN',
+      description: 'Offizielles Bosch/Buderus LAN-Gateway; braucht Gateway-Passwort (vom Typschild) und das private Passwort aus der Hersteller-App',
       defaultPort: 80,
       defaultCircuit: 'hc1',
       defaultUseHttps: false,
@@ -177,32 +173,29 @@ class BoschBuderusEmsConfig {
     return Uri.parse('$baseUrl$normalized');
   }
 
-  /// Computes or parses the 16-byte AES-128 key for KM200 communication.
+  static Uint8List _hexBytes(String hex) => Uint8List.fromList([
+        for (var i = 0; i + 1 < hex.length; i += 2) int.parse(hex.substring(i, i + 2), radix: 16),
+      ]);
+
+  /// The 32-byte AES-256 key for KM200 communication:
+  /// `MD5(gatewayPassword + salt) || MD5(salt + privatePassword)`, gateway
+  /// password without dashes. Alternatively a ready key as 64 hex digits.
+  /// (Up to 1.2.10 the app XORed the two halves into a 16-byte key with a
+  /// wrong salt, which can never have decrypted a real gateway.)
   Uint8List? getKm200KeyBytes() {
     if (km200Key.trim().isNotEmpty) {
       final clean = km200Key.replaceAll(RegExp(r'[^0-9a-fA-F]'), '');
-      if (clean.length == 32) {
-        final bytes = Uint8List(16);
-        for (int i = 0; i < 16; i++) {
-          bytes[i] = int.parse(clean.substring(i * 2, i * 2 + 2), radix: 16);
-        }
-        return bytes;
-      }
+      if (clean.length == 64) return _hexBytes(clean);
     }
 
     if (gatewayPassword.trim().isNotEmpty && privatePassword.trim().isNotEmpty) {
-      final cleanGw = gatewayPassword.replaceAll('-', '').trim();
-      final gwBytes = utf8.encode(cleanGw);
+      final salt = _hexBytes(_km200SaltHex);
+      final gwBytes = utf8.encode(gatewayPassword.replaceAll('-', '').trim());
       final privBytes = utf8.encode(privatePassword.trim());
-
-      final md5Gw = md5.convert([...gwBytes, ..._km200Salt1]).bytes;
-      final md5Priv = md5.convert([..._km200Salt2, ...privBytes]).bytes;
-
-      final key = Uint8List(16);
-      for (int i = 0; i < 16; i++) {
-        key[i] = md5Gw[i] ^ md5Priv[i];
-      }
-      return key;
+      return Uint8List.fromList([
+        ...md5.convert([...gwBytes, ...salt]).bytes,
+        ...md5.convert([...salt, ...privBytes]).bytes,
+      ]);
     }
 
     return null;

@@ -94,9 +94,10 @@ class NibeModbusController implements HeatingController {
           message: 'Verbindung zur NIBE Wärmepumpe unter $host:$targetPort fehlgeschlagen.',
         );
       }
+      // First read proves that the register map answers at all.
+      await readTelemetry();
     } catch (e) {
-      _isConnected = false;
-      _client = null;
+      await disconnect();
       if (e is ModbusCommunicationException) rethrow;
       throw ModbusCommunicationException(
         message: 'Fehler beim Verbinden mit NIBE Wärmepumpe zu $host:$targetPort: $e',
@@ -115,7 +116,7 @@ class NibeModbusController implements HeatingController {
   }
 
   bool _isDisconnectedRaw(int? raw) {
-    if (raw == null) return true;
+    if (raw == null) return false;
     return raw == 0x7FFF || raw == -32768 || raw == 0xFFFF || raw == 32767;
   }
 
@@ -128,11 +129,13 @@ class NibeModbusController implements HeatingController {
       ? ModbusElementType.holdingRegister
       : ModbusElementType.inputRegister;
 
-  Future<int?> _readSingleRegister(int address) async {
+  /// Sensors use the configured register type; setpoints ([holding]) are
+  /// always holding registers, because that is where they are written.
+  Future<int?> _readSingleRegister(int address, {bool holding = false}) async {
     if (_client == null || !_isConnected) return null;
     final reg = ModbusInt16Register(
       name: 'reg_$address',
-      type: _elementType,
+      type: holding ? ModbusElementType.holdingRegister : _elementType,
       address: address,
     );
     try {
@@ -161,12 +164,19 @@ class NibeModbusController implements HeatingController {
 
     int? rawRoom;
     if (_config.roomTargetRegister != null) {
-      rawRoom = await _readSingleRegister(_config.roomTargetRegister!);
+      rawRoom = await _readSingleRegister(_config.roomTargetRegister!, holding: true);
     }
 
     int? rawShift;
     if (_config.heatingCurveShiftRegister != null) {
-      rawShift = await _readSingleRegister(_config.heatingCurveShiftRegister!);
+      rawShift = await _readSingleRegister(_config.heatingCurveShiftRegister!, holding: true);
+    }
+
+    if (rawOutdoor == null && rawFlow == null && rawReturn == null && rawHotWater == null) {
+      throw const ModbusCommunicationException(
+        message: 'NIBE Wärmepumpe antwortet, liefert aber auf keinem der eingestellten Register einen Wert. '
+            'Registeradressen, Registertyp und Unit-ID prüfen.',
+      );
     }
 
     final outdoor = _convertRaw(rawOutdoor);
@@ -202,6 +212,20 @@ class NibeModbusController implements HeatingController {
     return telemetry;
   }
 
+  Future<ModbusResponseCode> _writeHolding(int address, int raw) {
+    final reg = ModbusInt16Register(
+      name: 'write_$address',
+      type: ModbusElementType.holdingRegister,
+      address: address,
+    );
+    // MODBUS 40 (F series / SMO) only implements FC 0x10, not "write single".
+    final request = _config.writeMultiple
+        ? reg.getMultipleWriteRequest(
+            (ByteData(2)..setInt16(0, raw)).buffer.asUint8List())
+        : reg.getWriteRequest(raw);
+    return _client!.send(request).timeout(_timeout);
+  }
+
   @override
   Future<void> setHeatingCurveShift(double shift) async {
     if (_config.heatingCurveShiftRegister == null) {
@@ -216,13 +240,7 @@ class NibeModbusController implements HeatingController {
     }
 
     final raw = shift.round();
-    final reg = ModbusInt16Register(
-      name: 'shift_reg',
-      type: ModbusElementType.holdingRegister,
-      address: _config.heatingCurveShiftRegister!,
-    );
-
-    final res = await _client!.send(reg.getWriteRequest(raw)).timeout(_timeout);
+    final res = await _writeHolding(_config.heatingCurveShiftRegister!, raw);
     if (res != ModbusResponseCode.requestSucceed) {
       throw ModbusCommunicationException(
         message: 'Schreiben der NIBE Parallelverschiebung fehlgeschlagen (Code $res).',
@@ -244,13 +262,7 @@ class NibeModbusController implements HeatingController {
     }
 
     final raw = (temperature / _config.multiplier).round();
-    final reg = ModbusInt16Register(
-      name: 'room_reg',
-      type: ModbusElementType.holdingRegister,
-      address: _config.roomTargetRegister!,
-    );
-
-    final res = await _client!.send(reg.getWriteRequest(raw)).timeout(_timeout);
+    final res = await _writeHolding(_config.roomTargetRegister!, raw);
     if (res != ModbusResponseCode.requestSucceed) {
       throw ModbusCommunicationException(
         message: 'Schreiben der NIBE Raum-Solltemperatur fehlgeschlagen (Code $res).',

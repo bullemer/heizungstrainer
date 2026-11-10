@@ -55,66 +55,49 @@ class WeishauptWemConfig {
   final String presetId;
   final String presetName;
 
+  // Register map of the Weishaupt heat pumps with built-in Modbus TCP, taken
+  // from the open-source Home Assistant integration OStrama/weishaupt_modbus
+  // (no manufacturer list found; NOT verified on hardware). The full 5-digit
+  // number is the protocol address. Sensors are INPUT registers (FC04, ÷10):
+  // 30001 outdoor, 31105 heating circuit flow, 33105 heat pump return,
+  // 32102 hot water. Room setpoint "Komfort" = holding 41105 (÷10).
+  // There is no parallel-shift register. Up to 1.2.10 the app shipped an
+  // invented map (holding 3101–3106) that cannot have worked.
+  //
+  // WTC gas boilers have no Modbus of their own; the separate "Gateway
+  // WEM-Modbus" uses a completely different map (manual 83325901) that is not
+  // implemented – use "Benutzerdefiniert" for it.
   static const List<WeishauptWemPreset> presets = [
     WeishauptWemPreset(
       id: 'wem_wwp_split',
-      name: 'Weishaupt WWP LS / WWP LB (Split-Wärmepumpe)',
-      description: 'Weishaupt WEM Split-Wärmepumpe Modbus TCP (Reg 3101=Außen, 3102=Vorlauf, 3103=Rücklauf, 3104=WW)',
+      name: 'Weishaupt Wärmepumpe (WWP / Biblock, Modbus TCP)',
+      description: 'Eingangsregister 30001=Außen, 31105=Vorlauf Heizkreis, 33105=Rücklauf, 32102=Warmwasser; '
+          'Raum-Soll Komfort = Halteregister 41105. Keine Parallelverschiebung per Modbus.',
       defaultPort: 502,
       defaultUnitId: 1,
-      outdoorRegister: 3101,
-      flowRegister: 3102,
-      returnRegister: 3103,
-      hotWaterRegister: 3104,
-      roomTargetRegister: 3105,
-      heatingCurveShiftRegister: 3106,
+      outdoorRegister: 30001,
+      flowRegister: 31105,
+      returnRegister: 33105,
+      hotWaterRegister: 32102,
+      roomTargetRegister: 41105,
+      heatingCurveShiftRegister: null,
       multiplier: 0.1,
-      isHoldingRegister: true,
-    ),
-    WeishauptWemPreset(
-      id: 'wem_wtc_gw',
-      name: 'Weishaupt WTC-GW (Gas-Brennwert WEM)',
-      description: 'Weishaupt WTC Gas-Brennwertgerät mit WEM-Portal Modbus-Schnittstelle (Reg 1..6)',
-      defaultPort: 502,
-      defaultUnitId: 1,
-      outdoorRegister: 1,
-      flowRegister: 2,
-      returnRegister: 3,
-      hotWaterRegister: 4,
-      roomTargetRegister: 5,
-      heatingCurveShiftRegister: 6,
-      multiplier: 0.1,
-      isHoldingRegister: true,
-    ),
-    WeishauptWemPreset(
-      id: 'wem_biblock',
-      name: 'Weishaupt BiBlock (WBB Wärmepumpe)',
-      description: 'Weishaupt WBB Modbus TCP Standardbelegung (Reg 3101..3106, Faktor 0.1)',
-      defaultPort: 502,
-      defaultUnitId: 1,
-      outdoorRegister: 3101,
-      flowRegister: 3102,
-      returnRegister: 3103,
-      hotWaterRegister: 3104,
-      roomTargetRegister: 3105,
-      heatingCurveShiftRegister: 3106,
-      multiplier: 0.1,
-      isHoldingRegister: true,
+      isHoldingRegister: false,
     ),
     WeishauptWemPreset(
       id: 'custom',
       name: 'Benutzerdefiniert',
-      description: 'Individuelle Registeradressen und Modbus-Parameter für Weishaupt',
+      description: 'Eigene Registeradressen, z. B. für das Gateway WEM-Modbus (WTC-Gasgeräte)',
       defaultPort: 502,
       defaultUnitId: 1,
-      outdoorRegister: 3101,
-      flowRegister: 3102,
-      returnRegister: 3103,
-      hotWaterRegister: 3104,
-      roomTargetRegister: 3105,
-      heatingCurveShiftRegister: 3106,
+      outdoorRegister: 30001,
+      flowRegister: 31105,
+      returnRegister: 33105,
+      hotWaterRegister: 32102,
+      roomTargetRegister: null,
+      heatingCurveShiftRegister: null,
       multiplier: 0.1,
-      isHoldingRegister: true,
+      isHoldingRegister: false,
     ),
   ];
 
@@ -122,16 +105,16 @@ class WeishauptWemConfig {
     this.host = '192.168.1.150',
     this.port = 502,
     this.unitId = 1,
-    this.outdoorRegister = 3101,
-    this.flowRegister = 3102,
-    this.returnRegister = 3103,
-    this.hotWaterRegister = 3104,
-    this.roomTargetRegister = 3105,
-    this.heatingCurveShiftRegister = 3106,
+    this.outdoorRegister = 30001,
+    this.flowRegister = 31105,
+    this.returnRegister = 33105,
+    this.hotWaterRegister = 32102,
+    this.roomTargetRegister = 41105,
+    this.heatingCurveShiftRegister,
     this.multiplier = 0.1,
-    this.isHoldingRegister = true,
+    this.isHoldingRegister = false,
     this.presetId = 'wem_wwp_split',
-    this.presetName = 'Weishaupt WWP LS / WWP LB (Split-Wärmepumpe)',
+    this.presetName = 'Weishaupt Wärmepumpe (WWP / Biblock, Modbus TCP)',
   });
 
   factory WeishauptWemConfig.fromPreset(
@@ -204,23 +187,37 @@ class WeishauptWemConfig {
         'presetName': presetName,
       };
 
+  static int? _optionalRegister(Map<String, dynamic> json, String key) =>
+      (json[key] as num?)?.toInt();
+
   factory WeishauptWemConfig.fromJson(Map<String, dynamic> json) {
+    final presetId = json['presetId'] as String? ?? 'wem_wwp_split';
+    final outdoor = (json['outdoorRegister'] as num?)?.toInt();
+    // <= 1.2.10: invented maps (heat pump 3101–3106, "WTC-GW" 1–6). Heat pump
+    // configs move to the real map; the WTC preset no longer exists and
+    // becomes a read-only custom config the user has to fill in.
+    if ((presetId == 'wem_wwp_split' || presetId == 'wem_biblock') && (outdoor == null || outdoor == 3101)) {
+      return WeishauptWemConfig(
+        host: json['host'] as String? ?? '192.168.1.150',
+        port: (json['port'] as num?)?.toInt() ?? 502,
+        unitId: (json['unitId'] as num?)?.toInt() ?? 1,
+      );
+    }
+    final legacy = presetId == 'wem_wtc_gw' || presetId == 'wem_biblock';
     return WeishauptWemConfig(
       host: json['host'] as String? ?? '192.168.1.150',
       port: (json['port'] as num?)?.toInt() ?? 502,
       unitId: (json['unitId'] as num?)?.toInt() ?? 1,
-      outdoorRegister: (json['outdoorRegister'] as num?)?.toInt() ?? 3101,
-      flowRegister: (json['flowRegister'] as num?)?.toInt() ?? 3102,
-      returnRegister: (json['returnRegister'] as num?)?.toInt() ?? 3103,
-      hotWaterRegister: (json['hotWaterRegister'] as num?)?.toInt() ?? 3104,
-      roomTargetRegister: (json['roomTargetRegister'] as num?)?.toInt() ?? 3105,
-      heatingCurveShiftRegister:
-          (json['heatingCurveShiftRegister'] as num?)?.toInt() ?? 3106,
+      outdoorRegister: outdoor ?? 30001,
+      flowRegister: (json['flowRegister'] as num?)?.toInt() ?? 31105,
+      returnRegister: (json['returnRegister'] as num?)?.toInt() ?? 33105,
+      hotWaterRegister: (json['hotWaterRegister'] as num?)?.toInt() ?? 32102,
+      roomTargetRegister: legacy ? null : _optionalRegister(json, 'roomTargetRegister'),
+      heatingCurveShiftRegister: legacy ? null : _optionalRegister(json, 'heatingCurveShiftRegister'),
       multiplier: (json['multiplier'] as num?)?.toDouble() ?? 0.1,
-      isHoldingRegister: json['isHoldingRegister'] as bool? ?? true,
-      presetId: json['presetId'] as String? ?? 'wem_wwp_split',
-      presetName: json['presetName'] as String? ??
-          'Weishaupt WWP LS / WWP LB (Split-Wärmepumpe)',
+      isHoldingRegister: json['isHoldingRegister'] as bool? ?? false,
+      presetId: legacy ? 'custom' : presetId,
+      presetName: legacy ? 'Benutzerdefiniert' : (json['presetName'] as String? ?? 'Benutzerdefiniert'),
     );
   }
 

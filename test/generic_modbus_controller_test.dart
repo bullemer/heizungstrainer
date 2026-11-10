@@ -4,54 +4,50 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:heizungstrainer/models/generic_modbus_config.dart';
 import 'package:heizungstrainer/controllers/generic_modbus_controller.dart';
 import 'package:heizungstrainer/controllers/heating_controller.dart';
+import 'package:heizungstrainer/exceptions/modbus_exceptions.dart';
+
+// Config, preset and migration tests. The Modbus wire behaviour (Stiebel ISG,
+// Samson TROVIS, failing devices) is tested against a Modbus TCP server in
+// virtual_controllers_test.dart.
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   group('GenericModbusConfig & Presets Tests', () {
     test('contains expected factory presets', () {
-      final presets = GenericModbusConfig.presets;
-      expect(presets.length, greaterThanOrEqualTo(7));
-
-      final ids = presets.map((p) => p.id).toSet();
-      expect(ids.contains('standard'), isTrue);
-      expect(ids.contains('stiebel_isg'), isTrue);
-      expect(ids.contains('luxtronik'), isTrue);
-      expect(ids.contains('ta_cmi'), isTrue);
-      expect(ids.contains('siemens_synco'), isTrue);
-      expect(ids.contains('wolf_bm2'), isTrue);
-      expect(ids.contains('custom'), isTrue);
+      expect(
+        GenericModbusConfig.presets.map((p) => p.id).toSet(),
+        {'standard', 'stiebel_isg', 'custom', 'samson_trovis'},
+      );
+      expect(GenericModbusConfig.presets.first.id, 'standard');
     });
 
-    test('stiebel_isg preset has ISG registers and 5s polling throttle', () {
+    test('stiebel_isg preset: input registers 506/514/515/521, comfort temperature 1501, no shift', () {
       final preset = GenericModbusConfig.presets.firstWhere((p) => p.id == 'stiebel_isg');
-      expect(preset.outdoorRegister, 501);
-      expect(preset.flowRegister, 502);
-      expect(preset.returnRegister, 503);
-      expect(preset.hotWaterRegister, 504);
+      // ISG register numbers are 1-based: 507/515/516/522 and 1502.
+      expect(preset.outdoorRegister, 506);
+      expect(preset.flowRegister, 514);
+      expect(preset.returnRegister, 515);
+      expect(preset.hotWaterRegister, 521);
       expect(preset.roomTargetRegister, 1501);
-      expect(preset.heatingCurveShiftRegister, 1502);
+      expect(preset.heatingCurveShiftRegister, isNull);
+      expect(preset.isHoldingRegister, isFalse);
       expect(preset.pollingIntervalSeconds, 5);
       expect(preset.multiplier, 0.1);
+      expect(preset.dataType, ModbusRegisterDataType.int16);
     });
 
-    test('luxtronik preset has 32-bit register and word-swap (CDAB)', () {
+    test('samson_trovis preset is read-only on holding registers', () {
       final trovis = GenericModbusConfig.presets.firstWhere((p) => p.id == 'samson_trovis');
       // HR 40010/40013/40017/40023 → protocol address HR − 40001; read-only
       expect([trovis.outdoorRegister, trovis.flowRegister, trovis.returnRegister, trovis.hotWaterRegister], [9, 12, 16, 22]);
       expect(trovis.roomTargetRegister, isNull);
       expect(trovis.heatingCurveShiftRegister, isNull);
+      expect(trovis.isHoldingRegister, isTrue);
       expect(trovis.defaultUnitId, 255);
-      expect(GenericModbusConfig.presets.first.id, 'standard');
-      final preset = GenericModbusConfig.presets.firstWhere((p) => p.id == 'luxtronik');
-      expect(preset.wordOrder, ModbusWordOrder.wordSwap);
-      expect(preset.dataType, ModbusRegisterDataType.int32);
-      expect(preset.outdoorRegister, 100);
-      expect(preset.flowRegister, 101);
-      expect(preset.returnRegister, 102);
     });
 
-    test('default config values are valid', () {
+    test('default config values are valid and have no write registers', () {
       const config = GenericModbusConfig();
       expect(config.presetId, 'standard');
       expect(config.host, '192.168.1.50');
@@ -66,14 +62,14 @@ void main() {
       expect(config.flowRegister, 2);
       expect(config.returnRegister, 3);
       expect(config.hotWaterRegister, 4);
-      expect(config.roomTargetRegister, 5);
-      expect(config.heatingCurveShiftRegister, 6);
+      expect(config.roomTargetRegister, isNull);
+      expect(config.heatingCurveShiftRegister, isNull);
     });
 
     test('toJson and fromJson preserves all fields including wordOrder and dataType', () {
       const original = GenericModbusConfig(
-        presetId: 'luxtronik',
-        presetName: 'Luxtronik 2.0 / 2.1 (Alpha Innotec / Novelan)',
+        presetId: 'custom',
+        presetName: 'Benutzerdefiniert',
         host: '10.0.0.42',
         port: 5020,
         unitId: 2,
@@ -83,34 +79,89 @@ void main() {
         hotWaterRegister: 103,
         roomTargetRegister: 105,
         heatingCurveShiftRegister: 106,
-        multiplier: 0.1,
-        isHoldingRegister: true,
+        multiplier: 0.01,
+        isHoldingRegister: false,
         wordOrder: ModbusWordOrder.wordSwap,
         dataType: ModbusRegisterDataType.int32,
         pollingIntervalSeconds: 8,
       );
 
-      final jsonMap = original.toJson();
       final restored = GenericModbusConfig.fromJson(
-        jsonDecode(jsonEncode(jsonMap)) as Map<String, dynamic>,
+        jsonDecode(jsonEncode(original.toJson())) as Map<String, dynamic>,
       );
+      expect(restored.toJson(), original.toJson());
+    });
 
-      expect(restored.presetId, 'luxtronik');
-      expect(restored.presetName, 'Luxtronik 2.0 / 2.1 (Alpha Innotec / Novelan)');
-      expect(restored.host, '10.0.0.42');
-      expect(restored.port, 5020);
-      expect(restored.unitId, 2);
-      expect(restored.outdoorRegister, 100);
-      expect(restored.flowRegister, 101);
-      expect(restored.returnRegister, 102);
-      expect(restored.hotWaterRegister, 103);
-      expect(restored.roomTargetRegister, 105);
-      expect(restored.heatingCurveShiftRegister, 106);
-      expect(restored.multiplier, 0.1);
-      expect(restored.isHoldingRegister, isTrue);
-      expect(restored.wordOrder, ModbusWordOrder.wordSwap);
-      expect(restored.dataType, ModbusRegisterDataType.int32);
-      expect(restored.pollingIntervalSeconds, 8);
+    for (final removedId in ['luxtronik', 'ta_cmi', 'siemens_synco', 'wolf_bm2']) {
+      test('stored config of removed preset "$removedId" loads as read-only custom', () {
+        final restored = GenericModbusConfig.fromJson({
+          'presetId': removedId,
+          'presetName': 'Some invented preset',
+          'host': '10.0.0.42',
+          'port': 5020,
+          'unitId': 2,
+          'outdoorRegister': 100,
+          'flowRegister': 101,
+          'returnRegister': 102,
+          'hotWaterRegister': 103,
+          'roomTargetRegister': 105,
+          'heatingCurveShiftRegister': 106,
+          'multiplier': 0.1,
+          'isHoldingRegister': true,
+          'wordOrder': 'wordSwap',
+          'dataType': 'int32',
+          'pollingIntervalSeconds': 8,
+        });
+
+        expect(restored.presetId, 'custom');
+        expect(restored.presetName, 'Benutzerdefiniert');
+        expect(restored.roomTargetRegister, isNull);
+        expect(restored.heatingCurveShiftRegister, isNull);
+        // Connection and read settings are kept.
+        expect(restored.host, '10.0.0.42');
+        expect(restored.port, 5020);
+        expect(restored.unitId, 2);
+        expect(
+          [restored.outdoorRegister, restored.flowRegister, restored.returnRegister, restored.hotWaterRegister],
+          [100, 101, 102, 103],
+        );
+        expect(restored.wordOrder, ModbusWordOrder.wordSwap);
+        expect(restored.dataType, ModbusRegisterDataType.int32);
+      });
+    }
+
+    test('stored stiebel_isg config with the old 501 map migrates to the real map', () {
+      final restored = GenericModbusConfig.fromJson({
+        'presetId': 'stiebel_isg',
+        'presetName': 'Stiebel Eltron / Tecalor (ISG Web)',
+        'host': '10.0.0.42',
+        'port': 5020,
+        'unitId': 7,
+        'outdoorRegister': 501,
+        'flowRegister': 502,
+        'returnRegister': 503,
+        'hotWaterRegister': 504,
+        'roomTargetRegister': 1501,
+        'heatingCurveShiftRegister': 1502,
+        'multiplier': 0.1,
+        'isHoldingRegister': true,
+        'wordOrder': 'bigEndian',
+        'dataType': 'int16',
+        'pollingIntervalSeconds': 5,
+      });
+
+      final preset = GenericModbusConfig.presets.firstWhere((p) => p.id == 'stiebel_isg');
+      final expected = GenericModbusConfig.fromPreset(preset, host: '10.0.0.42').copyWith(port: 5020, unitId: 7);
+      expect(restored.toJson(), expected.toJson());
+      expect(restored.outdoorRegister, 506);
+      expect(restored.isHoldingRegister, isFalse);
+      expect(restored.heatingCurveShiftRegister, isNull);
+    });
+
+    test('a stiebel_isg config already on the new map is loaded unchanged', () {
+      final preset = GenericModbusConfig.presets.firstWhere((p) => p.id == 'stiebel_isg');
+      final current = GenericModbusConfig.fromPreset(preset).copyWith(hotWaterRegister: 600);
+      expect(GenericModbusConfig.fromJson(current.toJson()).toJson(), current.toJson());
     });
 
     test('copyWith properly updates specific properties', () {
@@ -160,8 +211,30 @@ void main() {
       expect(controller.brandName, contains('Modbus'));
       expect(controller.isConnected, isFalse);
       expect(controller.protocol, ConnectionProtocol.modbusTcp);
-      expect(controller.capabilities.supportsHeatingCurveShift, isTrue);
+      // The default config has no write registers.
+      expect(controller.capabilities.supportsHeatingCurveShift, isFalse);
+      expect(controller.capabilities.supportsRoomTarget, isFalse);
+    });
+
+    test('capabilities follow the configured write registers', () {
+      final preset = GenericModbusConfig.presets.firstWhere((p) => p.id == 'stiebel_isg');
+      final controller = GenericModbusController(config: GenericModbusConfig.fromPreset(preset));
       expect(controller.capabilities.supportsRoomTarget, isTrue);
+      expect(controller.capabilities.supportsHeatingCurveShift, isFalse);
+    });
+
+    test('writes without a configured register throw instead of writing somewhere', () async {
+      final controller = GenericModbusController();
+      final throwsModbusError = throwsA(isA<ModbusCommunicationException>());
+      await expectLater(controller.setRoomTarget(21.0), throwsModbusError);
+      await expectLater(controller.setHeatingCurveShift(1.0), throwsModbusError);
+    });
+
+    test('readTelemetry without a connection throws', () async {
+      await expectLater(
+        GenericModbusController().readTelemetry(),
+        throwsA(isA<ModbusCommunicationException>()),
+      );
     });
 
     test('disconnect when already disconnected completes cleanly', () async {

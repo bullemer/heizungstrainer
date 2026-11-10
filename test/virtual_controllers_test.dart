@@ -1,26 +1,20 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:encrypt/encrypt.dart' as enc;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:heizungstrainer/controllers/danfoss_ecl_310_controller.dart';
-import 'package:heizungstrainer/controllers/viessmann_controller.dart';
-import 'package:heizungstrainer/controllers/bosch_buderus_ems_controller.dart';
-import 'package:heizungstrainer/controllers/vaillant_ebusd_controller.dart';
 import 'package:heizungstrainer/controllers/weishaupt_wem_controller.dart';
 import 'package:heizungstrainer/controllers/nibe_modbus_controller.dart';
 import 'package:heizungstrainer/controllers/generic_modbus_controller.dart';
 import 'package:heizungstrainer/controllers/mock_heating_controller.dart';
 
-import 'package:heizungstrainer/models/bosch_buderus_ems_config.dart';
+import 'package:heizungstrainer/exceptions/modbus_exceptions.dart';
+
 import 'package:heizungstrainer/models/generic_modbus_config.dart';
 import 'package:heizungstrainer/models/nibe_modbus_config.dart';
-import 'package:heizungstrainer/models/vaillant_ebusd_config.dart';
-import 'package:heizungstrainer/models/viessmann_config.dart';
 import 'package:heizungstrainer/models/weishaupt_wem_config.dart';
 import 'package:heizungstrainer/models/ecl_parameter.dart';
 
@@ -34,9 +28,32 @@ class _AllowLocalHttpOverrides extends HttpOverrides {}
 // Virtual Modbus TCP Server
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// Modbus TCP slave for the tests.
+///
+/// - [strict]: reading or writing an address that is not in the register map
+///   answers exception 02 (illegal data address), like a real device does.
+///   Without it unmapped registers read as 0.
+/// - [supportedFunctions]: every other function code answers exception 01
+///   (illegal function). NIBE MODBUS 40 for example only knows 0x03 and 0x10.
+/// - [requests] / [writes] record what the client sent, so a test can assert
+///   the function code that was used.
 class VirtualModbusServer {
+  VirtualModbusServer({
+    this.strict = false,
+    this.supportedFunctions = const {3, 4, 6, 16},
+  });
+
+  final bool strict;
+  final Set<int> supportedFunctions;
   final Map<int, int> holdingRegisters = {};
   final Map<int, int> inputRegisters = {};
+
+  /// Every request received (also the rejected ones).
+  final List<({int function, int address})> requests = [];
+
+  /// Every write that was accepted.
+  final List<({int function, int address, List<int> values})> writes = [];
+
   ServerSocket? _server;
   StreamSubscription<Socket>? _serverSub;
   final List<Socket> _clients = [];
@@ -68,65 +85,70 @@ class VirtualModbusServer {
     });
   }
 
+  static int _signed(int raw) => raw > 32767 ? raw - 65536 : raw;
+
   void _handlePacket(Socket socket, List<int> data) {
-    if (data.length < 8) return;
-    final txIdHi = data[0];
-    final txIdLo = data[1];
-    final unitId = data[6];
+    if (data.length < 12) return;
     final fnCode = data[7];
+    final addr = (data[8] << 8) | data[9];
+    requests.add((function: fnCode, address: addr));
+
+    // MBAP header (transaction id, protocol 0, length, unit id) + PDU.
+    void reply(List<int> pdu) {
+      final len = pdu.length + 1;
+      socket.add(Uint8List.fromList([data[0], data[1], 0, 0, len >> 8, len & 0xFF, data[6], ...pdu]));
+    }
+
+    void exception(int code) => reply([fnCode | 0x80, code]);
+
+    if (!supportedFunctions.contains(fnCode)) {
+      exception(0x01);
+      return;
+    }
 
     if (fnCode == 3 || fnCode == 4) {
-      final addr = (data[8] << 8) | data[9];
       final count = (data[10] << 8) | data[11];
       final regMap = fnCode == 3 ? holdingRegisters : inputRegisters;
-
-      final byteCount = count * 2;
-      final respLen = 1 + 1 + 1 + byteCount;
-      final resp = Uint8List(6 + respLen);
-      resp[0] = txIdHi;
-      resp[1] = txIdLo;
-      resp[2] = 0;
-      resp[3] = 0;
-      resp[4] = (respLen >> 8) & 0xFF;
-      resp[5] = respLen & 0xFF;
-      resp[6] = unitId;
-      resp[7] = fnCode;
-      resp[8] = byteCount;
-
-      for (int i = 0; i < count; i++) {
-        final val = (regMap[addr + i] ?? 0) & 0xFFFF;
-        resp[9 + i * 2] = (val >> 8) & 0xFF;
-        resp[10 + i * 2] = val & 0xFF;
+      final addresses = [for (var i = 0; i < count; i++) addr + i];
+      if (strict && !addresses.every(regMap.containsKey)) {
+        exception(0x02);
+        return;
       }
-      socket.add(resp);
+      reply([
+        fnCode,
+        count * 2,
+        for (final a in addresses) ...[((regMap[a] ?? 0) >> 8) & 0xFF, (regMap[a] ?? 0) & 0xFF],
+      ]);
     } else if (fnCode == 6) {
-      final addr = (data[8] << 8) | data[9];
-      final rawVal = (data[10] << 8) | data[11];
-      final val = rawVal > 32767 ? rawVal - 65536 : rawVal;
-      holdingRegisters[addr] = val;
-      socket.add(Uint8List.fromList(data));
-    } else if (fnCode == 16) {
-      final addr = (data[8] << 8) | data[9];
-      final count = (data[10] << 8) | data[11];
-      for (int i = 0; i < count; i++) {
-        final rawVal = (data[13 + i * 2] << 8) | data[14 + i * 2];
-        final val = rawVal > 32767 ? rawVal - 65536 : rawVal;
-        holdingRegisters[addr + i] = val;
+      if (strict && !holdingRegisters.containsKey(addr)) {
+        exception(0x02);
+        return;
       }
-      final resp = Uint8List(12);
-      resp[0] = txIdHi;
-      resp[1] = txIdLo;
-      resp[2] = 0;
-      resp[3] = 0;
-      resp[4] = 0;
-      resp[5] = 6;
-      resp[6] = unitId;
-      resp[7] = fnCode;
-      resp[8] = data[8];
-      resp[9] = data[9];
-      resp[10] = data[10];
-      resp[11] = data[11];
-      socket.add(resp);
+      final value = _signed((data[10] << 8) | data[11]);
+      holdingRegisters[addr] = value;
+      writes.add((function: fnCode, address: addr, values: [value]));
+      reply(data.sublist(7, 12)); // echo
+    } else if (fnCode == 16) {
+      final count = (data[10] << 8) | data[11];
+      final addresses = [for (var i = 0; i < count; i++) addr + i];
+      if (data.length < 13 + count * 2 || data[12] != count * 2) {
+        exception(0x03);
+        return;
+      }
+      if (strict && !addresses.every(holdingRegisters.containsKey)) {
+        exception(0x02);
+        return;
+      }
+      final values = [
+        for (var i = 0; i < count; i++) _signed((data[13 + i * 2] << 8) | data[14 + i * 2]),
+      ];
+      for (var i = 0; i < count; i++) {
+        holdingRegisters[addr + i] = values[i];
+      }
+      writes.add((function: fnCode, address: addr, values: values));
+      reply(data.sublist(7, 12)); // function, address, quantity
+    } else {
+      exception(0x01);
     }
   }
 
@@ -218,365 +240,18 @@ void main() {
     });
   });
 
-  group('2. Viessmann Virtual Controller Tests (Optolink TCP)', () {
-    test('Optolink TCP: connects to mock vcontrold, reads & writes setpoints', () async {
-      final server = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
-      final port = server.port;
+  // Groups 2–4 (Viessmann, Bosch/Buderus, Vaillant) are not Modbus devices.
+  // Their protocol tests, with mock servers that imitate vcontrold, the ViCare
+  // API, EMS-ESP, KM200 and ebusd, live in viessmann_controller_test.dart,
+  // bosch_buderus_ems_controller_test.dart and vaillant_ebusd_controller_test.dart.
 
-      double target = 20.5;
-      double niveau = 1.0;
+  final throwsModbusError = throwsA(isA<ModbusCommunicationException>());
 
-      final serverSub = server.listen((Socket client) {
-        client.listen((data) {
-          final cmd = utf8.decode(data).trim();
-          if (cmd == 'getTempA') {
-            client.write('4.2 Grad C\nvctrld>');
-          } else if (cmd == 'getTempVl') {
-            client.write('46.8 Grad C\nvctrld>');
-          } else if (cmd == 'getTempRl') {
-            client.write('37.5 Grad C\nvctrld>');
-          } else if (cmd == 'getTempWWist') {
-            client.write('53.0 Grad C\nvctrld>');
-          } else if (cmd == 'getTempRaumSoll') {
-            client.write('$target Grad C\nvctrld>');
-          } else if (cmd == 'getNiveau') {
-            client.write('$niveau K\nvctrld>');
-          } else if (cmd.startsWith('setTempRaumSoll')) {
-            final parts = cmd.split(' ');
-            if (parts.length >= 2) target = double.tryParse(parts[1]) ?? target;
-            client.write('OK\nvctrld>');
-          } else if (cmd.startsWith('setNiveau')) {
-            final parts = cmd.split(' ');
-            if (parts.length >= 2) niveau = double.tryParse(parts[1]) ?? niveau;
-            client.write('OK\nvctrld>');
-          } else {
-            client.write('vctrld>');
-          }
-        });
-      });
-
-      try {
-        final config = ViessmannConfig(
-          connectionType: ViessmannConnectionType.optolinkTcp,
-          host: '127.0.0.1',
-          port: port,
-          circuit: '0',
-          timeoutSeconds: 2,
-        );
-
-        final controller = ViessmannController(config: config);
-        await controller.connect(host: '127.0.0.1', port: port);
-        expect(controller.isConnected, isTrue);
-
-        final telemetry = await controller.readTelemetry();
-        expect(telemetry.outdoorTemp, 4.2);
-        expect(telemetry.flowTemp, 46.8);
-        expect(telemetry.returnTemp, 37.5);
-        expect(telemetry.hotWaterTemp, 53.0);
-        expect(telemetry.roomTarget, 20.5);
-        expect(telemetry.heatingCurveShift, 1.0);
-        expect(telemetry.spread, closeTo(9.3, 0.01));
-
-        // Write room target & niveau
-        await controller.setRoomTarget(22.0);
-        expect(target, 22.0);
-
-        await controller.setHeatingCurveShift(2.0);
-        expect(niveau, 2.0);
-
-        await controller.disconnect();
-        expect(controller.isConnected, isFalse);
-      } finally {
-        await serverSub.cancel();
-        await server.close();
-      }
-    });
-  });
-
-  group('3. Bosch & Buderus Virtual Controller Tests (EMS-ESP REST & KM200 AES)', () {
-    test('EMS-ESP REST: connects to mock gateway, reads telemetry, writes setpoints', () async {
-      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-      final port = server.port;
-
-      double target = 21.0;
-      double offset = 0.0;
-
-      server.listen((HttpRequest request) async {
-        final path = request.uri.path;
-        final method = request.method;
-
-        if (method == 'GET' && path == '/api/system') {
-          request.response
-            ..statusCode = HttpStatus.ok
-            ..headers.contentType = ContentType.json
-            ..write(jsonEncode({'version': '3.6.5', 'status': 'connected'}));
-          await request.response.close();
-        } else if (method == 'GET' && path == '/api/boiler') {
-          request.response
-            ..statusCode = HttpStatus.ok
-            ..headers.contentType = ContentType.json
-            ..write(jsonEncode({
-              'curflowtemp': 47.0,
-              'rettemp': 38.0,
-              'outdoortemp': 5.0,
-              'wwcurtemp': 52.0,
-            }));
-          await request.response.close();
-        } else if (method == 'GET' && path == '/api/thermostat') {
-          request.response
-            ..statusCode = HttpStatus.ok
-            ..headers.contentType = ContentType.json
-            ..write(jsonEncode({
-              'hc1': {'seltemp': target, 'offset': offset, 'currtemp': 21.1}
-            }));
-          await request.response.close();
-        } else if (method == 'POST' && path.startsWith('/api/thermostat')) {
-          final body = await utf8.decodeStream(request);
-          final map = jsonDecode(body) as Map<String, dynamic>;
-          if (map['cmd'] == 'seltemp' || map.containsKey('value')) {
-            target = ((map['data'] ?? map['value']) as num).toDouble();
-          }
-          if (map['cmd'] == 'offset' || path.endsWith('/offset')) {
-            offset = ((map['data'] ?? map['value']) as num).toDouble();
-          }
-          request.response
-            ..statusCode = HttpStatus.ok
-            ..headers.contentType = ContentType.json
-            ..write(jsonEncode({'status': 'ok'}));
-          await request.response.close();
-        } else {
-          request.response
-            ..statusCode = HttpStatus.notFound
-            ..close();
-        }
-      });
-
-      try {
-        final config = BoschBuderusEmsConfig(
-          host: '127.0.0.1',
-          port: port,
-          circuit: 'hc1',
-          timeoutSeconds: 2,
-        );
-
-        final controller = BoschBuderusEmsController(config: config);
-        await controller.connect(host: '127.0.0.1', port: port);
-        expect(controller.isConnected, isTrue);
-
-        final telemetry = await controller.readTelemetry();
-        expect(telemetry.flowTemp, 47.0);
-        expect(telemetry.returnTemp, 38.0);
-        expect(telemetry.outdoorTemp, 5.0);
-        expect(telemetry.hotWaterTemp, 52.0);
-        expect(telemetry.roomTarget, 21.0);
-        expect(telemetry.spread, 9.0);
-
-        await controller.setRoomTarget(22.0);
-        expect(target, 22.0);
-
-        await controller.setHeatingCurveShift(1.5);
-        expect(offset, 1.5);
-
-        await controller.disconnect();
-        expect(controller.isConnected, isFalse);
-      } finally {
-        await server.close(force: true);
-      }
-    });
-
-    test('KM200: handles AES-128 encrypted payloads from virtual gateway', () async {
-      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-      final port = server.port;
-
-      const hexKey = '0123456789abcdef0123456789abcdef';
-      final keyBytes = Uint8List.fromList(
-        List.generate(16, (i) => int.parse(hexKey.substring(i * 2, i * 2 + 2), radix: 16)),
-      );
-      final encrypter = enc.Encrypter(enc.AES(enc.Key(keyBytes), mode: enc.AESMode.ecb, padding: 'PKCS7'));
-
-      String encryptJson(Map<String, dynamic> data) {
-        final plain = jsonEncode(data);
-        return encrypter.encrypt(plain).base64;
-      }
-
-      server.listen((HttpRequest request) async {
-        final path = request.uri.path;
-        if (path == '/gateway/versionFirmware') {
-          request.response
-            ..statusCode = HttpStatus.ok
-            ..headers.set('Content-Type', 'application/json')
-            ..write(encryptJson({'id': '/gateway/versionFirmware', 'value': '04.06.07'}));
-          await request.response.close();
-        } else if (path == '/system/sensors/temperatures/outdoor_t1') {
-          request.response
-            ..statusCode = HttpStatus.ok
-            ..headers.set('Content-Type', 'application/json')
-            ..write(encryptJson({'id': path, 'value': 4.5}));
-          await request.response.close();
-        } else if (path == '/heatingCircuits/hc1/actualSupplyTemperature') {
-          request.response
-            ..statusCode = HttpStatus.ok
-            ..headers.set('Content-Type', 'application/json')
-            ..write(encryptJson({'id': path, 'value': 48.0}));
-          await request.response.close();
-        } else if (path == '/heatingCircuits/hc1/temperatureRoomManual') {
-          request.response
-            ..statusCode = HttpStatus.ok
-            ..headers.set('Content-Type', 'application/json')
-            ..write(encryptJson({'id': path, 'value': 21.0}));
-          await request.response.close();
-        } else if (path == '/heatingCircuits/hc1/roomTemperatureHeatingCurveOffset') {
-          request.response
-            ..statusCode = HttpStatus.ok
-            ..headers.set('Content-Type', 'application/json')
-            ..write(encryptJson({'id': path, 'value': 0.0}));
-          await request.response.close();
-        } else {
-          request.response
-            ..statusCode = HttpStatus.ok
-            ..headers.set('Content-Type', 'application/json')
-            ..write(encryptJson({'id': path, 'value': 0.0}));
-          await request.response.close();
-        }
-      });
-
-      try {
-        final config = BoschBuderusEmsConfig(
-          gatewayType: BoschGatewayType.km200,
-          host: '127.0.0.1',
-          port: port,
-          km200Key: hexKey,
-          circuit: 'hc1',
-          timeoutSeconds: 2,
-        );
-
-        final controller = BoschBuderusEmsController(config: config);
-        await controller.connect(host: '127.0.0.1', port: port);
-        expect(controller.isConnected, isTrue);
-
-        final telemetry = await controller.readTelemetry();
-        expect(telemetry.outdoorTemp, 4.5);
-        expect(telemetry.flowTemp, 48.0);
-        expect(telemetry.roomTarget, 21.0);
-
-        await controller.disconnect();
-        expect(controller.isConnected, isFalse);
-      } finally {
-        await server.close(force: true);
-      }
-    });
-  });
-
-  group('4. Vaillant eBUS / eBUSd Virtual Controller Tests (HTTP JSON)', () {
-    test('connects to mock eBUSd, parses multi-circuit JSON, writes setpoints', () async {
-      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-      final port = server.port;
-
-      double target = 21.0;
-      double shift = 0.0;
-
-      server.listen((HttpRequest request) async {
-        final path = request.uri.path;
-        final method = request.method;
-
-        if (method == 'GET' && path == '/data') {
-          request.response
-            ..statusCode = HttpStatus.ok
-            ..headers.contentType = ContentType.json
-            ..write(jsonEncode({
-              'bai': {
-                'messages': {
-                  'flowtemp': {'value': 47.3},
-                  'returntemp': {'value': 38.1},
-                  'outdoortemp': {'value': 5.8},
-                  'storagetemp': {'value': 51.0},
-                }
-              },
-              '700': {
-                'messages': {
-                  'desiredroomtemp': {'value': target},
-                  'parallelshift': {'value': shift},
-                }
-              }
-            }));
-          await request.response.close();
-        } else if (method == 'GET' && path.startsWith('/data/')) {
-          final valStr = request.uri.queryParameters['value'];
-          if (valStr != null) {
-            final parsedVal = double.tryParse(valStr);
-            if (parsedVal != null) {
-              if (path.contains('DesiredRoomTemp') || path.contains('room')) {
-                target = parsedVal;
-              } else if (path.contains('ParallelShift') || path.contains('shift')) {
-                shift = parsedVal;
-              }
-            }
-          }
-          request.response
-            ..statusCode = HttpStatus.ok
-            ..headers.contentType = ContentType.json
-            ..write(jsonEncode({'status': 'ok'}));
-          await request.response.close();
-        } else {
-          request.response
-            ..statusCode = HttpStatus.notFound
-            ..close();
-        }
-      });
-
-      try {
-        final config = VaillantEbusdConfig(
-          host: '127.0.0.1',
-          port: port,
-          circuit: 'bai',
-          timeoutSeconds: 2,
-        );
-
-        final controller = VaillantEbusdController(config: config);
-        await controller.connect(host: '127.0.0.1', port: port);
-        expect(controller.isConnected, isTrue);
-
-        final telemetry = await controller.readTelemetry();
-        expect(telemetry.flowTemp, 47.3);
-        expect(telemetry.returnTemp, 38.1);
-        expect(telemetry.outdoorTemp, 5.8);
-        expect(telemetry.hotWaterTemp, 51.0);
-        expect(telemetry.roomTarget, 21.0);
-        expect(telemetry.heatingCurveShift, 0.0);
-        expect(telemetry.spread, closeTo(9.2, 0.01));
-
-        await controller.setRoomTarget(22.5);
-        expect(target, 22.5);
-
-        await controller.setHeatingCurveShift(-1.0);
-        expect(shift, -1.0);
-
-        await controller.disconnect();
-        expect(controller.isConnected, isFalse);
-      } finally {
-        await server.close(force: true);
-      }
-    });
-  });
-
-  group('5. Weishaupt WEM Virtual Controller Tests (Modbus TCP)', () {
+  group('5. Weishaupt heat pump Virtual Controller Tests (Modbus TCP)', () {
     late VirtualModbusServer virtualWeishaupt;
 
     setUp(() async {
-      virtualWeishaupt = VirtualModbusServer();
-      // Weishaupt WEM standard registers:
-      // 3101: Outdoor temp = 38 (3.8 °C)
-      // 3102: Flow temp = 460 (46.0 °C)
-      // 3103: Return temp = 370 (37.0 °C)
-      // 3104: Hot water temp = 525 (52.5 °C)
-      // 3105: Room target = 210 (21.0 °C)
-      // 3106: Shift = 10 (1.0)
-      virtualWeishaupt.holdingRegisters[3101] = 38;
-      virtualWeishaupt.holdingRegisters[3102] = 460;
-      virtualWeishaupt.holdingRegisters[3103] = 370;
-      virtualWeishaupt.holdingRegisters[3104] = 525;
-      virtualWeishaupt.holdingRegisters[3105] = 210;
-      virtualWeishaupt.holdingRegisters[3106] = 10;
+      virtualWeishaupt = VirtualModbusServer(strict: true);
       await virtualWeishaupt.start();
     });
 
@@ -584,15 +259,21 @@ void main() {
       await virtualWeishaupt.stop();
     });
 
-    test('connects, reads Weishaupt telemetry, writes shift & room target', () async {
-      final config = WeishauptWemConfig(
-        host: '127.0.0.1',
-        port: virtualWeishaupt.port,
-      );
+    WeishauptWemController controllerFor(VirtualModbusServer server) => WeishauptWemController(
+          config: WeishauptWemConfig(host: '127.0.0.1', port: server.port),
+        );
 
-      final controller = WeishauptWemController(config: config);
+    test('reads the sensors as input registers and writes the room setpoint to holding 41105', () async {
+      virtualWeishaupt.inputRegisters[30001] = 38; // outdoor 3.8 °C
+      virtualWeishaupt.inputRegisters[31105] = 460; // heating circuit flow 46.0 °C
+      virtualWeishaupt.inputRegisters[33105] = 370; // return 37.0 °C
+      virtualWeishaupt.inputRegisters[32102] = 525; // hot water 52.5 °C
+      virtualWeishaupt.holdingRegisters[41105] = 210; // room setpoint comfort 21.0 °C
+
+      final controller = controllerFor(virtualWeishaupt);
       await controller.connect(host: '127.0.0.1', port: virtualWeishaupt.port);
       expect(controller.isConnected, isTrue);
+      virtualWeishaupt.requests.clear(); // connect() already read once
 
       final telemetry = await controller.readTelemetry();
       expect(telemetry.outdoorTemp, 3.8);
@@ -600,103 +281,169 @@ void main() {
       expect(telemetry.returnTemp, 37.0);
       expect(telemetry.hotWaterTemp, 52.5);
       expect(telemetry.roomTarget, 21.0);
-      expect(telemetry.heatingCurveShift, 1.0);
+      expect(telemetry.heatingCurveShift, isNull);
       expect(telemetry.spread, 9.0);
 
-      // Write shift (-2.0) -> register 3106 = -20
-      await controller.setHeatingCurveShift(-2.0);
-      expect(virtualWeishaupt.holdingRegisters[3106], -20);
+      // Sensors with FC04, the setpoint with FC03.
+      expect(virtualWeishaupt.requests, [
+        (function: 4, address: 30001),
+        (function: 4, address: 31105),
+        (function: 4, address: 33105),
+        (function: 4, address: 32102),
+        (function: 3, address: 41105),
+      ]);
 
-      // Write room target (22.5) -> register 3105 = 225
       await controller.setRoomTarget(22.5);
-      expect(virtualWeishaupt.holdingRegisters[3105], 225);
+      expect(virtualWeishaupt.holdingRegisters[41105], 225);
+      expect((await controller.readTelemetry()).roomTarget, 22.5);
+
+      // No parallel shift over Modbus: nothing may be written.
+      expect(controller.capabilities.supportsHeatingCurveShift, isFalse);
+      await expectLater(controller.setHeatingCurveShift(-2.0), throwsModbusError);
+      expect(virtualWeishaupt.writes.map((w) => w.address), [41105]);
 
       await controller.disconnect();
       expect(controller.isConnected, isFalse);
     });
+
+    test('a device that answers none of the sensor registers is an error, not "all values empty"', () async {
+      // Only the invented <= 1.2.10 map exists on this device.
+      for (final address in [3101, 3102, 3103, 3104, 3105, 3106]) {
+        virtualWeishaupt.holdingRegisters[address] = 100;
+      }
+      final controller = controllerFor(virtualWeishaupt);
+      // Whether connect() already notices or only the first read: it must throw.
+      Future<void> connectAndRead() async {
+        await controller.connect(host: '127.0.0.1', port: virtualWeishaupt.port);
+        await controller.readTelemetry();
+      }
+
+      await expectLater(connectAndRead(), throwsModbusError);
+
+      final probe = await WeishauptWemController.testConnection(
+        WeishauptWemConfig(host: '127.0.0.1', port: virtualWeishaupt.port),
+      );
+      expect(probe['success'], isFalse);
+      await controller.disconnect();
+    });
   });
 
-  group('6. NIBE Modbus Virtual Controller Tests (S-Serie & F-Serie)', () {
-    late VirtualModbusServer virtualNibe;
+  group('6. NIBE Modbus Virtual Controller Tests (S-Serie & MODBUS 40)', () {
+    test('S-Series: sensors are input registers 1/5/7/8, offset is holding 30, holding 26 is never written',
+        () async {
+      final nibe = VirtualModbusServer(strict: true);
+      addTearDown(nibe.stop);
+      nibe.inputRegisters[1] = 42; // BT1 outdoor 4.2 °C
+      nibe.inputRegisters[5] = 445; // BT2 flow 44.5 °C
+      nibe.inputRegisters[7] = 360; // BT3 return 36.0 °C
+      nibe.inputRegisters[8] = 510; // BT7 hot water 51.0 °C
+      nibe.holdingRegisters[26] = 7; // heating curve NUMBER – not a room setpoint
+      nibe.holdingRegisters[30] = 0; // curve offset, whole steps
+      await nibe.start();
 
-    setUp(() async {
-      virtualNibe = VirtualModbusServer();
-      await virtualNibe.start();
-    });
-
-    tearDown(() async {
-      await virtualNibe.stop();
-    });
-
-    test('S-Series: reads registers (1, 5, 7, 8, 26, 30) and writes setpoints', () async {
-      virtualNibe.holdingRegisters[1] = 42; // 4.2 °C outdoor
-      virtualNibe.holdingRegisters[5] = 445; // 44.5 °C flow
-      virtualNibe.holdingRegisters[7] = 360; // 36.0 °C return
-      virtualNibe.holdingRegisters[8] = 510; // 51.0 °C hot water
-      virtualNibe.holdingRegisters[26] = 205; // 20.5 °C room target
-      virtualNibe.holdingRegisters[30] = 0; // offset 0 (whole steps, unscaled)
-
-      final config = NibeModbusConfig(
-        host: '127.0.0.1',
-        port: virtualNibe.port,
+      final controller = NibeModbusController(
+        config: NibeModbusConfig(host: '127.0.0.1', port: nibe.port),
       );
-
-      final controller = NibeModbusController(config: config);
-      await controller.connect(host: '127.0.0.1', port: virtualNibe.port);
+      await controller.connect(host: '127.0.0.1', port: nibe.port);
       expect(controller.isConnected, isTrue);
+      nibe.requests.clear(); // connect() already read once
 
       final telemetry = await controller.readTelemetry();
       expect(telemetry.outdoorTemp, 4.2);
       expect(telemetry.flowTemp, 44.5);
       expect(telemetry.returnTemp, 36.0);
       expect(telemetry.hotWaterTemp, 51.0);
-      expect(telemetry.roomTarget, 20.5);
+      expect(telemetry.roomTarget, isNull);
       expect(telemetry.heatingCurveShift, 0.0);
       expect(telemetry.spread, closeTo(8.5, 0.01));
+      expect(nibe.requests, [
+        (function: 4, address: 1),
+        (function: 4, address: 5),
+        (function: 4, address: 7),
+        (function: 4, address: 8),
+        (function: 3, address: 30),
+      ]);
 
-      // Write shift & room target
       await controller.setHeatingCurveShift(2.0);
-      expect(virtualNibe.holdingRegisters[30], 2); // offset steps, not tenths
+      expect(nibe.holdingRegisters[30], 2); // whole steps, not tenths
+      await controller.setHeatingCurveShift(-3.0);
+      expect(nibe.holdingRegisters[30], -3);
+      expect((await controller.readTelemetry()).heatingCurveShift, -3.0);
+      expect(nibe.writes.map((w) => w.function).toSet(), {6}); // S series: write single
 
-      await controller.setRoomTarget(21.5);
-      expect(virtualNibe.holdingRegisters[26], 215);
+      // There is no room setpoint register: setRoomTarget must not write anything.
+      expect(controller.capabilities.supportsRoomTarget, isFalse);
+      await expectLater(controller.setRoomTarget(21.5), throwsModbusError);
+      expect(nibe.holdingRegisters[26], 7);
+      expect(nibe.requests.where((r) => r.address == 26), isEmpty);
 
       await controller.disconnect();
       expect(controller.isConnected, isFalse);
     });
 
-    test('F-Series (Modbus 40): reads registers 40004..47011', () async {
-      virtualNibe.holdingRegisters[40004] = 25; // 2.5 °C outdoor
-      virtualNibe.holdingRegisters[40008] = 450; // 45.0 °C flow
-      virtualNibe.holdingRegisters[40012] = 365; // 36.5 °C return
-      virtualNibe.holdingRegisters[40013] = 520; // 52.0 °C hot water
-      virtualNibe.holdingRegisters[47011] = -1; // Heat Offset S1 = -1
-      virtualNibe.holdingRegisters[47007] = 9; // heating curve slope: never touched
+    for (final presetId in ['nibe_f_series_modbus40', 'nibe_smo40']) {
+      test('$presetId: holding 40004…, offset 47011, written with FC 0x10', () async {
+        // MODBUS 40 implements only "read holding" and "write multiple".
+        final nibe = VirtualModbusServer(strict: true, supportedFunctions: const {3, 16});
+        addTearDown(nibe.stop);
+        nibe.holdingRegisters[40004] = 25; // 2.5 °C outdoor
+        nibe.holdingRegisters[40008] = 450; // 45.0 °C flow
+        nibe.holdingRegisters[40012] = 365; // 36.5 °C return
+        nibe.holdingRegisters[40013] = 520; // 52.0 °C hot water
+        nibe.holdingRegisters[47011] = -1; // Heat Offset S1
+        nibe.holdingRegisters[47007] = 9; // heating curve slope: never touched
+        await nibe.start();
 
-      final preset = NibeModbusConfig.presets.firstWhere((p) => p.id == 'nibe_f_series_modbus40');
-      final config = NibeModbusConfig.fromPreset(preset).copyWith(
-        host: '127.0.0.1',
-        port: virtualNibe.port,
+        final preset = NibeModbusConfig.presets.firstWhere((p) => p.id == presetId);
+        final config = NibeModbusConfig.fromPreset(preset).copyWith(host: '127.0.0.1', port: nibe.port);
+        expect(config.writeMultiple, isTrue);
+
+        final controller = NibeModbusController(config: config);
+        await controller.connect(host: '127.0.0.1', port: nibe.port);
+
+        final telemetry = await controller.readTelemetry();
+        expect(telemetry.outdoorTemp, 2.5);
+        expect(telemetry.flowTemp, 45.0);
+        expect(telemetry.returnTemp, 36.5);
+        expect(telemetry.hotWaterTemp, 52.0);
+        expect(telemetry.roomTarget, isNull);
+        expect(telemetry.heatingCurveShift, -1.0);
+
+        await controller.setHeatingCurveShift(2.0);
+        await controller.setHeatingCurveShift(-4.0);
+        expect(nibe.writes.map((w) => (w.function, w.address, w.values.single)), [
+          (16, 47011, 2),
+          (16, 47011, -4),
+        ]);
+        expect(nibe.holdingRegisters[47011], -4);
+        expect(nibe.holdingRegisters[47007], 9); // slope unchanged
+        expect(nibe.requests.map((r) => r.function).toSet(), {3, 16});
+
+        await controller.disconnect();
+      });
+    }
+
+    test('S-Series preset against a device without those input registers throws', () async {
+      final nibe = VirtualModbusServer(strict: true);
+      addTearDown(nibe.stop);
+      // The <= 1.2.10 assumption: sensors as HOLDING registers.
+      for (final address in [1, 5, 7, 8]) {
+        nibe.holdingRegisters[address] = 100;
+      }
+      nibe.holdingRegisters[30] = 0;
+      await nibe.start();
+
+      final controller = NibeModbusController(
+        config: NibeModbusConfig(host: '127.0.0.1', port: nibe.port),
       );
+      // Whether connect() already notices or only the first read: it must throw.
+      Future<void> connectAndRead() async {
+        await controller.connect(host: '127.0.0.1', port: nibe.port);
+        await controller.readTelemetry();
+      }
 
-      final controller = NibeModbusController(config: config);
-      await controller.connect(host: '127.0.0.1', port: virtualNibe.port);
-      expect(controller.isConnected, isTrue);
-
-      final telemetry = await controller.readTelemetry();
-      expect(telemetry.outdoorTemp, 2.5);
-      expect(telemetry.flowTemp, 45.0);
-      expect(telemetry.returnTemp, 36.5);
-      expect(telemetry.hotWaterTemp, 52.0);
-      expect(telemetry.roomTarget, isNull); // room setpoint register not mapped
-      expect(telemetry.heatingCurveShift, -1.0);
-
-      await controller.setHeatingCurveShift(2.0);
-      expect(virtualNibe.holdingRegisters[47011], 2);
-      expect(virtualNibe.holdingRegisters[47007], 9); // slope unchanged
-
+      await expectLater(connectAndRead(), throwsModbusError);
       await controller.disconnect();
-      expect(controller.isConnected, isFalse);
     });
   });
 
@@ -704,7 +451,7 @@ void main() {
     late VirtualModbusServer virtualGeneric;
 
     setUp(() async {
-      virtualGeneric = VirtualModbusServer();
+      virtualGeneric = VirtualModbusServer(strict: true);
       await virtualGeneric.start();
     });
 
@@ -712,13 +459,12 @@ void main() {
       await virtualGeneric.stop();
     });
 
-    test('Stiebel Eltron ISG profile: reads registers (501..1502) and writes setpoints', () async {
-      virtualGeneric.holdingRegisters[501] = 75; // 7.5 °C outdoor
-      virtualGeneric.holdingRegisters[502] = 480; // 48.0 °C flow
-      virtualGeneric.holdingRegisters[503] = 390; // 39.0 °C return
-      virtualGeneric.holdingRegisters[504] = 540; // 54.0 °C hot water
-      virtualGeneric.holdingRegisters[1501] = 215; // 21.5 °C room target
-      virtualGeneric.holdingRegisters[1502] = 5; // 0.5 shift
+    test('Stiebel Eltron ISG: input registers 506/514/515/521, comfort temperature holding 1501', () async {
+      virtualGeneric.inputRegisters[506] = 75; // 7.5 °C outdoor
+      virtualGeneric.inputRegisters[514] = 480; // 48.0 °C flow
+      virtualGeneric.inputRegisters[515] = 390; // 39.0 °C return
+      virtualGeneric.inputRegisters[521] = -32768; // 0x8000 = no DHW sensor
+      virtualGeneric.holdingRegisters[1501] = 215; // 21.5 °C comfort temperature HK1
 
       final preset = GenericModbusConfig.presets.firstWhere((p) => p.id == 'stiebel_isg');
       final config = GenericModbusConfig.fromPreset(preset).copyWith(
@@ -734,27 +480,83 @@ void main() {
       expect(telemetry.outdoorTemp, 7.5);
       expect(telemetry.flowTemp, 48.0);
       expect(telemetry.returnTemp, 39.0);
-      expect(telemetry.hotWaterTemp, 54.0);
+      expect(telemetry.hotWaterTemp, isNull);
       expect(telemetry.roomTarget, 21.5);
-      expect(telemetry.heatingCurveShift, 0.5);
+      expect(telemetry.heatingCurveShift, isNull);
       expect(telemetry.spread, 9.0);
-
-      // Write shift & room target
-      await controller.setHeatingCurveShift(-1.0);
-      expect(virtualGeneric.holdingRegisters[1502], -10);
+      expect(virtualGeneric.requests.toSet(), {
+        (function: 4, address: 506),
+        (function: 4, address: 514),
+        (function: 4, address: 515),
+        (function: 4, address: 521),
+        (function: 3, address: 1501),
+      });
 
       await controller.setRoomTarget(22.0);
       expect(virtualGeneric.holdingRegisters[1501], 220);
+      // The read after a write must show the new value (no stale throttle cache).
+      expect((await controller.readTelemetry()).roomTarget, 22.0);
+
+      // The ISG has no parallel-shift register (1504 is the curve rise).
+      expect(controller.capabilities.supportsHeatingCurveShift, isFalse);
+      await expectLater(controller.setHeatingCurveShift(-1.0), throwsModbusError);
+      expect(virtualGeneric.writes.map((w) => w.address), [1501]);
 
       await controller.disconnect();
       expect(controller.isConnected, isFalse);
     });
-  });
 
+    test('default config reads holding 1–4 and offers no writes', () async {
+      virtualGeneric.holdingRegisters.addAll({1: -25, 2: 401, 3: 322, 4: 550});
+      final controller = GenericModbusController(
+        config: GenericModbusConfig(host: '127.0.0.1', port: virtualGeneric.port),
+      );
+      await controller.connect(host: '127.0.0.1', port: virtualGeneric.port);
+      final t = await controller.readTelemetry();
+      expect(t.outdoorTemp, -2.5);
+      expect(t.flowTemp, 40.1);
+      expect(t.returnTemp, 32.2);
+      expect(t.hotWaterTemp, 55.0);
+      expect(t.roomTarget, isNull);
+      expect(t.heatingCurveShift, isNull);
+      await expectLater(controller.setRoomTarget(21.0), throwsModbusError);
+      await expectLater(controller.setHeatingCurveShift(1.0), throwsModbusError);
+      expect(virtualGeneric.writes, isEmpty);
+      await controller.disconnect();
+    });
+
+    test('connect fails when none of the configured registers exists', () async {
+      // Device has registers, just not the configured ones → exception 02 each.
+      virtualGeneric.holdingRegisters[100] = 1;
+      final config = GenericModbusConfig(host: '127.0.0.1', port: virtualGeneric.port);
+      final controller = GenericModbusController(config: config);
+
+      await expectLater(
+        controller.connect(host: '127.0.0.1', port: virtualGeneric.port),
+        throwsModbusError,
+      );
+      expect(controller.isConnected, isFalse);
+      expect(virtualGeneric.requests, hasLength(4));
+
+      final probe = await GenericModbusController.testConnection(config);
+      expect(probe['success'], isFalse);
+    });
+
+    test('connect fails when the device rejects every function code', () async {
+      final deaf = VirtualModbusServer(supportedFunctions: const {});
+      addTearDown(deaf.stop);
+      await deaf.start();
+      final controller = GenericModbusController(
+        config: GenericModbusConfig(host: '127.0.0.1', port: deaf.port),
+      );
+      await expectLater(controller.connect(host: '127.0.0.1', port: deaf.port), throwsModbusError);
+      expect(controller.isConnected, isFalse);
+    });
+  });
   group('7b. Samson TROVIS 557x (generic Modbus preset, read-only)', () {
     late VirtualModbusServer trovis;
     setUp(() async {
-      trovis = VirtualModbusServer();
+      trovis = VirtualModbusServer(strict: true);
       await trovis.start();
     });
     tearDown(() async => trovis.stop());

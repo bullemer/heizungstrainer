@@ -583,10 +583,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
           : _weishauptHostController.text.trim(),
       port: int.tryParse(_weishauptPortController.text.trim()) ?? 502,
       unitId: int.tryParse(_weishauptUnitIdController.text.trim()) ?? 1,
-      outdoorRegister: int.tryParse(_weishauptOutdoorRegController.text.trim()) ?? 3101,
-      flowRegister: int.tryParse(_weishauptFlowRegController.text.trim()) ?? 3102,
-      returnRegister: int.tryParse(_weishauptReturnRegController.text.trim()) ?? 3103,
-      hotWaterRegister: int.tryParse(_weishauptHwRegController.text.trim()) ?? 3104,
+      outdoorRegister: int.tryParse(_weishauptOutdoorRegController.text.trim()) ?? 30001,
+      flowRegister: int.tryParse(_weishauptFlowRegController.text.trim()) ?? 31105,
+      returnRegister: int.tryParse(_weishauptReturnRegController.text.trim()) ?? 33105,
+      hotWaterRegister: int.tryParse(_weishauptHwRegController.text.trim()) ?? 32102,
       roomTargetRegister: int.tryParse(_weishauptRoomRegController.text.trim()),
       heatingCurveShiftRegister: int.tryParse(_weishauptShiftRegController.text.trim()),
       multiplier: _weishauptMultiplier,
@@ -834,13 +834,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
         port: int.tryParse(_weishauptPortController.text.trim()) ?? 502,
         unitId: int.tryParse(_weishauptUnitIdController.text.trim()) ?? 1,
         outdoorRegister:
-            int.tryParse(_weishauptOutdoorRegController.text.trim()) ?? 3101,
+            int.tryParse(_weishauptOutdoorRegController.text.trim()) ?? 30001,
         flowRegister:
-            int.tryParse(_weishauptFlowRegController.text.trim()) ?? 3102,
+            int.tryParse(_weishauptFlowRegController.text.trim()) ?? 31105,
         returnRegister:
-            int.tryParse(_weishauptReturnRegController.text.trim()) ?? 3103,
+            int.tryParse(_weishauptReturnRegController.text.trim()) ?? 33105,
         hotWaterRegister:
-            int.tryParse(_weishauptHwRegController.text.trim()) ?? 3104,
+            int.tryParse(_weishauptHwRegController.text.trim()) ?? 32102,
         roomTargetRegister:
             int.tryParse(_weishauptRoomRegController.text.trim()),
         heatingCurveShiftRegister:
@@ -1409,7 +1409,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   isExpanded: true,
                   initialValue: _modbusIsHolding,
                   decoration: _decoration(
-                    label: 'Registertyp',
+                    label: 'Registertyp Fühler',
                     icon: Icons.memory_outlined,
                   ),
                   dropdownColor: const Color(0xFF2A2A32),
@@ -1677,7 +1677,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
               DropdownMenuItem(
                 value: BoschGatewayType.km200,
-                child: Text('Buderus KM200 / MB LAN 2 / MX300 (AES-128 lokal)',
+                child: Text('Buderus KM200 / MB LAN 2 (lokal, verschlüsselt)',
                     style: TextStyle(fontSize: 13)),
               ),
             ],
@@ -1910,7 +1910,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               controller: _emsKm200KeyController,
               obscureText: true,
               decoration: _decoration(
-                label: 'Direkter AES-Schlüssel (32 Hex-Zeichen, optional)',
+                label: 'Direkter AES-Schlüssel (64 Hex-Zeichen, optional)',
                 icon: Icons.security_rounded,
               ).copyWith(
                 helperText: 'Optional: Überschreibt die Passwort-Schlüsselableitung.',
@@ -2027,7 +2027,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           const SizedBox(height: 6),
           Text(
-            'Verbindung über lokales Optolink (vcontrold / ESP-Optolink) oder die ViCare Cloud-API.',
+            'Verbindung über einen lokalen vcontrold-Dienst am Optolink-Adapter oder über die Viessmann-Cloud (ViCare API).',
             style: TextStyle(
               fontSize: 12,
               color: Colors.white.withValues(alpha: 0.5),
@@ -2134,7 +2134,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             const SizedBox(height: 6),
             Text(
-              'Standard-Port für vcontrold und Openv ist 3002 (ESP-Optolink: 3002 oder 7362).',
+              'Standard-Port von vcontrold ist 3002. Erwartet werden die Kommandonamen der mitgelieferten vito.xml.',
               style: TextStyle(
                 fontSize: 11,
                 color: Colors.white.withValues(alpha: 0.4),
@@ -2145,10 +2145,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
               controller: _viessmannTokenController,
               obscureText: _obscureViessmannToken,
               decoration: _decoration(
-                label: 'ViCare API Token / Personal Client Secret',
+                label: 'ViCare Access-Token',
                 icon: Icons.key_rounded,
               ).copyWith(
-                helperText: 'Erstelle einen Personal API Key im Viessmann Developer Portal.',
+                helperText: 'Access-Token aus dem Viessmann-Entwicklerportal. Er gilt nur etwa eine Stunde.',
                 helperStyle: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.4)),
                 suffixIcon: IconButton(
                   icon: Icon(
@@ -2212,7 +2212,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 icon: Icons.timer_outlined,
               ).copyWith(
                 helperText:
-                    'ViCare Cloud-Kontingent: Max. 1.450 Aufrufe/Tag. 60–120s schützt vor Sperren (HTTP 429).',
+                    'ViCare-Kontingent: max. 1.450 Abfragen pro Tag. Die App fragt höchstens alle 75 Sekunden ab.',
                 helperStyle: const TextStyle(fontSize: 11, color: Color(0xFFFFB74D)),
                 helperMaxLines: 2,
               ),
@@ -2331,7 +2331,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           const SizedBox(height: 6),
           Text(
-            'Verbindung zum lokalen eBUSd HTTP REST JSON Daemon (z.B. auf Raspberry Pi oder ESP32 eBUS-Adapter).',
+            'Verbindung zu einem ebusd-Dienst im Heimnetz (z. B. auf einem Raspberry Pi). Lesen läuft über den HTTP-Port von ebusd (dort mit --httpport einschalten), Schreiben über den Befehlsport 8888.',
             style: TextStyle(
               fontSize: 12,
               color: Colors.white.withValues(alpha: 0.5),
@@ -2408,10 +2408,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   controller: _vaillantCircuitController,
                   keyboardType: TextInputType.text,
                   decoration: _decoration(
-                    label: 'Heizkreis / Modul',
+                    label: 'ebusd-Kreis des Reglers',
                     icon: Icons.tune_rounded,
                   ).copyWith(
-                    helperText: 'Standard: bai (Kessel) oder 700 / 720 (Regler)',
+                    helperText: 'Regler-Kreis: 700, ctlv2 (VRC 720) oder 470; bai = nur Kessel',
                     helperStyle: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.4)),
                   ),
                 ),
@@ -2784,7 +2784,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   isExpanded: true,
                   initialValue: _weishauptIsHolding,
                   decoration: _decoration(
-                    label: 'Registertyp',
+                    label: 'Registertyp Fühler',
                     icon: Icons.memory_outlined,
                   ),
                   dropdownColor: const Color(0xFF2A2A32),
@@ -3120,7 +3120,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   isExpanded: true,
                   initialValue: _nibeIsHolding,
                   decoration: _decoration(
-                    label: 'Registertyp',
+                    label: 'Registertyp Fühler',
                     icon: Icons.memory_outlined,
                   ),
                   dropdownColor: const Color(0xFF2A2A32),

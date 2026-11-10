@@ -121,9 +121,10 @@ class GenericModbusPreset {
 
 /// Configuration model for a Generic Modbus TCP heating controller.
 ///
-/// Enables users with any Modbus-TCP-compatible heating system (e.g. Technische Alternative
-/// UVR16x2 / C.M.I., Siemens Synco, Wolf BM-2, Luxtronik, Stiebel Eltron) to connect
-/// their real hardware by defining register addresses and scaling multipliers.
+/// Lets users connect any Modbus-TCP heating controller by entering the
+/// register addresses and scaling from the controller's own Modbus list.
+/// [isHoldingRegister] is the type of the four sensor registers; room target
+/// and curve shift are always holding registers.
 class GenericModbusConfig {
   static const String storageKey = 'generic_modbus_config';
 
@@ -147,92 +148,40 @@ class GenericModbusConfig {
   static const List<GenericModbusPreset> presets = [
     GenericModbusPreset(
       id: 'standard',
-      name: 'Standard Modbus Heizung',
-      description: 'Standardbelegung (1=Außen, 2=Vorlauf, 3=Rücklauf, 4=Warmwasser, 5=Sollwert), Faktor 0.1',
+      name: 'Beispielbelegung (Register anpassen)',
+      description: 'Platzhalter-Belegung (1=Außen, 2=Vorlauf, 3=Rücklauf, 4=Warmwasser), Faktor 0.1 – '
+          'die Register müssen aus der Modbus-Liste des Reglers übernommen werden',
       outdoorRegister: 1,
       flowRegister: 2,
       returnRegister: 3,
       hotWaterRegister: 4,
-      roomTargetRegister: 5,
-      heatingCurveShiftRegister: 6,
       multiplier: 0.1,
       wordOrder: ModbusWordOrder.bigEndian,
       dataType: ModbusRegisterDataType.int16,
       pollingIntervalSeconds: 10,
     ),
+    // Stiebel Eltron "ISG Modbus" manual: sensors are INPUT registers (FC04,
+    // ×0.1, 0x8000 = not available) and ISG register numbers are 1-based, so
+    // protocol address = register − 1: 507 outdoor → 506, 515 flow → 514,
+    // 516 return → 515, 522 DHW → 521. Comfort temperature HK1 = holding
+    // register 1502 → address 1501. There is no parallel-shift register
+    // (1504 is the curve rise). Not verified on hardware. Up to 1.2.10 this
+    // preset read holding 501–504 (room remote control values).
     GenericModbusPreset(
       id: 'stiebel_isg',
       name: 'Stiebel Eltron (ISG Modbus)',
-      description: 'ISG Web Modbus TCP (501=Außen, 502=Vorlauf HK1, 503=Rücklauf, 504=Warmwasser, 1501=Raum-Soll HK1, 1502=Soll HK2), 5s Polling-Drosselung',
-      outdoorRegister: 501,
-      flowRegister: 502,
-      returnRegister: 503,
-      hotWaterRegister: 504,
+      description: 'ISG Modbus TCP: Eingangsregister 507=Außen, 515=Vorlauf, 516=Rücklauf, 522=Warmwasser; '
+          'Komforttemperatur HK1 = Halteregister 1502 (Adressen jeweils −1), 5 s Abfrageabstand',
+      outdoorRegister: 506,
+      flowRegister: 514,
+      returnRegister: 515,
+      hotWaterRegister: 521,
       roomTargetRegister: 1501,
-      heatingCurveShiftRegister: 1502,
       multiplier: 0.1,
-      isHoldingRegister: true,
+      isHoldingRegister: false,
       wordOrder: ModbusWordOrder.bigEndian,
       dataType: ModbusRegisterDataType.int16,
       pollingIntervalSeconds: 5,
-    ),
-    GenericModbusPreset(
-      id: 'luxtronik',
-      name: 'Luxtronik 2.0 / 2.1 (Alpha Innotec / Novelan)',
-      description: 'Luxtronik Wärmepumpenregelung über Modbus TCP (32-Bit / Word-Swap CDAB)',
-      outdoorRegister: 100,
-      flowRegister: 101,
-      returnRegister: 102,
-      hotWaterRegister: 103,
-      roomTargetRegister: 105,
-      heatingCurveShiftRegister: 106,
-      multiplier: 0.1,
-      isHoldingRegister: true,
-      wordOrder: ModbusWordOrder.wordSwap,
-      dataType: ModbusRegisterDataType.int32,
-      pollingIntervalSeconds: 10,
-    ),
-    GenericModbusPreset(
-      id: 'ta_cmi',
-      name: 'Technische Alternative (UVR16x2 / C.M.I.)',
-      description: 'C.M.I. Modbus-TCP Weiterleitung der Sensoreingänge S1 bis S4, Faktor 0.1',
-      outdoorRegister: 1,
-      flowRegister: 2,
-      returnRegister: 3,
-      hotWaterRegister: 4,
-      roomTargetRegister: 5,
-      multiplier: 0.1,
-      wordOrder: ModbusWordOrder.bigEndian,
-      dataType: ModbusRegisterDataType.int16,
-      pollingIntervalSeconds: 10,
-    ),
-    GenericModbusPreset(
-      id: 'siemens_synco',
-      name: 'Siemens Synco 700 / OZW772',
-      description: 'Siemens Primär- und Heizkreis-Standardregister (10=Außen, 11=Vorlauf, 12=Rücklauf), Faktor 0.1',
-      outdoorRegister: 10,
-      flowRegister: 11,
-      returnRegister: 12,
-      hotWaterRegister: 15,
-      roomTargetRegister: 20,
-      multiplier: 0.1,
-      wordOrder: ModbusWordOrder.bigEndian,
-      dataType: ModbusRegisterDataType.int16,
-      pollingIntervalSeconds: 10,
-    ),
-    GenericModbusPreset(
-      id: 'wolf_bm2',
-      name: 'Wolf Heizung (BM-2 / ISM7 Modbus)',
-      description: 'Wolf Modbus TCP Interface (100=Außen, 101=Vorlauf, 102=Rücklauf, 103=Warmwasser), Faktor 0.1',
-      outdoorRegister: 100,
-      flowRegister: 101,
-      returnRegister: 102,
-      hotWaterRegister: 103,
-      roomTargetRegister: 105,
-      multiplier: 0.1,
-      wordOrder: ModbusWordOrder.bigEndian,
-      dataType: ModbusRegisterDataType.int16,
-      pollingIntervalSeconds: 10,
     ),
     GenericModbusPreset(
       id: 'custom',
@@ -242,8 +191,6 @@ class GenericModbusConfig {
       flowRegister: 2,
       returnRegister: 3,
       hotWaterRegister: 4,
-      roomTargetRegister: 5,
-      heatingCurveShiftRegister: 6,
       multiplier: 0.1,
       wordOrder: ModbusWordOrder.bigEndian,
       dataType: ModbusRegisterDataType.int16,
@@ -283,15 +230,15 @@ class GenericModbusConfig {
     this.flowRegister = 2,
     this.returnRegister = 3,
     this.hotWaterRegister = 4,
-    this.roomTargetRegister = 5,
-    this.heatingCurveShiftRegister = 6,
+    this.roomTargetRegister,
+    this.heatingCurveShiftRegister,
     this.multiplier = 0.1,
     this.isHoldingRegister = true,
     this.wordOrder = ModbusWordOrder.bigEndian,
     this.dataType = ModbusRegisterDataType.int16,
     this.pollingIntervalSeconds = 10,
     this.presetId = 'standard',
-    this.presetName = 'Standard Modbus Heizung',
+    this.presetName = 'Beispielbelegung (Register anpassen)',
   });
 
   factory GenericModbusConfig.fromPreset(GenericModbusPreset preset, {String host = '192.168.1.50'}) {
@@ -387,6 +334,25 @@ class GenericModbusConfig {
       orElse: () => ModbusRegisterDataType.int16,
     );
 
+    var presetId = json['presetId'] as String? ?? 'standard';
+    var presetName = json['presetName'] as String? ?? 'Beispielbelegung (Register anpassen)';
+    // <= 1.2.10: the Stiebel preset used a wrong map → move to the real one.
+    if (presetId == 'stiebel_isg' && (json['outdoorRegister'] as num?)?.toInt() == 501) {
+      final preset = presets.firstWhere((p) => p.id == 'stiebel_isg');
+      return GenericModbusConfig.fromPreset(preset, host: json['host'] as String? ?? '192.168.1.50').copyWith(
+        port: (json['port'] as num?)?.toInt(),
+        unitId: (json['unitId'] as num?)?.toInt(),
+      );
+    }
+    // Presets removed after 1.2.10 because their register maps were invented
+    // (Luxtronik, TA C.M.I., Siemens Synco, Wolf): keep the stored registers
+    // for reading, as a custom config without write registers.
+    final removed = _removedPresets.contains(presetId);
+    if (removed) {
+      presetId = 'custom';
+      presetName = 'Benutzerdefiniert';
+    }
+
     return GenericModbusConfig(
       host: json['host'] as String? ?? '192.168.1.50',
       port: (json['port'] as num?)?.toInt() ?? 502,
@@ -395,18 +361,20 @@ class GenericModbusConfig {
       flowRegister: (json['flowRegister'] as num?)?.toInt() ?? 2,
       returnRegister: (json['returnRegister'] as num?)?.toInt() ?? 3,
       hotWaterRegister: (json['hotWaterRegister'] as num?)?.toInt() ?? 4,
-      roomTargetRegister: (json['roomTargetRegister'] as num?)?.toInt(),
+      roomTargetRegister: removed ? null : (json['roomTargetRegister'] as num?)?.toInt(),
       heatingCurveShiftRegister:
-          (json['heatingCurveShiftRegister'] as num?)?.toInt(),
+          removed ? null : (json['heatingCurveShiftRegister'] as num?)?.toInt(),
       multiplier: (json['multiplier'] as num?)?.toDouble() ?? 0.1,
       isHoldingRegister: json['isHoldingRegister'] as bool? ?? true,
       wordOrder: wordOrder,
       dataType: dataType,
       pollingIntervalSeconds: (json['pollingIntervalSeconds'] as num?)?.toInt() ?? 10,
-      presetId: json['presetId'] as String? ?? 'standard',
-      presetName: json['presetName'] as String? ?? 'Standard Modbus Heizung',
+      presetId: presetId,
+      presetName: presetName,
     );
   }
+
+  static const _removedPresets = {'luxtronik', 'ta_cmi', 'siemens_synco', 'wolf_bm2'};
 
   static Future<GenericModbusConfig> load(FlutterSecureStorage storage) async {
     try {

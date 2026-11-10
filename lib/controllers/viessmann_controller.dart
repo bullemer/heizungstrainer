@@ -3,38 +3,56 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter/foundation.dart';
 import 'package:heizungstrainer/controllers/heating_controller.dart';
 import 'package:heizungstrainer/exceptions/modbus_exceptions.dart';
 import 'package:heizungstrainer/models/viessmann_config.dart';
 
-/// Heating controller adapter for Viessmann heating systems (Vitodens, Vitotronic, Vitocal).
+/// Heating controller adapter for Viessmann heating systems.
 ///
-/// Supports two communication backends:
-/// 1. [ViessmannConnectionType.optolinkTcp]: Local Optolink daemon (vcontrold / ESP-Optolink)
-///    communicating over a local TCP socket.
-/// 2. [ViessmannConnectionType.vicareRest]: Official Viessmann ViCare Developer REST API (Cloud).
+/// Two backends, both NOT verified on hardware:
+/// 1. [ViessmannConnectionType.optolinkTcp]: a vcontrold daemon (openv) on the
+///    LAN. Text protocol on TCP 3002: the server sends the prompt `vctrld>`
+///    after connect and after every answer; errors start with `ERR:`. The
+///    command names come from the vito.xml shipped with vcontrold
+///    (getTempA, getTempVListM1, getTempRL17A, getTempWWist,
+///    getTempRaumNorSollM1, getNiveauM1 and the matching set… commands);
+///    installations with a customised vito.xml may use other names.
+/// 2. [ViessmannConnectionType.vicareRest]: Viessmann cloud API v2
+///    (paths as used by the open-source PyViCare client). The access token
+///    from the developer portal is valid for about one hour; the app has no
+///    OAuth refresh, so this is only usable for short sessions.
+///
+/// The provider polls [readTelemetry]; this class has no timer of its own.
 class ViessmannController implements HeatingController {
   ViessmannConfig _config;
   bool _isConnected = false;
-  Timer? _pollingTimer;
 
   final StreamController<ControllerTelemetry> _telemetryController =
       StreamController<ControllerTelemetry>.broadcast();
 
+  /// Overridable for tests.
+  final String vicareBaseUrl;
+
   HttpClient? _httpClient;
   DateTime? _lastVicarePoll;
   ControllerTelemetry? _cachedVicareTelemetry;
+  _VicareDevice? _vicareDevice;
+  double? _vicareSlope;
 
   ViessmannController({
     ViessmannConfig? config,
+    this.vicareBaseUrl = 'https://api.viessmann-climatesolutions.com/iot/v2',
   }) : _config = config ?? const ViessmannConfig();
 
   ViessmannConfig get config => _config;
 
   void updateConfig(ViessmannConfig config) {
     _config = config;
+    _vicareDevice = null;
+    _invalidateVicareCache();
   }
+
+  bool get _isOptolink => _config.connectionType == ViessmannConnectionType.optolinkTcp;
 
   @override
   String get id => 'viessmann_vicare';
@@ -47,15 +65,14 @@ class ViessmannController implements HeatingController {
 
   @override
   ConnectionProtocol get protocol =>
-      _config.connectionType == ViessmannConnectionType.optolinkTcp
-          ? ConnectionProtocol.proprietary
-          : ConnectionProtocol.restApi;
+      _isOptolink ? ConnectionProtocol.proprietary : ConnectionProtocol.restApi;
 
   @override
   HeatingCapabilities get capabilities => const HeatingCapabilities(
         supportsHeatingCurveShift: true,
-        minShift: -15.0,
-        maxShift: 15.0,
+        // Viessmann "Niveau": −13…40 K; the app never needs more than ±13.
+        minShift: -13.0,
+        maxShift: 13.0,
         supportsRoomTarget: true,
         minRoomTarget: 5.0,
         maxRoomTarget: 30.0,
@@ -75,6 +92,8 @@ class ViessmannController implements HeatingController {
       ..connectionTimeout = Duration(seconds: _config.timeoutSeconds);
   }
 
+  Duration get _timeout => Duration(seconds: _config.timeoutSeconds);
+
   @override
   Future<void> connect({
     required String host,
@@ -89,39 +108,15 @@ class ViessmannController implements HeatingController {
       host: host,
       port: port ?? _config.port,
     );
+    _vicareDevice = null;
+    _invalidateVicareCache();
 
     try {
-      if (_config.connectionType == ViessmannConnectionType.optolinkTcp) {
-        await _probeOptolinkTcp();
-      } else {
-        await _probeVicareRest();
-      }
-
       _isConnected = true;
-
-      // Read initial telemetry
+      // The first read proves the daemon / API answers with usable values.
       final initial = await readTelemetry();
       _telemetryController.add(initial);
-
-      // Start periodic polling timer decoupled:
-      // - ViCare Cloud REST: 60s+ to strictly protect the 1,450 calls/day quota
-      // - Local Optolink: 10s fast local polling
-      final interval = _config.connectionType == ViessmannConnectionType.vicareRest
-          ? Duration(seconds: _config.cloudPollingIntervalSeconds.clamp(60, 300))
-          : const Duration(seconds: 10);
-
-      _pollingTimer?.cancel();
-      _pollingTimer = Timer.periodic(interval, (_) async {
-        if (!_isConnected) return;
-        try {
-          final t = await readTelemetry();
-          _telemetryController.add(t);
-        } catch (e) {
-          debugPrint('[ViessmannController] Polling error: $e');
-        }
-      });
     } catch (e) {
-      _isConnected = false;
       await disconnect();
       if (e is ModbusCommunicationException) rethrow;
       throw ModbusCommunicationException(
@@ -133,8 +128,6 @@ class ViessmannController implements HeatingController {
 
   @override
   Future<void> disconnect() async {
-    _pollingTimer?.cancel();
-    _pollingTimer = null;
     try {
       _httpClient?.close(force: true);
     } catch (_) {}
@@ -143,185 +136,126 @@ class ViessmannController implements HeatingController {
   }
 
   // ──────────────────────────────────────────────────────────────────
-  // Local Optolink (vcontrold / ESP-Optolink TCP Socket)
+  // Local Optolink (vcontrold text protocol)
   // ──────────────────────────────────────────────────────────────────
 
-  Future<void> _probeOptolinkTcp() async {
-    Socket? socket;
+  static const _prompt = 'vctrld>';
+
+  /// Heating circuit suffix of the vito.xml command names (circuit 0 → M1).
+  String get _m => 'M${(int.tryParse(_config.circuit) ?? 0) + 1}';
+
+  /// Runs [commands] in ONE vcontrold session: wait for the prompt, send a
+  /// command, read up to the next prompt, …, `quit`. Returns the answer text
+  /// per command (without prompt).
+  Future<List<String>> _optolinkSession(List<String> commands) async {
+    Socket socket;
     try {
-      socket = await Socket.connect(
-        _config.host,
-        _config.port,
-        timeout: Duration(seconds: _config.timeoutSeconds),
-      );
+      socket = await Socket.connect(_config.host, _config.port, timeout: _timeout);
     } catch (e) {
       throw ModbusCommunicationException(
-        message: 'Viessmann Optolink Gateway unter ${_config.host}:${_config.port} nicht erreichbar: $e',
+        message: 'vcontrold unter ${_config.host}:${_config.port} nicht erreichbar: $e',
+        underlyingError: e,
       );
-    } finally {
-      socket?.destroy();
     }
-  }
 
-  Future<String?> _sendOptolinkCommand(String cmd) async {
-    Socket? socket;
+    final buffer = StringBuffer();
+    Completer<void>? wake;
+    var done = false;
+    final sub = socket.listen(
+      (data) {
+        buffer.write(utf8.decode(data, allowMalformed: true));
+        wake?.complete();
+        wake = null;
+      },
+      onError: (Object _) {
+        done = true;
+        wake?.complete();
+        wake = null;
+      },
+      onDone: () {
+        done = true;
+        wake?.complete();
+        wake = null;
+      },
+      cancelOnError: true,
+    );
+
+    Future<String> readToPrompt() async {
+      final deadline = DateTime.now().add(_timeout);
+      while (true) {
+        final text = buffer.toString();
+        final at = text.indexOf(_prompt);
+        if (at >= 0) {
+          buffer
+            ..clear()
+            ..write(text.substring(at + _prompt.length));
+          return text.substring(0, at).trim();
+        }
+        final left = deadline.difference(DateTime.now());
+        if (done || left <= Duration.zero) {
+          throw ModbusCommunicationException(
+            message: 'vcontrold unter ${_config.host}:${_config.port} antwortet nicht mit dem '
+                'erwarteten Prompt – läuft dort wirklich vcontrold?',
+          );
+        }
+        wake = Completer<void>();
+        await wake!.future.timeout(left, onTimeout: () {});
+      }
+    }
+
     try {
-      socket = await Socket.connect(
-        _config.host,
-        _config.port,
-        timeout: Duration(seconds: _config.timeoutSeconds),
-      );
-
-      socket.write('$cmd\n');
-      await socket.flush();
-
-      final completer = Completer<String>();
-      final buffer = StringBuffer();
-
-      final sub = socket.listen(
-        (data) {
-          buffer.write(utf8.decode(data));
-          if (buffer.toString().contains('\n') || buffer.toString().contains('vctrld>')) {
-            if (!completer.isCompleted) {
-              completer.complete(buffer.toString());
-            }
-          }
-        },
-        onError: (err) {
-          if (!completer.isCompleted) completer.completeError(err);
-        },
-        onDone: () {
-          if (!completer.isCompleted) completer.complete(buffer.toString());
-        },
-      );
-
-      final raw = await completer.future.timeout(
-        Duration(seconds: _config.timeoutSeconds),
-        onTimeout: () => buffer.toString(),
-      );
+      await readToPrompt(); // greeting prompt
+      final answers = <String>[];
+      for (final cmd in commands) {
+        socket.write('$cmd\n');
+        await socket.flush();
+        answers.add(await readToPrompt());
+      }
+      try {
+        socket.write('quit\n');
+        await socket.flush();
+      } catch (_) {}
+      return answers;
+    } finally {
       await sub.cancel();
-      return raw.trim();
-    } catch (e) {
-      debugPrint('[ViessmannController] Error sending Optolink command "$cmd": $e');
-      return null;
-    } finally {
-      socket?.destroy();
+      socket.destroy();
     }
   }
 
-  double? _parseOptolinkNumber(String? response) {
-    if (response == null || response.isEmpty) return null;
-    // Extract first floating-point or integer number from the response
-    final match = RegExp(r'[-+]?\d+(?:[.,]\d+)?').firstMatch(response);
-    if (match != null) {
-      final str = match.group(0)!.replaceAll(',', '.');
-      return double.tryParse(str);
-    }
-    return null;
-  }
+  static bool _isOptolinkError(String answer) =>
+      answer.isEmpty || answer.toUpperCase().startsWith('ERR');
 
-  // ──────────────────────────────────────────────────────────────────
-  // Viessmann ViCare REST API (Cloud)
-  // ──────────────────────────────────────────────────────────────────
-
-  /// After a write the next read must hit the API, otherwise the 55 s cache
-  /// returns the old value and the provider's read-back check fails.
-  void _invalidateVicareCache() {
-    _cachedVicareTelemetry = null;
-    _lastVicarePoll = null;
-  }
-
-  Future<void> _probeVicareRest() async {
-    final client = _getClient();
-    final uri = Uri.parse('https://api.viessmann.com/iot/v1/equipment/installations');
-    final req = await client.getUrl(uri).timeout(
-      Duration(seconds: _config.timeoutSeconds),
-    );
-    if (_config.apiToken.isNotEmpty) {
-      req.headers.set(HttpHeaders.authorizationHeader, 'Bearer ${_config.apiToken.trim()}');
-    }
-    final resp = await req.close().timeout(
-      Duration(seconds: _config.timeoutSeconds),
-    );
-    await resp.drain<void>();
-    if (resp.statusCode == 401 || resp.statusCode == 403) {
-      throw const ModbusCommunicationException(
-        message: 'ViCare hat den API-Token abgelehnt (abgelaufen oder ungültig). '
-            'Bitte in den Einstellungen einen neuen Token hinterlegen.',
-      );
-    }
-    if (resp.statusCode != 200) {
-      throw ModbusCommunicationException(
-        message: 'Viessmann ViCare API Server antwortet mit Status ${resp.statusCode}',
-      );
-    }
-  }
-
-  Future<dynamic> _httpGetVicare(String path) async {
-    final client = _getClient();
-    final uri = Uri.parse('https://api.viessmann.com/iot/v1$path');
-    final req = await client.getUrl(uri).timeout(
-      Duration(seconds: _config.timeoutSeconds),
-    );
-    req.headers.set(HttpHeaders.acceptHeader, 'application/json');
-    if (_config.apiToken.isNotEmpty) {
-      req.headers.set(HttpHeaders.authorizationHeader, 'Bearer ${_config.apiToken.trim()}');
-    }
-    final resp = await req.close().timeout(
-      Duration(seconds: _config.timeoutSeconds),
-    );
-    if (resp.statusCode == 429) {
-      debugPrint('[ViessmannController] ViCare 429 Too Many Requests: Rate limit exceeded (~1,450 calls/day). Throttling...');
-      await resp.drain<void>();
-      return null;
-    }
-    if (resp.statusCode != 200) {
-      await resp.drain<void>();
-      return null;
-    }
-    final body = await resp.transform(utf8.decoder).join();
-    return jsonDecode(body);
-  }
-
-  // ──────────────────────────────────────────────────────────────────
-  // Telemetry Reading
-  // ──────────────────────────────────────────────────────────────────
-
-  @override
-  Future<ControllerTelemetry> readTelemetry() async {
-    if (_config.connectionType == ViessmannConnectionType.optolinkTcp) {
-      return _readOptolinkTelemetry();
-    } else {
-      return _readVicareTelemetry();
-    }
+  double? _parseOptolinkNumber(String answer) {
+    if (_isOptolinkError(answer)) return null;
+    final match = RegExp(r'[-+]?\d+(?:[.,]\d+)?').firstMatch(answer);
+    if (match == null) return null;
+    return double.tryParse(match.group(0)!.replaceAll(',', '.'));
   }
 
   Future<ControllerTelemetry> _readOptolinkTelemetry() async {
-    final rawValues = <String, double>{};
+    final answers = await _optolinkSession([
+      'getTempA',
+      'getTempVList$_m',
+      'getTempKist',
+      'getTempRL17A',
+      'getTempWWist',
+      'getTempRaumNorSoll$_m',
+      'getNiveau$_m',
+    ]);
+    final outdoor = _parseOptolinkNumber(answers[0]);
+    // Circuits without mixer have no own flow sensor → boiler temperature.
+    final flow = _parseOptolinkNumber(answers[1]) ?? _parseOptolinkNumber(answers[2]);
+    final returnT = _parseOptolinkNumber(answers[3]);
+    final hotWater = _parseOptolinkNumber(answers[4]);
+    final room = _parseOptolinkNumber(answers[5]);
+    final shift = _parseOptolinkNumber(answers[6]);
 
-    final outdoorRaw = await _sendOptolinkCommand('getTempA');
-    final outdoor = _parseOptolinkNumber(outdoorRaw);
-    if (outdoor != null) rawValues['outdoor'] = outdoor;
-
-    final flowRaw = await _sendOptolinkCommand('getTempVl');
-    final flow = _parseOptolinkNumber(flowRaw);
-    if (flow != null) rawValues['flow'] = flow;
-
-    final returnRaw = await _sendOptolinkCommand('getTempRl');
-    final returnT = _parseOptolinkNumber(returnRaw);
-    if (returnT != null) rawValues['return'] = returnT;
-
-    final hwRaw = await _sendOptolinkCommand('getTempWWist');
-    final hotWater = _parseOptolinkNumber(hwRaw);
-    if (hotWater != null) rawValues['hotWater'] = hotWater;
-
-    final roomRaw = await _sendOptolinkCommand('getTempRaumSoll');
-    final room = _parseOptolinkNumber(roomRaw);
-    if (room != null) rawValues['roomTarget'] = room;
-
-    final shiftRaw = await _sendOptolinkCommand('getNiveau');
-    final shift = _parseOptolinkNumber(shiftRaw);
-    if (shift != null) rawValues['shift'] = shift;
+    if (outdoor == null && flow == null && returnT == null && hotWater == null) {
+      throw ModbusCommunicationException(
+        message: 'vcontrold kennt die Standard-Kommandos nicht (Antwort: „${answers[0]}“). '
+            'Die App erwartet die Kommandonamen der mitgelieferten vito.xml.',
+      );
+    }
 
     return ControllerTelemetry(
       timestamp: DateTime.now(),
@@ -331,77 +265,139 @@ class ViessmannController implements HeatingController {
       hotWaterTemp: hotWater,
       roomTarget: room,
       heatingCurveShift: shift,
-      rawValues: rawValues,
+      rawValues: {
+        'outdoor': ?outdoor,
+        'flow': ?flow,
+        'return': ?returnT,
+        'hotWater': ?hotWater,
+        'roomTarget': ?room,
+        'shift': ?shift,
+      },
+    );
+  }
+
+  Future<void> _optolinkWrite(String command, String label) async {
+    final answer = (await _optolinkSession([command])).single;
+    if (_isOptolinkError(answer)) {
+      throw ModbusCommunicationException(
+        message: 'Viessmann Optolink: $label konnte nicht gesetzt werden: '
+            '${answer.isEmpty ? "keine Antwort" : answer}',
+      );
+    }
+  }
+
+  // ──────────────────────────────────────────────────────────────────
+  // Viessmann cloud API v2
+  // ──────────────────────────────────────────────────────────────────
+
+  /// After a write the next read must hit the API, otherwise the cache
+  /// returns the old value and the provider's read-back check fails.
+  void _invalidateVicareCache() {
+    _cachedVicareTelemetry = null;
+    _lastVicarePoll = null;
+  }
+
+  /// One feature list per interval: the free developer quota is 1450 calls
+  /// per 24 h, and the provider polls every 10 s.
+  Duration get _vicareCacheTime =>
+      Duration(seconds: _config.cloudPollingIntervalSeconds.clamp(75, 300));
+
+  Future<dynamic> _vicareRequest(String method, String path, {Object? body}) async {
+    final req = await _getClient().openUrl(method, Uri.parse('$vicareBaseUrl$path')).timeout(_timeout);
+    req.headers.set(HttpHeaders.acceptHeader, 'application/json');
+    req.headers.set(HttpHeaders.authorizationHeader, 'Bearer ${_config.apiToken.trim()}');
+    if (body != null) {
+      req.headers.set(HttpHeaders.contentTypeHeader, 'application/json');
+      req.write(jsonEncode(body));
+    }
+    final resp = await req.close().timeout(_timeout);
+    final text = await resp.transform(utf8.decoder).join().timeout(_timeout);
+    dynamic json;
+    try {
+      json = text.trim().isEmpty ? null : jsonDecode(text);
+    } catch (_) {}
+    final error = json is Map ? '${json['error'] ?? json['errorType'] ?? ''}' : '';
+    if (resp.statusCode == 401 || resp.statusCode == 403 || error.toUpperCase().contains('EXPIRED')) {
+      throw const ModbusCommunicationException(
+        message: 'ViCare hat den API-Token abgelehnt. Tokens aus dem Viessmann-Entwicklerportal gelten '
+            'nur etwa eine Stunde – bitte in den Einstellungen einen neuen Token hinterlegen.',
+      );
+    }
+    if (resp.statusCode == 429) {
+      throw const ModbusCommunicationException(
+        message: 'ViCare-Tageskontingent erschöpft (1450 Abfragen in 24 Stunden). Später erneut versuchen.',
+      );
+    }
+    if (resp.statusCode < 200 || resp.statusCode >= 300) {
+      throw ModbusCommunicationException(
+        message: 'Viessmann-API antwortet mit Status ${resp.statusCode}'
+            '${json is Map && json['message'] != null ? ': ${json['message']}' : ''}',
+      );
+    }
+    return json;
+  }
+
+  /// Installation → gateway serial → device id of the heating device.
+  Future<_VicareDevice> _resolveVicareDevice() async {
+    final cached = _vicareDevice;
+    if (cached != null) return cached;
+    final json = await _vicareRequest('GET', '/equipment/installations?includeGateways=true');
+    final installations = (json is Map ? json['data'] : null) as List<dynamic>? ?? const [];
+    final wanted = _config.installationId.trim();
+    for (final inst in installations.whereType<Map>()) {
+      final instId = '${inst['id']}';
+      if (wanted.isNotEmpty && instId != wanted) continue;
+      for (final gw in (inst['gateways'] as List<dynamic>? ?? const []).whereType<Map>()) {
+        final devices = (gw['devices'] as List<dynamic>? ?? const []).whereType<Map>().toList();
+        if (devices.isEmpty) continue;
+        final device = devices.firstWhere(
+          (d) => d['deviceType'] == 'heating',
+          orElse: () => devices.firstWhere((d) => '${d['id']}' == '0', orElse: () => devices.first),
+        );
+        return _vicareDevice = _VicareDevice(instId, '${gw['serial']}', '${device['id']}');
+      }
+    }
+    throw ModbusCommunicationException(
+      message: wanted.isEmpty
+          ? 'Im ViCare-Konto wurde keine Anlage mit Heizgerät gefunden.'
+          : 'Die Anlage $wanted wurde im ViCare-Konto nicht gefunden.',
     );
   }
 
   Future<ControllerTelemetry> _readVicareTelemetry() async {
-    // Rate-limiting protection: Developer accounts are strictly limited to ~1,450 calls/24h.
-    // If called within 55 seconds and we have cached data, reuse it.
     final now = DateTime.now();
     if (_lastVicarePoll != null &&
-        now.difference(_lastVicarePoll!) < const Duration(seconds: 55) &&
+        now.difference(_lastVicarePoll!) < _vicareCacheTime &&
         _cachedVicareTelemetry != null) {
-      debugPrint('[ViessmannController] Using cached ViCare telemetry to respect daily call quota');
       return _cachedVicareTelemetry!;
     }
+
+    final device = await _resolveVicareDevice();
+    final json = await _vicareRequest('GET', '${device.path}/features/');
     _lastVicarePoll = now;
 
-    final rawValues = <String, double>{};
-    double? outdoor;
-    double? flow;
-    double? returnT;
-    double? hotWater;
-    double? room;
-    double? shift;
-
-    try {
-      final path = _config.installationId.isNotEmpty
-          ? '/equipment/installations/${_config.installationId}/features'
-          : '/equipment/installations';
-      final json = await _httpGetVicare(path);
-
-      if (json is Map<String, dynamic> && json.containsKey('data')) {
-        final list = json['data'] as List<dynamic>?;
-        if (list != null) {
-          for (final item in list) {
-            if (item is Map<String, dynamic>) {
-              final feature = item['feature'] as String? ?? '';
-              final properties = item['properties'] as Map<String, dynamic>? ?? {};
-
-              if (feature.contains('heating.sensors.temperature.outside')) {
-                final val = properties['value']?['value'];
-                if (val is num) outdoor = val.toDouble();
-              } else if (feature.contains('heating.boiler.sensors.temperature.main')) {
-                final val = properties['value']?['value'];
-                if (val is num) flow = val.toDouble();
-              } else if (feature.contains('heating.boiler.sensors.temperature.return')) {
-                final val = properties['value']?['value'];
-                if (val is num) returnT = val.toDouble();
-              } else if (feature.contains('heating.dhw.sensors.temperature.hotWaterStorage')) {
-                final val = properties['value']?['value'];
-                if (val is num) hotWater = val.toDouble();
-              } else if (feature.contains('heating.circuits.${_config.circuit}.operating.programs.normal')) {
-                final val = properties['temperature']?['value'];
-                if (val is num) room = val.toDouble();
-              } else if (feature.contains('heating.circuits.${_config.circuit}.heating.curve')) {
-                final val = properties['shift']?['value'];
-                if (val is num) shift = val.toDouble();
-              }
-            }
-          }
-        }
-      }
-    } catch (e) {
-      debugPrint('[ViessmannController] ViCare REST read error: $e');
+    final features = <String, Map<dynamic, dynamic>>{};
+    for (final item in ((json is Map ? json['data'] : null) as List<dynamic>? ?? const []).whereType<Map>()) {
+      final props = item['properties'];
+      if (item['feature'] is String && props is Map) features[item['feature'] as String] = props;
+    }
+    double? value(String feature, [String property = 'value']) {
+      final v = features[feature]?[property];
+      final n = v is Map ? v['value'] : null;
+      return n is num ? n.toDouble() : null;
     }
 
-    if (outdoor != null) rawValues['outdoor'] = outdoor;
-    if (flow != null) rawValues['flow'] = flow;
-    if (returnT != null) rawValues['return'] = returnT;
-    if (hotWater != null) rawValues['hotWater'] = hotWater;
-    if (room != null) rawValues['roomTarget'] = room;
-    if (shift != null) rawValues['shift'] = shift;
+    final c = 'heating.circuits.${_config.circuit}';
+    final outdoor = value('heating.sensors.temperature.outside');
+    final flow = value('$c.sensors.temperature.supply') ??
+        value('heating.boiler.sensors.temperature.commonSupply') ??
+        value('heating.boiler.sensors.temperature.main');
+    final returnT = value('heating.sensors.temperature.return');
+    final hotWater = value('heating.dhw.sensors.temperature.dhwCylinder') ??
+        value('heating.dhw.sensors.temperature.hotWaterStorage');
+    final room = value('$c.operating.programs.normal', 'temperature');
+    final shift = value('$c.heating.curve', 'shift');
+    _vicareSlope = value('$c.heating.curve', 'slope') ?? _vicareSlope;
 
     final telemetry = ControllerTelemetry(
       timestamp: DateTime.now(),
@@ -411,134 +407,102 @@ class ViessmannController implements HeatingController {
       hotWaterTemp: hotWater,
       roomTarget: room,
       heatingCurveShift: shift,
-      rawValues: rawValues,
+      rawValues: {
+        'outdoor': ?outdoor,
+        'flow': ?flow,
+        'return': ?returnT,
+        'hotWater': ?hotWater,
+        'roomTarget': ?room,
+        'shift': ?shift,
+      },
     );
 
     _cachedVicareTelemetry = telemetry;
     return telemetry;
   }
 
+  Future<void> _vicareCommand(String feature, String command, Map<String, dynamic> body) async {
+    final device = await _resolveVicareDevice();
+    await _vicareRequest('POST', '${device.path}/features/$feature/commands/$command', body: body);
+    _invalidateVicareCache();
+  }
+
   // ──────────────────────────────────────────────────────────────────
-  // Setpoints
+  // Telemetry & setpoints
   // ──────────────────────────────────────────────────────────────────
 
   @override
-  Future<void> setHeatingCurveShift(double shift) async {
+  Future<ControllerTelemetry> readTelemetry() =>
+      _isOptolink ? _readOptolinkTelemetry() : _readVicareTelemetry();
+
+  void _requireConnected() {
     if (!_isConnected) {
       throw const ModbusCommunicationException(
         message: 'Keine Verbindung zum Viessmann Regler.',
       );
-    }
-
-    if (_config.connectionType == ViessmannConnectionType.optolinkTcp) {
-      final res = await _sendOptolinkCommand('setNiveau ${shift.round()}');
-      if (res == null || res.toLowerCase().contains('err') || res.toLowerCase().contains('fail')) {
-        throw ModbusCommunicationException(
-          message: 'Viessmann Optolink Parallelverschiebung konnte nicht gesetzt werden: $res',
-        );
-      }
-    } else {
-      // ViCare REST API
-      final client = _getClient();
-      final uri = Uri.parse(
-        'https://api.viessmann.com/iot/v1/equipment/installations/${_config.installationId}/gateways/default/devices/0/features/heating.circuits.${_config.circuit}.heating.curve/commands/setCurve',
-      );
-      final req = await client.postUrl(uri).timeout(
-        Duration(seconds: _config.timeoutSeconds),
-      );
-      req.headers.set(HttpHeaders.authorizationHeader, 'Bearer ${_config.apiToken.trim()}');
-      req.headers.set(HttpHeaders.contentTypeHeader, 'application/json');
-      req.write(jsonEncode({'shift': shift.round()}));
-      final resp = await req.close();
-      await resp.drain<void>();
-      if (resp.statusCode < 200 || resp.statusCode >= 300) {
-        throw ModbusCommunicationException(
-          message: 'ViCare Cloud API Antwortfehler: Status ${resp.statusCode}',
-        );
-      }
-      _invalidateVicareCache();
     }
   }
 
   @override
-  Future<void> setRoomTarget(double temperature) async {
-    if (!_isConnected) {
-      throw const ModbusCommunicationException(
-        message: 'Keine Verbindung zum Viessmann Regler.',
-      );
+  Future<void> setHeatingCurveShift(double shift) async {
+    _requireConnected();
+    if (_isOptolink) {
+      await _optolinkWrite('setNiveau$_m ${shift.round()}', 'Parallelverschiebung');
+      return;
     }
-
-    if (_config.connectionType == ViessmannConnectionType.optolinkTcp) {
-      final res = await _sendOptolinkCommand('setTempRaumSoll ${temperature.fixed(1)}');
-      if (res == null || res.toLowerCase().contains('err') || res.toLowerCase().contains('fail')) {
-        throw ModbusCommunicationException(
-          message: 'Viessmann Optolink Raum-Sollwert konnte nicht gesetzt werden: $res',
-        );
-      }
-    } else {
-      // ViCare REST API
-      final client = _getClient();
-      final uri = Uri.parse(
-        'https://api.viessmann.com/iot/v1/equipment/installations/${_config.installationId}/gateways/default/devices/0/features/heating.circuits.${_config.circuit}.operating.programs.normal/commands/setTemperature',
-      );
-      final req = await client.postUrl(uri).timeout(
-        Duration(seconds: _config.timeoutSeconds),
-      );
-      req.headers.set(HttpHeaders.authorizationHeader, 'Bearer ${_config.apiToken.trim()}');
-      req.headers.set(HttpHeaders.contentTypeHeader, 'application/json');
-      req.write(jsonEncode({'targetTemperature': temperature}));
-      final resp = await req.close();
-      await resp.drain<void>();
-      if (resp.statusCode < 200 || resp.statusCode >= 300) {
-        throw ModbusCommunicationException(
-          message: 'ViCare Cloud API Antwortfehler: Status ${resp.statusCode}',
-        );
-      }
+    // setCurve always needs shift AND slope; the slope must stay as it is.
+    if (_vicareSlope == null) {
       _invalidateVicareCache();
+      await _readVicareTelemetry();
     }
+    final slope = _vicareSlope;
+    if (slope == null) {
+      throw const ModbusCommunicationException(
+        message: 'ViCare: Die aktuelle Neigung der Heizkurve ist nicht lesbar – '
+            'ohne sie kann die Parallelverschiebung nicht gesetzt werden.',
+      );
+    }
+    await _vicareCommand(
+      'heating.circuits.${_config.circuit}.heating.curve',
+      'setCurve',
+      {'shift': shift.round(), 'slope': slope},
+    );
+  }
+
+  @override
+  Future<void> setRoomTarget(double temperature) async {
+    _requireConnected();
+    if (_isOptolink) {
+      await _optolinkWrite('setTempRaumNorSoll$_m ${temperature.fixed(1)}', 'Raum-Sollwert');
+      return;
+    }
+    await _vicareCommand(
+      'heating.circuits.${_config.circuit}.operating.programs.normal',
+      'setTemperature',
+      {'targetTemperature': temperature},
+    );
   }
 
   /// Diagnostic connection test for settings screen.
   static Future<Map<String, dynamic>> testConnection(ViessmannConfig config) async {
     final controller = ViessmannController(config: config);
+    final optolink = config.connectionType == ViessmannConnectionType.optolinkTcp;
     try {
-      if (config.connectionType == ViessmannConnectionType.optolinkTcp) {
-        final socket = await Socket.connect(
-          config.host,
-          config.port,
-          timeout: Duration(seconds: config.timeoutSeconds),
-        );
-        socket.destroy();
-
-        final telemetry = await controller.readTelemetry();
-        return {
-          'success': true,
-          'message': 'Viessmann Optolink Gateway erfolgreich erreicht!',
-          'type': 'Optolink TCP (${config.host}:${config.port})',
-          'outdoorTemp': telemetry.outdoorTemp,
-          'flowTemp': telemetry.flowTemp,
-          'returnTemp': telemetry.returnTemp,
-          'hotWaterTemp': telemetry.hotWaterTemp,
-          'roomTarget': telemetry.roomTarget,
-        };
-      } else {
-        await controller._probeVicareRest();
-        final telemetry = await controller.readTelemetry();
-        return {
-          'success': true,
-          'message': 'Viessmann ViCare API erfolgreich autorisiert!',
-          'type': 'ViCare Cloud REST API',
-          'outdoorTemp': telemetry.outdoorTemp,
-          'flowTemp': telemetry.flowTemp,
-          'returnTemp': telemetry.returnTemp,
-          'hotWaterTemp': telemetry.hotWaterTemp,
-          'roomTarget': telemetry.roomTarget,
-        };
-      }
+      final telemetry = await controller.readTelemetry();
+      return {
+        'success': true,
+        'message': optolink ? 'vcontrold erreicht und Werte gelesen.' : 'Viessmann-API erreicht und Werte gelesen.',
+        'type': optolink ? 'Optolink TCP (${config.host}:${config.port})' : 'ViCare Cloud REST API',
+        'outdoorTemp': telemetry.outdoorTemp,
+        'flowTemp': telemetry.flowTemp,
+        'returnTemp': telemetry.returnTemp,
+        'hotWaterTemp': telemetry.hotWaterTemp,
+        'roomTarget': telemetry.roomTarget,
+      };
     } catch (e) {
       return {
         'success': false,
-        'message': 'Viessmann Verbindungstest fehlgeschlagen: $e',
+        'message': e is ModbusCommunicationException ? e.message : 'Viessmann Verbindungstest fehlgeschlagen: $e',
       };
     } finally {
       controller.disconnect();
@@ -549,4 +513,13 @@ class ViessmannController implements HeatingController {
     disconnect();
     _telemetryController.close();
   }
+}
+
+class _VicareDevice {
+  final String installationId;
+  final String gatewaySerial;
+  final String deviceId;
+  const _VicareDevice(this.installationId, this.gatewaySerial, this.deviceId);
+
+  String get path => '/features/installations/$installationId/gateways/$gatewaySerial/devices/$deviceId';
 }

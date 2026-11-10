@@ -9,20 +9,42 @@ import 'package:heizungstrainer/exceptions/modbus_exceptions.dart';
 import 'package:heizungstrainer/models/vaillant_ebusd_config.dart';
 import 'package:heizungstrainer/services/tls_policy.dart';
 
-/// Heating controller adapter for Vaillant heating systems connected via
-/// an eBUSd daemon / gateway over HTTP REST JSON API.
+/// Heating controller adapter for Vaillant systems behind an ebusd daemon
+/// (github.com/john30/ebusd). NOT verified on hardware.
 ///
-/// Supports reading telemetry from `/data` (or `/data?exact=false`) and
-/// writing heating curve shift and room setpoints via eBUSd write endpoints.
+/// Reading uses ebusd's HTTP JSON port (off by default: ebusd must run with
+/// `--httpport`). `GET /data` lists the known messages as
+/// `{circuit: {messages: {Name: {name, passive, write, lastup, zz, fields:
+/// {field: {value}}}}}, global: {...}}`; single values are fetched with
+/// `GET /data/CIRCUIT/NAME?maxage=…`, which makes ebusd read the bus when
+/// its cached value is older.
+///
+/// ebusd's HTTP port is read-only (anything but GET → 405). Writing goes
+/// through the TCP command port (default 8888): `write -c CIRCUIT NAME VALUE`
+/// answers `done` or `ERR: …`.
+///
+/// Message names follow the ebusd Vaillant configuration: boiler circuit
+/// `bai` (FlowTemp, ReturnTemp, OutdoorstempSensor, StorageTemp/HwcTemp) and
+/// the regulator circuit from the config – `700` / `ctlv2` (Z1DayTemp) or
+/// `470` (Hc1DayTemp). These regulators have no parallel-shift message, so
+/// the curve shift is not supported.
+///
+/// The provider polls [readTelemetry]; this class has no timer of its own.
 class VaillantEbusdController implements HeatingController {
   VaillantEbusdConfig _config;
   bool _isConnected = false;
-  Timer? _pollingTimer;
 
   final StreamController<ControllerTelemetry> _telemetryController =
       StreamController<ControllerTelemetry>.broadcast();
 
   HttpClient? _httpClient;
+
+  /// circuit (lower case) → message name (lower case) → name as ebusd spells it.
+  final Map<String, Map<String, String>> _messages = {};
+  final Map<String, String> _circuits = {};
+
+  static const _boiler = 'bai';
+  static const _maxAgeSeconds = 60;
 
   VaillantEbusdController({
     VaillantEbusdConfig? config,
@@ -34,6 +56,14 @@ class VaillantEbusdController implements HeatingController {
 
   void updateConfig(VaillantEbusdConfig config) {
     _config = config;
+    _messages.clear();
+    _circuits.clear();
+  }
+
+  /// The regulator circuit (700, ctlv2, 470 …); null when only the boiler is configured.
+  String? get _regulator {
+    final c = _config.circuit.trim().toLowerCase();
+    return c.isEmpty || c == _boiler ? null : c;
   }
 
   @override
@@ -49,11 +79,9 @@ class VaillantEbusdController implements HeatingController {
   ConnectionProtocol get protocol => ConnectionProtocol.restApi;
 
   @override
-  HeatingCapabilities get capabilities => const HeatingCapabilities(
-        supportsHeatingCurveShift: true,
-        minShift: -15.0,
-        maxShift: 15.0,
-        supportsRoomTarget: true,
+  HeatingCapabilities get capabilities => HeatingCapabilities(
+        supportsHeatingCurveShift: false,
+        supportsRoomTarget: _regulator != null,
         minRoomTarget: 5.0,
         maxRoomTarget: 30.0,
         supportsHotWater: true,
@@ -67,9 +95,11 @@ class VaillantEbusdController implements HeatingController {
   @override
   Stream<ControllerTelemetry> get telemetryStream => _telemetryController.stream;
 
+  Duration get _timeout => Duration(seconds: _config.timeoutSeconds);
+
   HttpClient _getClient() {
     return _httpClient ??= HttpClient()
-      ..connectionTimeout = Duration(seconds: _config.timeoutSeconds)
+      ..connectionTimeout = _timeout
       ..badCertificateCallback = TlsPolicy.acceptSelfSignedOnLocalNetwork;
   }
 
@@ -89,34 +119,15 @@ class VaillantEbusdController implements HeatingController {
     );
 
     try {
-      final isOnline = await _probeGateway();
-      if (!isOnline) {
-        throw ModbusCommunicationException(
-          message: 'eBUSd Gateway unter ${_config.baseUrl} antwortet nicht.',
-        );
-      }
-
+      await _loadMessageIndex();
       _isConnected = true;
-
       final initial = await readTelemetry();
       _telemetryController.add(initial);
-
-      _pollingTimer?.cancel();
-      _pollingTimer = Timer.periodic(const Duration(seconds: 10), (_) async {
-        if (!_isConnected) return;
-        try {
-          final t = await readTelemetry();
-          _telemetryController.add(t);
-        } catch (e) {
-          debugPrint('[VaillantEbusdController] Periodic poll error: $e');
-        }
-      });
     } catch (e) {
-      _isConnected = false;
       await disconnect();
       if (e is ModbusCommunicationException) rethrow;
       throw ModbusCommunicationException(
-        message: 'Verbindung zu eBUSd fehlgeschlagen: $e',
+        message: 'Verbindung zu ebusd fehlgeschlagen: $e',
         underlyingError: e,
       );
     }
@@ -124,161 +135,140 @@ class VaillantEbusdController implements HeatingController {
 
   @override
   Future<void> disconnect() async {
-    _pollingTimer?.cancel();
-    _pollingTimer = null;
     try {
       _httpClient?.close(force: true);
     } catch (_) {}
     _httpClient = null;
     _isConnected = false;
+    _messages.clear();
+    _circuits.clear();
   }
 
-  Future<bool> _probeGateway() async {
-    try {
-      final res = await _httpGet('/data');
-      if (res != null) return true;
-    } catch (_) {}
-
-    try {
-      final circuit = _config.circuit.trim().isEmpty ? 'bai' : _config.circuit.trim();
-      final res = await _httpGet('/data/$circuit');
-      if (res != null) return true;
-    } catch (_) {}
-
-    return false;
-  }
-
-  /// Sends an HTTP GET request to the eBUSd gateway.
+  /// HTTP GET on the ebusd JSON port; null on a non-200 answer.
   Future<dynamic> _httpGet(String endpoint) async {
-    final uri = _config.getUri(endpoint);
-    final client = _getClient();
-
-    final req = await client.getUrl(uri).timeout(
-      Duration(seconds: _config.timeoutSeconds),
-    );
+    final req = await _getClient().getUrl(_config.getUri(endpoint)).timeout(_timeout);
     req.headers.set(HttpHeaders.acceptHeader, 'application/json');
+    // ebusd itself has no token; this is only for a reverse proxy in front of it.
     if (_config.apiToken.trim().isNotEmpty) {
       req.headers.set(HttpHeaders.authorizationHeader, 'Bearer ${_config.apiToken.trim()}');
     }
-
-    final resp = await req.close().timeout(
-      Duration(seconds: _config.timeoutSeconds),
-    );
+    final resp = await req.close().timeout(_timeout);
     if (resp.statusCode != 200) {
       await resp.drain<void>();
       return null;
     }
-
-    final body = await resp.transform(utf8.decoder).join();
+    final body = await resp.transform(utf8.decoder).join().timeout(_timeout);
     if (body.trim().isEmpty) return null;
     return jsonDecode(body);
   }
 
-  /// Writes a value to an eBUSd parameter endpoint via HTTP GET with value query.
-  Future<bool> _httpWrite(String circuit, String parameter, dynamic value) async {
-    final encodedVal = Uri.encodeComponent(value.toString());
-    final endpoint = '/data/$circuit/$parameter?value=$encodedVal';
-    final uri = _config.getUri(endpoint);
-    final client = _getClient();
-
+  /// Reads the message list once per connection: it tells which circuits and
+  /// messages this installation has and how ebusd spells them (the Vaillant
+  /// configuration changed e.g. z1DayTemp → Z1DayTemp).
+  Future<void> _loadMessageIndex() async {
+    dynamic data;
     try {
-      final req = await client.getUrl(uri).timeout(
-        Duration(seconds: _config.timeoutSeconds),
-      );
-      req.headers.set(HttpHeaders.acceptHeader, 'application/json');
-      if (_config.apiToken.trim().isNotEmpty) {
-        req.headers.set(HttpHeaders.authorizationHeader, 'Bearer ${_config.apiToken.trim()}');
-      }
-
-      final resp = await req.close().timeout(
-        Duration(seconds: _config.timeoutSeconds),
-      );
-      final isSuccess = resp.statusCode >= 200 && resp.statusCode < 300;
-      await resp.drain<void>();
-      return isSuccess;
+      data = await _httpGet('/data');
     } catch (e) {
-      debugPrint('[VaillantEbusdController] Write error to $endpoint: $e');
-      return false;
+      throw ModbusCommunicationException(
+        message: 'ebusd unter ${_config.baseUrl} nicht erreichbar. Der HTTP-Port ist bei ebusd ab Werk aus '
+            'und muss mit --httpport eingeschaltet werden. ($e)',
+        underlyingError: e,
+      );
     }
+    if (data is! Map || !data.containsKey('global')) {
+      throw ModbusCommunicationException(
+        message: 'Unter ${_config.baseUrl} antwortet kein ebusd (JSON ohne „global“).',
+      );
+    }
+    _messages.clear();
+    _circuits.clear();
+    data.forEach((circuit, value) {
+      final messages = value is Map ? value['messages'] : null;
+      if (circuit is! String || messages is! Map) return;
+      _circuits[circuit.toLowerCase()] = circuit;
+      _messages[circuit.toLowerCase()] = {
+        for (final name in messages.keys.whereType<String>()) name.toLowerCase(): name,
+      };
+    });
+    if (!_messages.containsKey(_boiler) && (_regulator == null || !_messages.containsKey(_regulator))) {
+      throw ModbusCommunicationException(
+        message: 'ebusd kennt weder den Kreis „$_boiler“ noch „${_config.circuit}“. '
+            'Bekannte Kreise: ${_circuits.values.where((c) => c != 'global').join(', ')}.',
+      );
+    }
+  }
+
+  /// First of [names] that exists in [circuit], as `(circuit, name)` in ebusd's spelling.
+  (String, String)? _find(String? circuit, List<String> names) {
+    if (circuit == null) return null;
+    final known = _messages[circuit];
+    if (known == null) return null;
+    for (final name in names) {
+      final actual = known[name.toLowerCase()];
+      if (actual != null) return (_circuits[circuit]!, actual);
+    }
+    return null;
+  }
+
+  (String, String)? get _roomTargetMessage => _find(_regulator, const ['Z1DayTemp', 'Hc1DayTemp']);
+
+  /// Numeric value of one ebusd message; null if unknown, not yet read, or
+  /// its sensor reports a fault.
+  Future<double?> _readMessage((String, String)? message) async {
+    if (message == null) return null;
+    final (circuit, name) = message;
+    dynamic data;
+    try {
+      data = await _httpGet('/data/$circuit/$name?maxage=$_maxAgeSeconds');
+    } catch (e) {
+      debugPrint('[VaillantEbusd] $circuit/$name: $e');
+      return null;
+    }
+    final messages = data is Map && data[circuit] is Map ? (data[circuit] as Map)['messages'] : null;
+    final entry = messages is Map ? messages[name] : null;
+    return fieldValue(entry is Map ? entry['fields'] : null);
+  }
+
+  /// Picks the temperature out of an ebusd `fields` object, e.g.
+  /// `{"temp": {"value": 48.5}, "sensor": {"value": "ok"}}`.
+  @visibleForTesting
+  static double? fieldValue(dynamic fields) {
+    if (fields is! Map) return null;
+    final sensor = fields['sensor'];
+    final status = sensor is Map ? sensor['value'] : null;
+    if (status is String && status.toLowerCase() != 'ok') return null;
+    num? number(dynamic field) {
+      final v = field is Map ? field['value'] : null;
+      return v is num ? v : null;
+    }
+
+    final preferred = number(fields['temp']) ?? number(fields['temp1']) ?? number(fields['0']);
+    if (preferred != null) return preferred.toDouble();
+    for (final field in fields.values) {
+      final n = number(field);
+      if (n != null) return n.toDouble();
+    }
+    return null;
   }
 
   @override
   Future<ControllerTelemetry> readTelemetry() async {
-    final rawValues = <String, double>{};
-    dynamic data;
+    if (_messages.isEmpty) await _loadMessageIndex();
 
-    try {
-      data = await _httpGet('/data');
-    } catch (e) {
-      debugPrint('[VaillantEbusdController] Error querying /data: $e');
-    }
+    final outdoor = await _readMessage(
+        _find(_boiler, const ['OutdoorstempSensor']) ?? _find(_regulator, const ['DisplayedOutsideTemp']));
+    final flow = await _readMessage(_find(_boiler, const ['FlowTemp']));
+    final ret = await _readMessage(_find(_boiler, const ['ReturnTemp']));
+    final hotWater = await _readMessage(_find(_boiler, const ['StorageTemp', 'HwcTemp']));
+    final room = await _readMessage(_roomTargetMessage);
 
-    if (data == null) {
-      final circuit = _config.circuit.trim().isEmpty ? 'bai' : _config.circuit.trim();
-      try {
-        data = await _httpGet('/data/$circuit');
-      } catch (e) {
-        debugPrint('[VaillantEbusdController] Error querying /data/$circuit: $e');
-      }
-    }
-
-    if (data == null) {
+    if (outdoor == null && flow == null && ret == null && hotWater == null && room == null) {
       throw const ModbusCommunicationException(
-        message: 'Keine Daten vom eBUSd Gateway empfangen.',
+        message: 'ebusd liefert für keine der erwarteten Vaillant-Meldungen einen Wert '
+            '(FlowTemp, ReturnTemp, OutdoorstempSensor, StorageTemp).',
       );
     }
-
-    final outdoor = _extractValue(data, [
-      'outdoorstempsensor',
-      'outside_temp',
-      'outdoortemp',
-      'outsidetemp',
-      'outdoor',
-    ]);
-    final flow = _extractValue(data, [
-      'flowtemp',
-      'flow_temp',
-      'flowtemperature',
-      'curflowtemp',
-      'actualflowtemp',
-    ]);
-    final ret = _extractValue(data, [
-      'returntemp',
-      'return_temp',
-      'returntemperature',
-      'rettemp',
-    ]);
-    final hotWater = _extractValue(data, [
-      'storagetemp',
-      'warmwatertemp',
-      'hwctemp',
-      'dhwtemp',
-      'storagetempbottom',
-      'waterstoragetemp',
-    ]);
-    final room = _extractValue(data, [
-      'hc1desiredroomtemp',
-      'desiredroomtemp',
-      'roomtemptarget',
-      'targetroomtemp',
-      'roomtarget',
-      'roomtemp',
-    ]);
-    final shift = _extractValue(data, [
-      'hc1parallelshift',
-      'parallelshift',
-      'heatingcurveshift',
-      'curveoffset',
-      'shift',
-      'offset',
-    ]);
-
-    if (outdoor != null) rawValues['outdoor'] = outdoor;
-    if (flow != null) rawValues['flow'] = flow;
-    if (ret != null) rawValues['return'] = ret;
-    if (hotWater != null) rawValues['hotWater'] = hotWater;
-    if (room != null) rawValues['roomTarget'] = room;
-    if (shift != null) rawValues['shift'] = shift;
 
     return ControllerTelemetry(
       timestamp: DateTime.now(),
@@ -287,121 +277,84 @@ class VaillantEbusdController implements HeatingController {
       returnTemp: ret,
       hotWaterTemp: hotWater,
       roomTarget: room,
-      heatingCurveShift: shift,
-      rawValues: rawValues,
+      rawValues: {
+        'outdoor': ?outdoor,
+        'flow': ?flow,
+        'return': ?ret,
+        'hotWater': ?hotWater,
+        'roomTarget': ?room,
+      },
     );
   }
 
-  /// Intelligently traverses nested eBUSd JSON tree to locate sensor values.
-  static double? _extractValue(dynamic data, List<String> targetKeys) {
-    if (data == null) return null;
-
-    if (data is Map<String, dynamic>) {
-      // 1. Direct match at current depth
-      for (final target in targetKeys) {
-        for (final entry in data.entries) {
-          if (entry.key.toLowerCase() == target) {
-            final val = _resolveRawNumber(entry.value);
-            if (val != null) return val;
-          }
-        }
-      }
-
-      // 2. Recursive exploration for child objects
-      for (final entry in data.entries) {
-        if (entry.value is Map || entry.value is List) {
-          final res = _extractValue(entry.value, targetKeys);
-          if (res != null) return res;
-        }
-      }
-    } else if (data is List) {
-      for (final item in data) {
-        final res = _extractValue(item, targetKeys);
-        if (res != null) return res;
-      }
+  /// Sends one line to ebusd's TCP command port and returns the answer
+  /// (ebusd ends every answer with an empty line).
+  Future<String> _command(String line) async {
+    final socket = await Socket.connect(_config.host, _config.commandPort, timeout: _timeout);
+    try {
+      socket.write('$line\n');
+      await socket.flush();
+      final buffer = StringBuffer();
+      final done = Completer<void>();
+      final sub = socket.listen(
+        (data) {
+          buffer.write(utf8.decode(data, allowMalformed: true));
+          if (buffer.toString().contains('\n\n') && !done.isCompleted) done.complete();
+        },
+        onError: (Object _) {
+          if (!done.isCompleted) done.complete();
+        },
+        onDone: () {
+          if (!done.isCompleted) done.complete();
+        },
+        cancelOnError: true,
+      );
+      // Writes wait for the bus; give them more time than a plain read.
+      await done.future.timeout(_timeout * 3, onTimeout: () {});
+      await sub.cancel();
+      return buffer.toString().trim();
+    } finally {
+      socket.destroy();
     }
-
-    return null;
-  }
-
-  static double? _resolveRawNumber(dynamic val) {
-    if (val is num) return val.toDouble();
-    if (val is String) {
-      return double.tryParse(val.replaceAll(',', '.'));
-    }
-    if (val is Map<String, dynamic>) {
-      if (val.containsKey('value')) {
-        return _resolveRawNumber(val['value']);
-      }
-      if (val.containsKey('temp')) {
-        return _resolveRawNumber(val['temp']);
-      }
-      if (val.containsKey('temp-sensor')) {
-        return _resolveRawNumber(val['temp-sensor']);
-      }
-      for (final entry in val.entries) {
-        final parsed = _resolveRawNumber(entry.value);
-        if (parsed != null) return parsed;
-      }
-    }
-    if (val is List && val.isNotEmpty) {
-      for (final item in val) {
-        final parsed = _resolveRawNumber(item);
-        if (parsed != null) return parsed;
-      }
-    }
-    return null;
   }
 
   @override
   Future<void> setHeatingCurveShift(double shift) async {
-    if (!_isConnected) {
-      throw const ModbusCommunicationException(
-        message: 'Keine aktive Verbindung zum eBUSd Gateway.',
-      );
-    }
-
-    final circuit = _config.circuit.trim().isEmpty ? '700' : _config.circuit.trim();
-
-    // Try primary circuit target
-    var success = await _httpWrite(circuit, 'Hc1ParallelShift', shift);
-    if (!success) {
-      success = await _httpWrite(circuit, 'ParallelShift', shift);
-    }
-    if (!success && circuit != 'bai') {
-      success = await _httpWrite('bai', 'Hc1ParallelShift', shift);
-    }
-
-    if (!success) {
-      throw ModbusCommunicationException(
-        message: 'eBUSd Parallelverschiebung (${shift > 0 ? "+$shift" : "$shift"} K) '
-            'konnte nicht übertragen werden.',
-      );
-    }
+    throw const ModbusCommunicationException(
+      message: 'Vaillant-Regler haben über ebusd keine Parallelverschiebung. '
+          'Stattdessen die Raum-Solltemperatur ändern.',
+    );
   }
 
   @override
   Future<void> setRoomTarget(double temperature) async {
     if (!_isConnected) {
       throw const ModbusCommunicationException(
-        message: 'Keine aktive Verbindung zum eBUSd Gateway.',
+        message: 'Keine aktive Verbindung zu ebusd.',
       );
     }
-
-    final circuit = _config.circuit.trim().isEmpty ? '700' : _config.circuit.trim();
-
-    var success = await _httpWrite(circuit, 'Hc1DesiredRoomTemp', temperature);
-    if (!success) {
-      success = await _httpWrite(circuit, 'DesiredRoomTemp', temperature);
-    }
-    if (!success && circuit != 'bai') {
-      success = await _httpWrite('bai', 'Hc1DesiredRoomTemp', temperature);
-    }
-
-    if (!success) {
+    final message = _roomTargetMessage;
+    if (message == null) {
       throw ModbusCommunicationException(
-        message: 'eBUSd Raum-Solltemperatur (${temperature.de(1)} °C) '
-            'konnte nicht gesetzt werden.',
+        message: 'ebusd kennt im Kreis „${_config.circuit}“ keine Raum-Solltemperatur '
+            '(Z1DayTemp / Hc1DayTemp).',
+      );
+    }
+    final (circuit, name) = message;
+    String answer;
+    try {
+      answer = await _command('write -c $circuit $name ${temperature.fixed(1)}');
+    } catch (e) {
+      throw ModbusCommunicationException(
+        message: 'ebusd-Befehlsport ${_config.host}:${_config.commandPort} nicht erreichbar – '
+            'Schreiben geht bei ebusd nur über diesen Port. ($e)',
+        underlyingError: e,
+      );
+    }
+    if (!answer.toLowerCase().startsWith('done')) {
+      throw ModbusCommunicationException(
+        message: 'ebusd hat die Raum-Solltemperatur (${temperature.de(1)} °C) nicht übernommen: '
+            '${answer.isEmpty ? "keine Antwort" : answer}',
       );
     }
   }
@@ -413,19 +366,10 @@ class VaillantEbusdController implements HeatingController {
   }) async {
     final controller = VaillantEbusdController(config: config, httpClient: httpClient);
     try {
-      final probeSuccess = await controller._probeGateway();
-      if (!probeSuccess) {
-        return {
-          'success': false,
-          'message': 'Keine Antwort vom eBUSd Gateway unter ${config.baseUrl}.',
-        };
-      }
-
       final telemetry = await controller.readTelemetry();
-
       return {
         'success': true,
-        'message': 'eBUSd Gateway erfolgreich erreicht!',
+        'message': 'ebusd erreicht und Werte gelesen.',
         'outdoorTemp': telemetry.outdoorTemp,
         'flowTemp': telemetry.flowTemp,
         'returnTemp': telemetry.returnTemp,
@@ -436,7 +380,7 @@ class VaillantEbusdController implements HeatingController {
     } catch (e) {
       return {
         'success': false,
-        'message': 'eBUSd Verbindungstest fehlgeschlagen: $e',
+        'message': e is ModbusCommunicationException ? e.message : 'ebusd-Verbindungstest fehlgeschlagen: $e',
       };
     } finally {
       controller.disconnect();

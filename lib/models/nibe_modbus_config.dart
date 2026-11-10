@@ -51,30 +51,45 @@ class NibeModbusConfig {
   final int? roomTargetRegister;
   final int? heatingCurveShiftRegister;
   final double multiplier;
+
+  /// Register type of the four SENSOR registers (false = input registers,
+  /// FC04). Room target and curve shift are always holding registers.
   final bool isHoldingRegister;
+
+  /// Write with FC 0x10 (write multiple) instead of FC 0x06: MODBUS 40
+  /// (F series / SMO) only implements FC 0x03 and 0x10.
+  bool get writeMultiple => _modbus40Presets.contains(presetId);
   final String presetId;
   final String presetName;
 
   static const List<NibeModbusPreset> presets = [
+    // NIBE "Modbus S-series" register list: the sensors are INPUT registers
+    // (FC04, address = NIBE ID, s16 ÷10): 1 BT1, 5 BT2, 7 BT3, 8 BT7, 9 BT6.
+    // Holding 30 = curve offset climate system 1 (−10..10, whole steps).
+    // Holding 26 is the heating CURVE number (0–15), not a room setpoint – it
+    // was wrongly used as room target up to 1.2.10 and must never be written
+    // with a temperature. No verified room setpoint register → disabled.
     NibeModbusPreset(
       id: 'nibe_s_series',
       name: 'NIBE S-Serie (S1155 / S1255 / S2125 / VVM S320)',
-      description: 'Natives Modbus TCP (Menü 7.5.9). BT1=Reg 1, BT2=Reg 5, BT3=Reg 7, BT6=Reg 8, Offset=Reg 30 (ganze Stufen)',
+      description: 'Natives Modbus TCP (Menü 7.5.9). Eingangsregister BT1=1, BT2=5, BT3=7, BT7=8; '
+          'Kurvenverschiebung = Halteregister 30 (ganze Stufen −10…10)',
       defaultPort: 502,
       defaultUnitId: 1,
       outdoorRegister: 1,
       flowRegister: 5,
       returnRegister: 7,
       hotWaterRegister: 8,
-      roomTargetRegister: 26,
+      roomTargetRegister: null,
       heatingCurveShiftRegister: 30,
       multiplier: 0.1,
-      isHoldingRegister: true,
+      isHoldingRegister: false,
     ),
     NibeModbusPreset(
       id: 'nibe_f_series_modbus40',
       name: 'NIBE F-Serie (F1155 / F1255 mit Modbus 40)',
-      description: 'NIBE Modbus 40 Gateway für F-Serie (BT1=40004, BT2=40008, BT3=40012, BT6=40013, Offset S1=47011)',
+      description: 'MODBUS 40 ist Modbus RTU (RS-485): es braucht einen RS-485→Modbus-TCP-Wandler. '
+          'BT1=40004, BT2=40008, BT3=40012, BT7=40013, Offset S1=47011',
       defaultPort: 502,
       defaultUnitId: 1,
       outdoorRegister: 40004,
@@ -91,7 +106,8 @@ class NibeModbusConfig {
     NibeModbusPreset(
       id: 'nibe_smo40',
       name: 'NIBE SMO 20 / 40 (Modbus 40)',
-      description: 'NIBE Regelgerät für Luft-Wasser-Wärmepumpen (F2120 / F2040)',
+      description: 'NIBE Regelgerät für Luft-Wasser-Wärmepumpen (F2120 / F2040); MODBUS 40 ist Modbus RTU '
+          '(RS-485) und braucht einen RS-485→Modbus-TCP-Wandler',
       defaultPort: 502,
       defaultUnitId: 1,
       outdoorRegister: 40004,
@@ -115,10 +131,10 @@ class NibeModbusConfig {
       flowRegister: 5,
       returnRegister: 7,
       hotWaterRegister: 8,
-      roomTargetRegister: 26,
+      roomTargetRegister: null,
       heatingCurveShiftRegister: 30,
       multiplier: 0.1,
-      isHoldingRegister: true,
+      isHoldingRegister: false,
     ),
   ];
 
@@ -130,10 +146,10 @@ class NibeModbusConfig {
     this.flowRegister = 5,
     this.returnRegister = 7,
     this.hotWaterRegister = 8,
-    this.roomTargetRegister = 26,
+    this.roomTargetRegister,
     this.heatingCurveShiftRegister = 30,
     this.multiplier = 0.1,
-    this.isHoldingRegister = true,
+    this.isHoldingRegister = false,
     this.presetId = 'nibe_s_series',
     this.presetName = 'NIBE S-Serie (S1155 / S1255 / S2125 / VVM S320)',
   });
@@ -208,21 +224,29 @@ class NibeModbusConfig {
         'presetName': presetName,
       };
 
-  /// Presets that shipped (<= 1.1.0) with shift=47007 (curve slope) and room=47011.
-  static const _legacyModbus40Presets = {'nibe_f_series_modbus40', 'nibe_smo40'};
+  /// MODBUS 40 presets; they shipped (<= 1.1.0) with shift=47007 (curve slope) and room=47011.
+  static const _modbus40Presets = {'nibe_f_series_modbus40', 'nibe_smo40'};
 
-  static int? _optionalRegister(Map<String, dynamic> json, String key, int fallback) {
+  static int? _optionalRegister(Map<String, dynamic> json, String key, int? fallback) {
     if (!json.containsKey(key)) return fallback;
     return (json[key] as num?)?.toInt();
   }
 
   factory NibeModbusConfig.fromJson(Map<String, dynamic> json) {
-    var roomTargetRegister = _optionalRegister(json, 'roomTargetRegister', 26);
+    final presetId = json['presetId'] as String? ?? 'nibe_s_series';
+    final isModbus40 = _modbus40Presets.contains(presetId);
+    var roomTargetRegister = _optionalRegister(json, 'roomTargetRegister', null);
     var shiftRegister = _optionalRegister(json, 'heatingCurveShiftRegister', 30);
-    if (_legacyModbus40Presets.contains(json['presetId']) && shiftRegister == 47007) {
+    var isHolding = json['isHoldingRegister'] as bool? ?? !_isSSeries(presetId);
+    if (isModbus40 && shiftRegister == 47007) {
       shiftRegister = 47011;
       roomTargetRegister = null;
     }
+    // <= 1.2.10 shipped the S-series (and custom default) map with the sensors
+    // as holding registers and "room target" on holding 26, which is the
+    // heating curve number. Repair stored configs.
+    if (!isModbus40 && roomTargetRegister == 26) roomTargetRegister = null;
+    if (presetId == 'nibe_s_series') isHolding = false;
     return NibeModbusConfig(
       host: json['host'] as String? ?? '192.168.1.160',
       port: (json['port'] as num?)?.toInt() ?? 502,
@@ -234,12 +258,14 @@ class NibeModbusConfig {
       roomTargetRegister: roomTargetRegister,
       heatingCurveShiftRegister: shiftRegister,
       multiplier: (json['multiplier'] as num?)?.toDouble() ?? 0.1,
-      isHoldingRegister: json['isHoldingRegister'] as bool? ?? true,
-      presetId: json['presetId'] as String? ?? 'nibe_s_series',
+      isHoldingRegister: isHolding,
+      presetId: presetId,
       presetName: json['presetName'] as String? ??
           'NIBE S-Serie (S1155 / S1255 / S2125 / VVM S320)',
     );
   }
+
+  static bool _isSSeries(String presetId) => presetId == 'nibe_s_series' || presetId == 'custom';
 
   static Future<NibeModbusConfig> load(FlutterSecureStorage storage) async {
     try {

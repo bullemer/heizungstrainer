@@ -94,9 +94,10 @@ class WeishauptWemController implements HeatingController {
           message: 'Verbindung zur Weishaupt WEM unter $host:$targetPort fehlgeschlagen.',
         );
       }
+      // First read proves that the register map answers at all.
+      await readTelemetry();
     } catch (e) {
-      _isConnected = false;
-      _client = null;
+      await disconnect();
       if (e is ModbusCommunicationException) rethrow;
       throw ModbusCommunicationException(
         message: 'Fehler beim Verbinden mit Weishaupt WEM zu $host:$targetPort: $e',
@@ -115,7 +116,7 @@ class WeishauptWemController implements HeatingController {
   }
 
   bool _isDisconnectedRaw(int? raw) {
-    if (raw == null) return true;
+    if (raw == null) return false;
     return raw == 0x7FFF || raw == -32768 || raw == 0xFFFF || raw == 32767;
   }
 
@@ -128,11 +129,13 @@ class WeishauptWemController implements HeatingController {
       ? ModbusElementType.holdingRegister
       : ModbusElementType.inputRegister;
 
-  Future<int?> _readSingleRegister(int address) async {
+  /// Sensors use the configured register type; setpoints ([holding]) are
+  /// always holding registers, because that is where they are written.
+  Future<int?> _readSingleRegister(int address, {bool holding = false}) async {
     if (_client == null || !_isConnected) return null;
     final reg = ModbusInt16Register(
       name: 'reg_$address',
-      type: _elementType,
+      type: holding ? ModbusElementType.holdingRegister : _elementType,
       address: address,
     );
     try {
@@ -161,12 +164,19 @@ class WeishauptWemController implements HeatingController {
 
     int? rawRoom;
     if (_config.roomTargetRegister != null) {
-      rawRoom = await _readSingleRegister(_config.roomTargetRegister!);
+      rawRoom = await _readSingleRegister(_config.roomTargetRegister!, holding: true);
     }
 
     int? rawShift;
     if (_config.heatingCurveShiftRegister != null) {
-      rawShift = await _readSingleRegister(_config.heatingCurveShiftRegister!);
+      rawShift = await _readSingleRegister(_config.heatingCurveShiftRegister!, holding: true);
+    }
+
+    if (rawOutdoor == null && rawFlow == null && rawReturn == null && rawHotWater == null) {
+      throw const ModbusCommunicationException(
+        message: 'Weishaupt WEM antwortet, liefert aber auf keinem der eingestellten Register einen Wert. '
+            'Registeradressen, Registertyp und Unit-ID prüfen.',
+      );
     }
 
     final outdoor = _convertRaw(rawOutdoor);

@@ -11,16 +11,13 @@ import 'package:heizungstrainer/models/generic_modbus_config.dart';
 
 /// Real hardware adapter for generic heating systems communicating via Modbus TCP.
 ///
-/// Supports systems such as:
-/// - Technische Alternative (UVR16x2 / C.M.I.)
-/// - Siemens Synco 700 / OZW772
-/// - Wolf Heizung (BM-2 / ISM7 Modbus)
-/// - Luxtronik, Stiebel Eltron, Weishaupt, Keba, etc.
+/// The register map comes from the user (or a preset such as Stiebel ISG or
+/// Samson TROVIS). The provider polls [readTelemetry]; this class has no
+/// timer of its own.
 class GenericModbusController implements HeatingController {
   GenericModbusConfig _config;
   ModbusClientTcp? _client;
   bool _isConnected = false;
-  Timer? _pollingTimer;
   DateTime? _lastPollTime;
   ControllerTelemetry? _cachedTelemetry;
 
@@ -100,28 +97,10 @@ class GenericModbusController implements HeatingController {
         );
       }
 
-      // Initial read
-      final initial = await readTelemetry();
-      _telemetryStreamController.add(initial);
-
-      // Start periodic polling timer respecting configured polling interval
-      // (e.g. 5s for Stiebel ISG to prevent gateway crash, 10s default)
-      _pollingTimer?.cancel();
-      _pollingTimer = Timer.periodic(
-        Duration(seconds: _config.pollingIntervalSeconds.clamp(2, 300)),
-        (_) async {
-          if (!_isConnected) return;
-          try {
-            final t = await readTelemetry();
-            _telemetryStreamController.add(t);
-          } catch (e) {
-            debugPrint('[GenericModbus] Polling error: $e');
-          }
-        },
-      );
+      // First read proves that the register map answers at all.
+      await readTelemetry();
     } catch (e) {
-      _isConnected = false;
-      _client = null;
+      await disconnect();
       if (e is ModbusCommunicationException) rethrow;
       throw ModbusCommunicationException(
         message: 'Fehler beim Verbinden zu $host:$targetPort: $e',
@@ -132,8 +111,6 @@ class GenericModbusController implements HeatingController {
 
   @override
   Future<void> disconnect() async {
-    _pollingTimer?.cancel();
-    _pollingTimer = null;
     try {
       await _client?.disconnect();
     } catch (_) {}
@@ -142,7 +119,7 @@ class GenericModbusController implements HeatingController {
   }
 
   bool _isDisconnectedRaw(num? raw) {
-    if (raw == null) return true;
+    if (raw == null) return false;
     return raw == 0x7FFF ||
         raw == -32768 ||
         raw == 0xFFFF ||
@@ -160,16 +137,19 @@ class GenericModbusController implements HeatingController {
       ? ModbusElementType.holdingRegister
       : ModbusElementType.inputRegister;
 
-  Future<num?> _readRegisterRaw(int address) async {
+  /// Sensors use the configured register type; setpoints ([holding]) are
+  /// always holding registers, because that is where they are written.
+  Future<num?> _readRegisterRaw(int address, {bool holding = false}) async {
     if (_client == null || !_isConnected) return null;
     final endianness = _config.wordOrder.toModbusEndianness;
+    final type = holding ? ModbusElementType.holdingRegister : _elementType;
     final ModbusElement element;
 
     switch (_config.dataType) {
       case ModbusRegisterDataType.int16:
         element = ModbusInt16Register(
           name: 'reg_$address',
-          type: _elementType,
+          type: type,
           address: address,
           endianness: endianness,
         );
@@ -177,7 +157,7 @@ class GenericModbusController implements HeatingController {
       case ModbusRegisterDataType.uint16:
         element = ModbusUint16Register(
           name: 'reg_$address',
-          type: _elementType,
+          type: type,
           address: address,
           endianness: endianness,
         );
@@ -185,7 +165,7 @@ class GenericModbusController implements HeatingController {
       case ModbusRegisterDataType.int32:
         element = ModbusInt32Register(
           name: 'reg_$address',
-          type: _elementType,
+          type: type,
           address: address,
           endianness: endianness,
         );
@@ -193,7 +173,7 @@ class GenericModbusController implements HeatingController {
       case ModbusRegisterDataType.uint32:
         element = ModbusUint32Register(
           name: 'reg_$address',
-          type: _elementType,
+          type: type,
           address: address,
           endianness: endianness,
         );
@@ -201,7 +181,7 @@ class GenericModbusController implements HeatingController {
       case ModbusRegisterDataType.float32:
         element = ModbusFloatRegister(
           name: 'reg_$address',
-          type: _elementType,
+          type: type,
           address: address,
           endianness: endianness,
         );
@@ -244,12 +224,19 @@ class GenericModbusController implements HeatingController {
 
     num? rawRoom;
     if (_config.roomTargetRegister != null) {
-      rawRoom = await _readRegisterRaw(_config.roomTargetRegister!);
+      rawRoom = await _readRegisterRaw(_config.roomTargetRegister!, holding: true);
     }
 
     num? rawShift;
     if (_config.heatingCurveShiftRegister != null) {
-      rawShift = await _readRegisterRaw(_config.heatingCurveShiftRegister!);
+      rawShift = await _readRegisterRaw(_config.heatingCurveShiftRegister!, holding: true);
+    }
+
+    if (rawOutdoor == null && rawFlow == null && rawReturn == null && rawHotWater == null) {
+      throw const ModbusCommunicationException(
+        message: 'Der Regler antwortet, liefert aber auf keinem der eingestellten Register einen Wert. '
+            'Registeradressen, Registertyp und Unit-ID prüfen.',
+      );
     }
 
     final outdoor = _convertRaw(rawOutdoor);

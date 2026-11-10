@@ -51,42 +51,18 @@ class ViessmannConfig {
   static const List<ViessmannPreset> presets = [
     ViessmannPreset(
       id: 'optolink_vcontrold',
-      name: 'Viessmann Optolink (vcontrold / Open3E)',
-      description: 'Lokaler vcontrold oder Open3E Daemon über Optolink (Port 3002)',
-      connectionType: ViessmannConnectionType.optolinkTcp,
-      defaultPort: 3002,
-      defaultCircuit: '0',
-    ),
-    ViessmannPreset(
-      id: 'esp_optolink',
-      name: 'ESP-Optolink Gateway (WLAN / TCP)',
-      description: 'Drahtloser ESP32/ESP8266 Optokopf für Vitotronic im lokalen WLAN',
+      name: 'Viessmann Optolink (vcontrold)',
+      description: 'Lokaler vcontrold-Dienst (openv) am Optolink-Adapter, Port 3002, Kommandonamen der mitgelieferten vito.xml',
       connectionType: ViessmannConnectionType.optolinkTcp,
       defaultPort: 3002,
       defaultCircuit: '0',
     ),
     ViessmannPreset(
       id: 'vicare_cloud',
-      name: 'Viessmann ViCare Developer API (Cloud REST)',
-      description: 'Offizielle Viessmann IoT Cloud-Schnittstelle über Vitoconnect & API-Token (60s Quoten-Schutz)',
+      name: 'Viessmann ViCare API (Cloud)',
+      description: 'Viessmann-Cloud über Vitoconnect. Der Token aus dem Entwicklerportal gilt nur etwa eine Stunde.',
       connectionType: ViessmannConnectionType.vicareRest,
       defaultPort: 443,
-      defaultCircuit: '0',
-    ),
-    ViessmannPreset(
-      id: 'vitotronic_200',
-      name: 'Viessmann Vitotronic 200 (Optolink)',
-      description: 'Optimiert für Vitotronic 200 KW2/KO1B/HO1B Regelungen über vcontrold / Open3E',
-      connectionType: ViessmannConnectionType.optolinkTcp,
-      defaultPort: 3002,
-      defaultCircuit: '0',
-    ),
-    ViessmannPreset(
-      id: 'custom',
-      name: 'Benutzerdefiniert',
-      description: 'Individuelle Verbindungsparameter für Viessmann Systeme',
-      connectionType: ViessmannConnectionType.optolinkTcp,
-      defaultPort: 3002,
       defaultCircuit: '0',
     ),
   ];
@@ -101,7 +77,7 @@ class ViessmannConfig {
     this.timeoutSeconds = 5,
     this.cloudPollingIntervalSeconds = 60,
     this.presetId = 'optolink_vcontrold',
-    this.presetName = 'Viessmann Optolink (vcontrold / Open3E)',
+    this.presetName = 'Viessmann Optolink (vcontrold)',
   });
 
   factory ViessmannConfig.fromPreset(
@@ -179,8 +155,12 @@ class ViessmannConfig {
       timeoutSeconds: (json['timeoutSeconds'] as num?)?.toInt() ?? 5,
       cloudPollingIntervalSeconds:
           (json['cloudPollingIntervalSeconds'] as num?)?.toInt() ?? 60,
-      presetId: json['presetId'] as String? ?? 'optolink_vcontrold',
-      presetName: json['presetName'] as String? ?? 'Viessmann Optolink (vcontrold / Open3E)',
+      // Only two presets are left (the others were the same connection under
+      // names of adapters that do not speak the vcontrold protocol).
+      presetId: connType == ViessmannConnectionType.vicareRest ? 'vicare_cloud' : 'optolink_vcontrold',
+      presetName: connType == ViessmannConnectionType.vicareRest
+          ? 'Viessmann ViCare API (Cloud)'
+          : 'Viessmann Optolink (vcontrold)',
     );
   }
 
