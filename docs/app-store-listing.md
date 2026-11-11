@@ -22,12 +22,22 @@ wenn die Startphase endet (dann In-App-Kauf mit der Version zur Prüfung einreic
 | Inhaltsrechte | Enthält keine Inhalte Dritter |
 | Altersfreigabe | Fragebogen überall „Keine“ / „Nein“ → 4+ |
 
-## 2. Version 1.2.9 (Deutsch)
+## 2. Version 1.2.12 (Deutsch)
 
 **Werbetext** (max. 170, jederzeit ohne Prüfung änderbar):
 
 ```
 Viele Heizungen laufen wärmer als nötig. Heizungstrainer zeigt, wie deine eingestellt ist – und hilft dir, Heizkurve und Zeitprogramm sparsamer zu machen.
+```
+
+**Neuigkeiten** (max. 4000, „Neu in dieser Version“; die Vorversion im App Store war 1.2.9):
+
+```
+• Urlaubsplanung: Die erwartete Ersparnis wird jetzt über Gradtagzahlen berechnet und passt damit besser zur Jahreszeit.
+• Beta-Regler neu aufgebaut: Die Anbindungen für Viessmann, Bosch/Buderus, Vaillant, Weishaupt, NIBE und generisches Modbus folgen jetzt den Unterlagen der Hersteller bzw. der Open-Source-Projekte. An echter Hardware geprüft sind sie weiterhin nicht – sie bleiben Beta und schreiben nur nach deiner Freigabe.
+• Viessmann ViCare (Beta): Mit Client-ID und Refresh-Token erneuert die App den Cloud-Zugang selbst.
+• Antwortet ein Regler auf keinem der eingestellten Register, meldet die App das als Fehler statt „verbunden“ mit leeren Werten.
+• Danfoss ECL ist von den Änderungen an den Beta-Reglern nicht betroffen.
 ```
 
 **Beschreibung** (max. 4000):

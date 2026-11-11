@@ -89,6 +89,7 @@ def listing() -> dict:
     data = {
         'promotionalText': block('Werbetext'),
         'description': block('Beschreibung'),
+        'whatsNew': block('Neuigkeiten'),
         'keywords': block('Keywords'),
         'reviewNotes': block('Notizen'),
         'subtitle': cell('Untertitel'),
@@ -97,19 +98,26 @@ def listing() -> dict:
         'privacyPolicyUrl': cell('Datenschutz-URL'),
         'copyright': cell('Copyright'),
     }
-    for field, limit in [('promotionalText', 170), ('description', 4000), ('keywords', 100),
+    for field, limit in [('promotionalText', 170), ('description', 4000), ('whatsNew', 4000), ('keywords', 100),
                          ('subtitle', 30), ('reviewNotes', 4000)]:
         if len(data[field]) > limit:
             sys.exit(f'{field}: {len(data[field])} > {limit} characters')
     return data
 
 
-def editable_version(asc: Asc) -> dict:
+def editable_version(asc: Asc, version_string: str) -> dict:
+    """The version in preparation; created when the store only has released ones."""
     for v in asc.get(f'/apps/{APP_ID}/appStoreVersions', **{'filter[platform]': 'IOS'})['data']:
         if v['attributes']['appStoreState'] in ('PREPARE_FOR_SUBMISSION', 'DEVELOPER_REJECTED', 'REJECTED',
                                                 'METADATA_REJECTED', 'INVALID_BINARY'):
             return v
-    sys.exit('No editable App Store version (create one in App Store Connect first).')
+    version = asc.post('/appStoreVersions', {
+        'type': 'appStoreVersions',
+        'attributes': {'platform': 'IOS', 'versionString': version_string, 'releaseType': 'MANUAL'},
+        'relationships': {'app': {'data': {'type': 'apps', 'id': APP_ID}}},
+    })['data']
+    print(f'Version {version_string} in App Store Connect angelegt.')
+    return version
 
 
 def editable_app_info(asc: Asc) -> dict:
@@ -153,6 +161,14 @@ def upload_texts(asc: Asc, version: dict, version_string: str) -> None:
         'type': 'appStoreVersionLocalizations', 'id': loc['id'],
         'attributes': {k: t[k] for k in ('description', 'keywords', 'promotionalText', 'supportUrl', 'marketingUrl')},
     })
+    # "What's new" exists only for updates; Apple refuses the field on a first version.
+    released = [v for v in asc.get(f'/apps/{APP_ID}/appStoreVersions')['data']
+                if v['attributes']['appStoreState'] == 'READY_FOR_SALE']
+    if released:
+        asc.patch(f"/appStoreVersionLocalizations/{loc['id']}", {
+            'type': 'appStoreVersionLocalizations', 'id': loc['id'],
+            'attributes': {'whatsNew': t['whatsNew']},
+        })
     info = editable_app_info(asc)
     info_loc = localization(asc, f"/appInfos/{info['id']}/appInfoLocalizations",
                             'appInfoLocalizations', 'appInfo', 'appInfos', info['id'])
@@ -274,7 +290,7 @@ def main() -> None:
     if args.check or not args.version:
         check(asc)
         return
-    version = editable_version(asc)
+    version = editable_version(asc, args.version)
     upload_texts(asc, version, args.version)
     if args.screenshots:
         upload_screenshots(asc, version, os.path.expanduser(args.screenshots))
