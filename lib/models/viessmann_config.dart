@@ -41,6 +41,12 @@ class ViessmannConfig {
   final String host;
   final int port;
   final String apiToken;
+
+  /// Client ID of the user's app in the Viessmann developer portal and a
+  /// refresh token (scope `offline_access`, valid about 180 days). With both
+  /// the driver renews the one-hour access token by itself.
+  final String clientId;
+  final String refreshToken;
   final String installationId;
   final String circuit;
   final int timeoutSeconds;
@@ -60,18 +66,23 @@ class ViessmannConfig {
     ViessmannPreset(
       id: 'vicare_cloud',
       name: 'Viessmann ViCare API (Cloud)',
-      description: 'Viessmann-Cloud über Vitoconnect. Der Token aus dem Entwicklerportal gilt nur etwa eine Stunde.',
+      description: 'Viessmann-Cloud über Vitoconnect. Mit Client-ID und Refresh-Token erneuert die App den Zugang selbst.',
       connectionType: ViessmannConnectionType.vicareRest,
       defaultPort: 443,
       defaultCircuit: '0',
     ),
   ];
 
+  /// True when the access token can be renewed without the user.
+  bool get canRefreshToken => clientId.trim().isNotEmpty && refreshToken.trim().isNotEmpty;
+
   const ViessmannConfig({
     this.connectionType = ViessmannConnectionType.optolinkTcp,
     this.host = '192.168.1.130',
     this.port = 3002,
     this.apiToken = '',
+    this.clientId = '',
+    this.refreshToken = '',
     this.installationId = '',
     this.circuit = '0',
     this.timeoutSeconds = 5,
@@ -101,6 +112,8 @@ class ViessmannConfig {
     String? host,
     int? port,
     String? apiToken,
+    String? clientId,
+    String? refreshToken,
     String? installationId,
     String? circuit,
     int? timeoutSeconds,
@@ -113,6 +126,8 @@ class ViessmannConfig {
       host: host ?? this.host,
       port: port ?? this.port,
       apiToken: apiToken ?? this.apiToken,
+      clientId: clientId ?? this.clientId,
+      refreshToken: refreshToken ?? this.refreshToken,
       installationId: installationId ?? this.installationId,
       circuit: circuit ?? this.circuit,
       timeoutSeconds: timeoutSeconds ?? this.timeoutSeconds,
@@ -129,6 +144,8 @@ class ViessmannConfig {
       'host': host,
       'port': port,
       'apiToken': apiToken,
+      'clientId': clientId,
+      'refreshToken': refreshToken,
       'installationId': installationId,
       'circuit': circuit,
       'timeoutSeconds': timeoutSeconds,
@@ -150,6 +167,8 @@ class ViessmannConfig {
       host: json['host'] as String? ?? '192.168.1.130',
       port: (json['port'] as num?)?.toInt() ?? 3002,
       apiToken: json['apiToken'] as String? ?? '',
+      clientId: json['clientId'] as String? ?? '',
+      refreshToken: json['refreshToken'] as String? ?? '',
       installationId: json['installationId'] as String? ?? '',
       circuit: json['circuit'] as String? ?? '0',
       timeoutSeconds: (json['timeoutSeconds'] as num?)?.toInt() ?? 5,

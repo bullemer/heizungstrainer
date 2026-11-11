@@ -124,6 +124,14 @@ class MockVcontrold {
 /// Imitates the Viessmann IoT API v2 for one installation with one gateway.
 class MockVicareApi {
   static const token = 'valid-access-token';
+  static const clientId = 'my-client-id';
+  static const refreshToken = 'valid-refresh-token';
+
+  /// Form fields of every call to the token endpoint.
+  final List<Map<String, String>> tokenRequests = [];
+
+  /// When set, the token endpoint also hands out this new refresh token.
+  String? rotateRefreshTokenTo;
   static const _device = '/features/installations/123/gateways/7571381573112225/devices/0';
 
   double roomTarget = 21.0;
@@ -175,6 +183,23 @@ class MockVicareApi {
     final path = request.uri.path;
     requests.add('${request.method} ${request.uri}');
     final body = await utf8.decodeStream(request);
+
+    if (path == '/idp/v3/token') {
+      final form = Uri.splitQueryString(body);
+      tokenRequests.add(form);
+      if (request.method != 'POST' ||
+          form['grant_type'] != 'refresh_token' ||
+          form['client_id'] != clientId ||
+          form['refresh_token'] != refreshToken) {
+        return _reply(request, 400, {'error': 'invalid_grant'});
+      }
+      return _reply(request, 200, {
+        'access_token': token,
+        'token_type': 'Bearer',
+        'expires_in': 3600,
+        'refresh_token': ?rotateRefreshTokenTo,
+      });
+    }
 
     if (failWith == 429) {
       return _reply(request, 429, {
@@ -293,6 +318,8 @@ void main() {
         host: 'api.viessmann.com',
         port: 443,
         apiToken: 'secret_vicare_token',
+        clientId: 'cid',
+        refreshToken: 'rt',
         installationId: 'install_9876',
         circuit: '1',
         timeoutSeconds: 7,
@@ -575,6 +602,70 @@ void main() {
             timeoutSeconds: 2,
           ),
         );
+
+    ViessmannController refreshing({String token = 'expired', String refresh = MockVicareApi.refreshToken}) =>
+        ViessmannController(
+          vicareBaseUrl: api.baseUrl,
+          vicareTokenUrl: '${api.baseUrl}/idp/v3/token',
+          config: ViessmannConfig(
+            connectionType: ViessmannConnectionType.vicareRest,
+            apiToken: token,
+            clientId: MockVicareApi.clientId,
+            refreshToken: refresh,
+            timeoutSeconds: 2,
+          ),
+        );
+
+    test('an expired access token is renewed with the refresh token and the request repeated', () async {
+      final controller = refreshing();
+      ViessmannConfig? stored;
+      controller.onTokenRefreshed = (c) => stored = c;
+
+      await controller.connect(host: 'ignored.invalid');
+      expect((await controller.readTelemetry()).outdoorTemp, 4.8);
+
+      expect(api.tokenRequests, hasLength(1));
+      expect(api.tokenRequests.single['grant_type'], 'refresh_token');
+      expect(controller.config.apiToken, MockVicareApi.token);
+      expect(controller.config.refreshToken, MockVicareApi.refreshToken);
+      expect(stored?.apiToken, MockVicareApi.token);
+      expect(api.requests.where((r) => r.startsWith('GET /equipment')), hasLength(2));
+      await controller.disconnect();
+    });
+
+    test('without an access token the refresh token is used before the first request', () async {
+      final controller = refreshing(token: '');
+      await controller.connect(host: 'ignored.invalid');
+      expect(api.tokenRequests, hasLength(1));
+      expect(api.requests.where((r) => r.startsWith('GET /equipment')), hasLength(1));
+      await controller.disconnect();
+    });
+
+    test('a rotated refresh token replaces the old one', () async {
+      api.rotateRefreshTokenTo = 'next-refresh-token';
+      final controller = refreshing();
+      await controller.connect(host: 'ignored.invalid');
+      expect(controller.config.refreshToken, 'next-refresh-token');
+      await controller.disconnect();
+    });
+
+    test('a rejected refresh token is an error that names the settings, without endless retries', () async {
+      final controller = refreshing(refresh: 'revoked');
+      await expectLater(
+        controller.connect(host: 'ignored.invalid'),
+        throwsA(isA<ModbusCommunicationException>()
+            .having((e) => e.message, 'message', contains('Refresh-Token'))),
+      );
+      expect(api.tokenRequests, hasLength(1));
+    });
+
+    test('still unauthorized after a renewal: one retry, then an error', () async {
+      api.failWith = 401;
+      final controller = refreshing();
+      await expectLater(controller.connect(host: 'ignored.invalid'), throwsA(isA<ModbusCommunicationException>()));
+      expect(api.tokenRequests, hasLength(1));
+      expect(api.requests.where((r) => r.startsWith('GET /equipment')), hasLength(2));
+    });
 
     test('resolves installation → gateway → heating device and reads the feature list', () async {
       final controller = controllerWith();

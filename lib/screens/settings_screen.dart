@@ -84,6 +84,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final _viessmannHostController = TextEditingController();
   final _viessmannPortController = TextEditingController();
   final _viessmannTokenController = TextEditingController();
+  final _viessmannClientIdController = TextEditingController();
+  final _viessmannRefreshTokenController = TextEditingController();
   final _viessmannInstallIdController = TextEditingController();
   ViessmannConnectionType _viessmannConnType = ViessmannConnectionType.optolinkTcp;
   String _viessmannCircuit = '0';
@@ -199,6 +201,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _viessmannHostController.text = vCfg.host;
       _viessmannPortController.text = vCfg.port.toString();
       _viessmannTokenController.text = vCfg.apiToken;
+      _viessmannClientIdController.text = vCfg.clientId;
+      _viessmannRefreshTokenController.text = vCfg.refreshToken;
       _viessmannInstallIdController.text = vCfg.installationId;
       _viessmannConnType = vCfg.connectionType;
       _viessmannCircuit = vCfg.circuit;
@@ -303,6 +307,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _viessmannHostController.dispose();
     _viessmannPortController.dispose();
     _viessmannTokenController.dispose();
+    _viessmannClientIdController.dispose();
+    _viessmannRefreshTokenController.dispose();
     _viessmannInstallIdController.dispose();
     _vaillantHostController.dispose();
     _vaillantPortController.dispose();
@@ -491,6 +497,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       port: int.tryParse(_viessmannPortController.text.trim()) ??
           (_viessmannConnType == ViessmannConnectionType.optolinkTcp ? 3002 : 443),
       apiToken: _viessmannTokenController.text.trim(),
+      clientId: _viessmannClientIdController.text.trim(),
+      refreshToken: _viessmannRefreshTokenController.text.trim(),
       installationId: _viessmannInstallIdController.text.trim(),
       circuit: _viessmannCircuit,
       cloudPollingIntervalSeconds: _viessmannCloudPollingInterval,
@@ -794,6 +802,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         port: int.tryParse(_viessmannPortController.text.trim()) ??
             (_viessmannConnType == ViessmannConnectionType.optolinkTcp ? 3002 : 443),
         apiToken: _viessmannTokenController.text.trim(),
+        clientId: _viessmannClientIdController.text.trim(),
+        refreshToken: _viessmannRefreshTokenController.text.trim(),
         installationId: _viessmannInstallIdController.text.trim(),
         circuit: _viessmannCircuit,
         cloudPollingIntervalSeconds: _viessmannCloudPollingInterval,
@@ -2145,10 +2155,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
               controller: _viessmannTokenController,
               obscureText: _obscureViessmannToken,
               decoration: _decoration(
-                label: 'ViCare Access-Token',
+                label: 'ViCare Access-Token (optional mit Refresh-Token)',
                 icon: Icons.key_rounded,
               ).copyWith(
-                helperText: 'Access-Token aus dem Viessmann-Entwicklerportal. Er gilt nur etwa eine Stunde.',
+                helperText: 'Gilt nur etwa eine Stunde. Mit Client-ID und Refresh-Token darunter erneuert die App ihn selbst.',
+                helperMaxLines: 2,
                 helperStyle: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.4)),
                 suffixIcon: IconButton(
                   icon: Icon(
@@ -2158,6 +2169,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                   onPressed: () => setState(() => _obscureViessmannToken = !_obscureViessmannToken),
                 ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _viessmannClientIdController,
+              autocorrect: false,
+              decoration: _decoration(
+                label: 'Client-ID (Entwicklerportal)',
+                icon: Icons.badge_outlined,
+              ).copyWith(
+                helperText: 'Client-ID deiner App im Viessmann-Entwicklerportal.',
+                helperStyle: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.4)),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _viessmannRefreshTokenController,
+              obscureText: _obscureViessmannToken,
+              autocorrect: false,
+              decoration: _decoration(
+                label: 'Refresh-Token',
+                icon: Icons.autorenew_rounded,
+              ).copyWith(
+                helperText: 'Entsteht bei der Anmeldung mit dem Scope „offline_access“ und gilt etwa 180 Tage.',
+                helperStyle: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.4)),
+                helperMaxLines: 2,
               ),
             ),
             const SizedBox(height: 12),
@@ -2457,10 +2494,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
             controller: _vaillantTokenController,
             obscureText: _obscureVaillantToken,
             decoration: _decoration(
-              label: 'API Token / Auth Header (Optional)',
+              label: 'Bearer-Token für Reverse-Proxy (optional)',
               icon: Icons.key_rounded,
             ).copyWith(
-              helperText: 'Optional: Nur notwendig bei vorgeschaltetem Auth-Proxy.',
+              helperText: 'ebusd selbst kennt keinen Token. Nur ausfüllen, wenn ein Reverse-Proxy mit Anmeldung davor sitzt.',
+              helperMaxLines: 2,
               helperStyle: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.4)),
               suffixIcon: IconButton(
                 icon: Icon(

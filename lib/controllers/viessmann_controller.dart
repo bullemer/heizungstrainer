@@ -32,6 +32,11 @@ class ViessmannController implements HeatingController {
 
   /// Overridable for tests.
   final String vicareBaseUrl;
+  final String vicareTokenUrl;
+
+  /// Called after the access token was renewed, so the owner can persist the
+  /// new token (and a rotated refresh token, should Viessmann send one).
+  void Function(ViessmannConfig config)? onTokenRefreshed;
 
   HttpClient? _httpClient;
   DateTime? _lastVicarePoll;
@@ -42,6 +47,8 @@ class ViessmannController implements HeatingController {
   ViessmannController({
     ViessmannConfig? config,
     this.vicareBaseUrl = 'https://api.viessmann-climatesolutions.com/iot/v2',
+    this.vicareTokenUrl = 'https://iam.viessmann-climatesolutions.com/idp/v3/token',
+    this.onTokenRefreshed,
   }) : _config = config ?? const ViessmannConfig();
 
   ViessmannConfig get config => _config;
@@ -302,7 +309,41 @@ class ViessmannController implements HeatingController {
   Duration get _vicareCacheTime =>
       Duration(seconds: _config.cloudPollingIntervalSeconds.clamp(75, 300));
 
-  Future<dynamic> _vicareRequest(String method, String path, {Object? body}) async {
+  /// Exchanges the refresh token for a new access token (valid one hour).
+  Future<void> _refreshVicareToken() async {
+    final req = await _getClient().postUrl(Uri.parse(vicareTokenUrl)).timeout(_timeout);
+    req.headers.set(HttpHeaders.acceptHeader, 'application/json');
+    req.headers.set(HttpHeaders.contentTypeHeader, 'application/x-www-form-urlencoded');
+    req.write(Uri(queryParameters: {
+      'grant_type': 'refresh_token',
+      'client_id': _config.clientId.trim(),
+      'refresh_token': _config.refreshToken.trim(),
+    }).query);
+    final resp = await req.close().timeout(_timeout);
+    final text = await resp.transform(utf8.decoder).join().timeout(_timeout);
+    dynamic json;
+    try {
+      json = jsonDecode(text);
+    } catch (_) {}
+    final token = json is Map ? json['access_token'] : null;
+    if (resp.statusCode != 200 || token is! String || token.isEmpty) {
+      throw ModbusCommunicationException(
+        message: 'ViCare-Zugang konnte nicht erneuert werden (Status ${resp.statusCode}). '
+            'Client-ID und Refresh-Token in den Einstellungen prüfen – ein Refresh-Token gilt etwa 180 Tage.',
+      );
+    }
+    final rotated = json['refresh_token'];
+    _config = _config.copyWith(
+      apiToken: token,
+      refreshToken: rotated is String && rotated.isNotEmpty ? rotated : null,
+    );
+    onTokenRefreshed?.call(_config);
+  }
+
+  Future<dynamic> _vicareRequest(String method, String path, {Object? body, bool retried = false}) async {
+    if (_config.apiToken.trim().isEmpty && _config.canRefreshToken && !retried) {
+      await _refreshVicareToken();
+    }
     final req = await _getClient().openUrl(method, Uri.parse('$vicareBaseUrl$path')).timeout(_timeout);
     req.headers.set(HttpHeaders.acceptHeader, 'application/json');
     req.headers.set(HttpHeaders.authorizationHeader, 'Bearer ${_config.apiToken.trim()}');
@@ -317,10 +358,18 @@ class ViessmannController implements HeatingController {
       json = text.trim().isEmpty ? null : jsonDecode(text);
     } catch (_) {}
     final error = json is Map ? '${json['error'] ?? json['errorType'] ?? ''}' : '';
-    if (resp.statusCode == 401 || resp.statusCode == 403 || error.toUpperCase().contains('EXPIRED')) {
-      throw const ModbusCommunicationException(
-        message: 'ViCare hat den API-Token abgelehnt. Tokens aus dem Viessmann-Entwicklerportal gelten '
-            'nur etwa eine Stunde – bitte in den Einstellungen einen neuen Token hinterlegen.',
+    final expired = resp.statusCode == 401 || error.toUpperCase().contains('EXPIRED');
+    if (expired && _config.canRefreshToken && !retried) {
+      await _refreshVicareToken();
+      return _vicareRequest(method, path, body: body, retried: true);
+    }
+    if (expired || resp.statusCode == 403) {
+      throw ModbusCommunicationException(
+        message: _config.canRefreshToken
+            ? 'ViCare hat den Zugang auch mit frisch erneuertem Token abgelehnt. '
+                'Client-ID, Refresh-Token und die Freigabe der Anlage im Viessmann-Konto prüfen.'
+            : 'ViCare hat den API-Token abgelehnt. Access-Tokens gelten nur etwa eine Stunde – '
+                'in den Einstellungen Client-ID und Refresh-Token hinterlegen, dann erneuert die App ihn selbst.',
       );
     }
     if (resp.statusCode == 429) {

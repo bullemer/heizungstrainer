@@ -1,34 +1,18 @@
-import 'package:heizungstrainer/utils/number_format.dart';
-import 'dart:async';
-
-import 'package:flutter/foundation.dart';
-import 'package:modbus_client/modbus_client.dart';
-import 'package:modbus_client_tcp/modbus_client_tcp.dart';
-
-import 'package:heizungstrainer/controllers/heating_controller.dart';
-import 'package:heizungstrainer/exceptions/modbus_exceptions.dart';
+import 'package:heizungstrainer/controllers/modbus_register_controller.dart';
 import 'package:heizungstrainer/models/nibe_modbus_config.dart';
 
-/// Real hardware adapter for NIBE heat pumps communicating via Modbus TCP.
+/// NIBE heat pumps via Modbus TCP.
 ///
-/// Supports:
-/// - NIBE S-Series (S1155 / S1255 / S2125 / VVM S320 with native Modbus TCP)
-/// - NIBE F-Series (F1155 / F1255 / F2120 with NIBE Modbus 40 module)
-/// - NIBE SMO 20 / 40 system controllers
-class NibeModbusController implements HeatingController {
+/// - S series (S1155 / S1255 / S2125 / VVM S320) with built-in Modbus TCP
+/// - F series and SMO 20 / 40 with the MODBUS 40 module behind an
+///   RS-485-to-TCP converter (FC 0x10 writes only)
+class NibeModbusController extends ModbusRegisterController {
   NibeModbusConfig _config;
-  ModbusClientTcp? _client;
-  bool _isConnected = false;
-  final StreamController<ControllerTelemetry> _telemetryStreamController =
-      StreamController<ControllerTelemetry>.broadcast();
-
-  static const Duration _timeout = Duration(seconds: 4);
 
   NibeModbusController({
     NibeModbusConfig? config,
-    ModbusClientTcp? client,
-  })  : _config = config ?? const NibeModbusConfig(),
-        _client = client;
+    super.client,
+  }) : _config = config ?? const NibeModbusConfig();
 
   NibeModbusConfig get config => _config;
 
@@ -46,257 +30,39 @@ class NibeModbusController implements HeatingController {
   String get modelName => _config.presetName;
 
   @override
-  ConnectionProtocol get protocol => ConnectionProtocol.modbusTcp;
+  String get deviceDative => 'zur NIBE Wärmepumpe';
 
   @override
-  HeatingCapabilities get capabilities => HeatingCapabilities(
-        supportsHeatingCurveShift: _config.heatingCurveShiftRegister != null,
-        minShift: -10.0,
-        maxShift: 10.0,
-        supportsRoomTarget: _config.roomTargetRegister != null,
-        minRoomTarget: 5.0,
-        maxRoomTarget: 30.0,
-        supportsHotWater: true,
-        supportsReturnTemp: true,
-        supportsOutdoorTemp: true,
-      );
+  String get deviceName => 'NIBE Wärmepumpe';
 
   @override
-  bool get isConnected => _isConnected;
+  String get logTag => 'NibeModbus';
 
   @override
-  Stream<ControllerTelemetry> get telemetryStream =>
-      _telemetryStreamController.stream;
+  double get minShift => -10.0;
 
   @override
-  Future<void> connect({
-    required String host,
-    int? port,
-    Map<String, dynamic>? extraConfig,
-  }) async {
-    if (_client != null && _isConnected) {
-      await disconnect();
-    }
-
-    final targetPort = port ?? _config.port;
-    _client = ModbusClientTcp(
-      host,
-      serverPort: targetPort,
-      unitId: _config.unitId,
-      connectionMode: ModbusConnectionMode.autoConnectAndKeepConnected,
-    );
-
-    try {
-      final connected = await _client!.connect();
-      _isConnected = connected;
-      if (!connected) {
-        throw ModbusCommunicationException(
-          message: 'Verbindung zur NIBE Wärmepumpe unter $host:$targetPort fehlgeschlagen.',
-        );
-      }
-      // First read proves that the register map answers at all.
-      await readTelemetry();
-    } catch (e) {
-      await disconnect();
-      if (e is ModbusCommunicationException) rethrow;
-      throw ModbusCommunicationException(
-        message: 'Fehler beim Verbinden mit NIBE Wärmepumpe zu $host:$targetPort: $e',
-        underlyingError: e,
-      );
-    }
-  }
+  double get maxShift => 10.0;
 
   @override
-  Future<void> disconnect() async {
-    try {
-      await _client?.disconnect();
-    } catch (_) {}
-    _client = null;
-    _isConnected = false;
-  }
-
-  bool _isDisconnectedRaw(int? raw) {
-    if (raw == null) return false;
-    return raw == 0x7FFF || raw == -32768 || raw == 0xFFFF || raw == 32767;
-  }
-
-  double? _convertRaw(int? raw) {
-    if (raw == null || _isDisconnectedRaw(raw)) return null;
-    return double.parse((raw * _config.multiplier).fixed(2));
-  }
-
-  ModbusElementType get _elementType => _config.isHoldingRegister
-      ? ModbusElementType.holdingRegister
-      : ModbusElementType.inputRegister;
-
-  /// Sensors use the configured register type; setpoints ([holding]) are
-  /// always holding registers, because that is where they are written.
-  Future<int?> _readSingleRegister(int address, {bool holding = false}) async {
-    if (_client == null || !_isConnected) return null;
-    final reg = ModbusInt16Register(
-      name: 'reg_$address',
-      type: holding ? ModbusElementType.holdingRegister : _elementType,
-      address: address,
-    );
-    try {
-      final res = await _client!.send(reg.getReadRequest()).timeout(_timeout);
-      if (res == ModbusResponseCode.requestSucceed) {
-        return reg.value?.toInt();
-      }
-    } catch (e) {
-      debugPrint('[NibeModbus] Read reg $address error: $e');
-    }
-    return null;
-  }
-
-  @override
-  Future<ControllerTelemetry> readTelemetry() async {
-    if (_client == null || !_isConnected) {
-      throw const ModbusCommunicationException(
-        message: 'Keine aktive Verbindung zur NIBE Wärmepumpe.',
+  ModbusRegisterMap get registerMap => ModbusRegisterMap(
+        port: _config.port,
+        unitId: _config.unitId,
+        outdoorRegister: _config.outdoorRegister,
+        flowRegister: _config.flowRegister,
+        returnRegister: _config.returnRegister,
+        hotWaterRegister: _config.hotWaterRegister,
+        roomTargetRegister: _config.roomTargetRegister,
+        heatingCurveShiftRegister: _config.heatingCurveShiftRegister,
+        multiplier: _config.multiplier,
+        sensorsAreHolding: _config.isHoldingRegister,
+        // NIBE offsets are whole steps (-10..10), not tenths like the temperatures.
+        shiftMultiplier: 1.0,
+        // MODBUS 40 (F series / SMO) only implements FC 0x10, not "write single".
+        writeMultiple: _config.writeMultiple,
       );
-    }
 
-    final rawOutdoor = await _readSingleRegister(_config.outdoorRegister);
-    final rawFlow = await _readSingleRegister(_config.flowRegister);
-    final rawReturn = await _readSingleRegister(_config.returnRegister);
-    final rawHotWater = await _readSingleRegister(_config.hotWaterRegister);
-
-    int? rawRoom;
-    if (_config.roomTargetRegister != null) {
-      rawRoom = await _readSingleRegister(_config.roomTargetRegister!, holding: true);
-    }
-
-    int? rawShift;
-    if (_config.heatingCurveShiftRegister != null) {
-      rawShift = await _readSingleRegister(_config.heatingCurveShiftRegister!, holding: true);
-    }
-
-    if (rawOutdoor == null && rawFlow == null && rawReturn == null && rawHotWater == null) {
-      throw const ModbusCommunicationException(
-        message: 'NIBE Wärmepumpe antwortet, liefert aber auf keinem der eingestellten Register einen Wert. '
-            'Registeradressen, Registertyp und Unit-ID prüfen.',
-      );
-    }
-
-    final outdoor = _convertRaw(rawOutdoor);
-    final flow = _convertRaw(rawFlow);
-    final ret = _convertRaw(rawReturn);
-    final hw = _convertRaw(rawHotWater);
-    final room = _convertRaw(rawRoom);
-    // NIBE offsets are whole steps (-10..10), not tenths like the temperatures.
-    final shift =
-        (rawShift == null || _isDisconnectedRaw(rawShift)) ? null : rawShift.toDouble();
-
-    final telemetry = ControllerTelemetry(
-      timestamp: DateTime.now(),
-      outdoorTemp: outdoor,
-      flowTemp: flow,
-      returnTemp: ret,
-      hotWaterTemp: hw,
-      roomTarget: room,
-      heatingCurveShift: shift,
-      isOutdoorDisconnected: _isDisconnectedRaw(rawOutdoor),
-      isFlowDisconnected: _isDisconnectedRaw(rawFlow),
-      rawValues: {
-        'outdoor': (rawOutdoor ?? 0).toDouble(),
-        'flow': (rawFlow ?? 0).toDouble(),
-        'return': (rawReturn ?? 0).toDouble(),
-        'hotWater': (rawHotWater ?? 0).toDouble(),
-        if (rawRoom != null) 'roomTarget': rawRoom.toDouble(),
-        if (rawShift != null) 'shift': rawShift.toDouble(),
-      },
-    );
-
-    _telemetryStreamController.add(telemetry);
-    return telemetry;
-  }
-
-  Future<ModbusResponseCode> _writeHolding(int address, int raw) {
-    final reg = ModbusInt16Register(
-      name: 'write_$address',
-      type: ModbusElementType.holdingRegister,
-      address: address,
-    );
-    // MODBUS 40 (F series / SMO) only implements FC 0x10, not "write single".
-    final request = _config.writeMultiple
-        ? reg.getMultipleWriteRequest(
-            (ByteData(2)..setInt16(0, raw)).buffer.asUint8List())
-        : reg.getWriteRequest(raw);
-    return _client!.send(request).timeout(_timeout);
-  }
-
-  @override
-  Future<void> setHeatingCurveShift(double shift) async {
-    if (_config.heatingCurveShiftRegister == null) {
-      throw const ModbusCommunicationException(
-        message: 'Kein Register für Parallelverschiebung konfiguriert.',
-      );
-    }
-    if (_client == null || !_isConnected) {
-      throw const ModbusCommunicationException(
-        message: 'Keine Verbindung zur NIBE Wärmepumpe.',
-      );
-    }
-
-    final raw = shift.round();
-    final res = await _writeHolding(_config.heatingCurveShiftRegister!, raw);
-    if (res != ModbusResponseCode.requestSucceed) {
-      throw ModbusCommunicationException(
-        message: 'Schreiben der NIBE Parallelverschiebung fehlgeschlagen (Code $res).',
-      );
-    }
-  }
-
-  @override
-  Future<void> setRoomTarget(double temperature) async {
-    if (_config.roomTargetRegister == null) {
-      throw const ModbusCommunicationException(
-        message: 'Kein Register für Raum-Sollwert konfiguriert.',
-      );
-    }
-    if (_client == null || !_isConnected) {
-      throw const ModbusCommunicationException(
-        message: 'Keine Verbindung zur NIBE Wärmepumpe.',
-      );
-    }
-
-    final raw = (temperature / _config.multiplier).round();
-    final res = await _writeHolding(_config.roomTargetRegister!, raw);
-    if (res != ModbusResponseCode.requestSucceed) {
-      throw ModbusCommunicationException(
-        message: 'Schreiben der NIBE Raum-Solltemperatur fehlgeschlagen (Code $res).',
-      );
-    }
-  }
-
-  /// Live connection diagnostic probe for settings UI.
-  static Future<Map<String, dynamic>> testConnection(
-    NibeModbusConfig config,
-  ) async {
-    final controller = NibeModbusController(config: config);
-    try {
-      await controller.connect(host: config.host, port: config.port);
-      final telemetry = await controller.readTelemetry();
-      await controller.disconnect();
-      return {
-        'success': true,
-        'flow': telemetry.flowTemp,
-        'return': telemetry.returnTemp,
-        'outdoor': telemetry.outdoorTemp,
-        'hotWater': telemetry.hotWaterTemp,
-      };
-    } catch (e) {
-      await controller.disconnect();
-      return {
-        'success': false,
-        'error': e.toString(),
-      };
-    }
-  }
-
-  void dispose() {
-    disconnect();
-    _telemetryStreamController.close();
-  }
+  /// Live connection diagnostic probe for the settings UI.
+  static Future<Map<String, dynamic>> testConnection(NibeModbusConfig config) =>
+      NibeModbusController(config: config).probe(config.host, config.port);
 }

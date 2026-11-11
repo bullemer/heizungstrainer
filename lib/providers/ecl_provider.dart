@@ -1677,6 +1677,25 @@ class ECLProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// The ViCare driver renews its one-hour access token by itself; keep the
+  /// stored configuration in step so the next app start begins with it.
+  void _persistRenewedViessmannToken() {
+    final controller = _activeController;
+    if (controller is! ViessmannController) return;
+    final live = controller.config;
+    if (live.apiToken == _viessmannConfig.apiToken &&
+        live.refreshToken == _viessmannConfig.refreshToken) {
+      return;
+    }
+    _viessmannConfig = _viessmannConfig.copyWith(
+      apiToken: live.apiToken,
+      refreshToken: live.refreshToken,
+    );
+    unawaited(_viessmannConfig.save(_secureStorage).catchError((Object e) {
+      debugPrint('[Provider] Could not store renewed ViCare token: $e');
+    }));
+  }
+
   /// Updates and persists the Viessmann configuration.
   Future<void> updateViessmannConfig(ViessmannConfig config) async {
     final changed = !_sameConfig(_viessmannConfig.toJson(), config.toJson());
@@ -2259,6 +2278,7 @@ class ECLProvider extends ChangeNotifier {
         if (!isCurrent()) return;
         final gen = _writeGeneration;
         final telemetry = await _activeController.readTelemetry();
+        _persistRenewedViessmannToken();
         if (!isCurrent() || gen != _writeGeneration || _writeInProgress) return;
         _applyTelemetry(telemetry);
         _consecutivePollErrors = 0;
