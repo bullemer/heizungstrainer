@@ -57,6 +57,10 @@ class DatabaseService {
     final String dbPath;
     if (_customPath != null) {
       dbPath = _customPath;
+    } else if (!kIsWeb && Platform.environment.containsKey('FLUTTER_TEST')) {
+      // `flutter test` runs the test files in parallel processes. A shared
+      // database file made them block each other ("database is locked").
+      dbPath = inMemoryDatabasePath;
     } else {
       final databasesPath = await factory.getDatabasesPath();
       dbPath = p.join(databasesPath, 'heizungstrainer.db');
